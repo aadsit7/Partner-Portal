@@ -7,7 +7,7 @@ import { sha256 } from './utils/hash.js';
 import { readSheetAsObjects, isConfigured } from './sheets.js';
 
 /**
- * Attempt login with username and password.
+ * Attempt login with username and password (for partners).
  * @returns {Object} user object on success
  * @throws on failure
  */
@@ -35,11 +35,111 @@ export async function login(username, password) {
     throw new Error('Invalid username or password');
   }
 
+  // If this user is an admin, block — admin must use Google SSO
+  if (String(user.is_admin).toUpperCase() === 'TRUE') {
+    throw new Error('Admin accounts must sign in with Google');
+  }
+
   // Store session (exclude password hash)
   const session = { ...user };
   delete session.password_hash;
   delete session._rowIndex;
-  session.is_admin = String(user.is_admin).toUpperCase() === 'TRUE';
+  session.is_admin = false;
+
+  sessionStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(session));
+  return session;
+}
+
+/**
+ * Handle Google SSO login for admin.
+ * Called after Google Identity Services returns a credential.
+ * @param {Object} credentialResponse - from Google
+ * @returns {Object} user session
+ * @throws on failure
+ */
+export async function loginWithGoogle(credentialResponse) {
+  // Decode the JWT to get user info
+  const payload = decodeJwt(credentialResponse.credential);
+
+  if (!payload || !payload.email) {
+    throw new Error('Failed to read Google account info');
+  }
+
+  const email = payload.email.toLowerCase();
+
+  // Check if this email is in the allowed admin list
+  const allowedEmails = CONFIG.ADMIN_EMAILS.map(e => e.toLowerCase());
+
+  // Also check if demo mode — allow any Google login as admin
+  const isDemoMode = !isConfigured();
+
+  if (!isDemoMode && !allowedEmails.includes(email)) {
+    throw new Error(`${payload.email} is not authorized as an admin. Contact your administrator.`);
+  }
+
+  // Build admin session
+  const session = {
+    partner_id: 'p_admin001',
+    username: 'admin',
+    display_name: payload.name || 'Admin',
+    contact_email: payload.email,
+    is_admin: true,
+    google_picture: payload.picture || null,
+    tier: 'Admin',
+    status: 'active',
+  };
+
+  sessionStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(session));
+  return session;
+}
+
+/**
+ * Decode a JWT token without verification (client-side only).
+ * The token is already verified by Google's library.
+ */
+function decodeJwt(token) {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      atob(base64).split('').map(c =>
+        '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+      ).join('')
+    );
+    return JSON.parse(jsonPayload);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fallback: Admin login with username/password when Google SSO isn't configured.
+ */
+export async function loginAsAdmin(username, password) {
+  const passwordHash = await sha256(password);
+  const partners = await readSheetAsObjects(CONFIG.SHEET_PARTNERS);
+
+  const user = partners.find(p => {
+    const usernameMatch = p.username?.toLowerCase() === username.toLowerCase();
+    const isAdminUser = String(p.is_admin).toUpperCase() === 'TRUE';
+    const statusMatch = p.status?.toLowerCase() === 'active';
+
+    if (!isConfigured()) {
+      return usernameMatch && isAdminUser && statusMatch && password === CONFIG.DEFAULT_PASSWORD;
+    }
+
+    const passMatch = p.password_hash === passwordHash;
+    return usernameMatch && passMatch && isAdminUser && statusMatch;
+  });
+
+  if (!user) {
+    throw new Error('Invalid admin credentials');
+  }
+
+  const session = { ...user };
+  delete session.password_hash;
+  delete session._rowIndex;
+  session.is_admin = true;
 
   sessionStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(session));
   return session;
