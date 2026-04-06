@@ -380,14 +380,14 @@ let demoPartners = [
   ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status', 'hq_location'],
   ['p_admin001', 'admin', 'Portal Admin', '', 'Gold', 'Global', '2026-01-01', 'TRUE', '', 'active', ''],
   ['p_elant1', 'elantis', 'Elantis', 'MSP/SI', 'Gold', 'North America', '2026-01-10', 'FALSE', '', 'active', 'Edmonton, Alberta, Canada'],
-  ['p_getrb1', 'getrubix', 'GetRubix', 'MSP/SI', 'Silver', 'North America', '2026-01-15', 'FALSE', '', 'active', 'New Jersey, USA'],
-  ['p_infos1', 'infosys', 'Infosys', 'MSP/SI', 'Gold', 'North America', '2026-01-20', 'FALSE', '', 'active', 'Bengaluru, India'],
+  ['p_getrb1', 'getrubix', 'GetRubix', 'MSP/SI', 'Gold', 'North America', '2026-01-15', 'FALSE', '', 'active', 'New Jersey, USA'],
+  ['p_infos1', 'infosys', 'InfoSys', 'MSP/SI', 'Gold', 'North America', '2026-01-20', 'FALSE', '', 'active', 'Bengaluru, India'],
   ['p_insigh1', 'insight', 'Insight', 'MSP/SI', 'Gold', 'North America', '2026-02-10', 'FALSE', '', 'active', 'Chandler, Arizona, USA'],
   ['p_micro1', 'microsoft', 'Microsoft', 'OEM', 'Gold', 'North America', '2026-02-15', 'FALSE', '', 'active', 'Redmond, Washington, USA'],
   ['p_nerdio1', 'nerdio', 'Nerdio', 'Technology', 'Gold', 'North America', '2026-01-15', 'FALSE', '', 'active', 'Chicago, Illinois, USA'],
   ['p_qualc01', 'qualcomm', 'Qualcomm', 'Technology', 'Gold', 'North America', '2026-03-10', 'FALSE', '', 'active', 'San Diego, California, USA'],
-  ['p_ridgep1', 'ridgepoint', 'RidgePoint', 'MENA Regional Distributor', 'Silver', 'MENA', '2026-02-01', 'FALSE', '', 'active', 'Dubai, UAE'],
-  ['p_syscd01', 'systemcenterdudes', 'System Center Dudes', 'MSP/SI', 'Bronze', 'North America', '2026-02-20', 'FALSE', '', 'active', 'Montreal, Quebec, Canada'],
+  ['p_ridgep1', 'ridgepoint', 'RidgePoint', 'MENA Regional Distributor', 'Gold', 'MENA', '2026-02-01', 'FALSE', '', 'active', 'Dubai, UAE'],
+  ['p_syscd01', 'systemcenterdudes', 'System Center Dudes', 'MSP/SI', 'Gold', 'North America', '2026-02-20', 'FALSE', '', 'active', 'Montreal, Quebec, Canada'],
 ];
 
 let demoOpportunities = [
@@ -425,7 +425,7 @@ let demoTranscripts = [
 // ============================================
 
 const DEMO_STORAGE_KEY = 'pp_demo_data';
-const DEMO_SCHEMA_VERSION = 6; // Bump when demo data structure changes
+const DEMO_SCHEMA_VERSION = 7; // Bump when demo data structure changes
 
 function persistDemoData() {
   try {
