@@ -1,5 +1,5 @@
 // ============================================
-// Admin Dashboard View
+// Admin Dashboard View — Command Center
 // ============================================
 
 import { readSheetAsObjects } from '../sheets.js';
@@ -9,6 +9,9 @@ import { navigate } from '../router.js';
 import { statCard } from '../components/card.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { tierSlug, TIER_COLORS, TIER_ICONS } from '../utils/tiers.js';
+import { formatDate } from '../utils/date.js';
+import { openEventModal } from './admin-events.js';
+import { parseChecklist } from '../components/checklist.js';
 
 export const title = 'Admin Dashboard';
 
@@ -20,6 +23,14 @@ const TYPE_COLORS = {
   'OEM':                       '#ECB22E',
   'MSP/SI':                    '#69BE28',
   'MENA Regional Distributor': '#E01E5A',
+};
+
+const EVENT_TYPE_COLORS = {
+  'Webinar': '#0e8ab5',
+  'Workshop': '#1a8a5a',
+  'Conference': '#002244',
+  'Campaign': '#b88a0e',
+  'Other': '#9B9A9B',
 };
 
 const HQ_COORDINATES = {
@@ -40,11 +51,12 @@ export async function render(container) {
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
 
   try {
-    const [partners, opportunities] = await Promise.all([
+    const [partners, opportunities, events] = await Promise.all([
       readSheetAsObjects(CONFIG.SHEET_PARTNERS),
       readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES),
+      readSheetAsObjects(CONFIG.SHEET_EVENTS),
     ]);
-    renderDashboard(container, partners, opportunities);
+    renderDashboard(container, partners, opportunities, events);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },
       el('div', { class: 'empty-state__title' }, 'Error loading data'),
@@ -53,8 +65,9 @@ export async function render(container) {
   }
 }
 
-function renderDashboard(container, partners, opportunities) {
+function renderDashboard(container, partners, opportunities, events) {
   const partnerList = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
+  const upcomingEvents = events.filter(e => e.status === 'Upcoming' || e.status === 'In Progress');
 
   const totalPipeline = opportunities.reduce((sum, o) => sum + (parseFloat(o.deal_value) || 0), 0);
   const wonValue = opportunities
@@ -64,15 +77,254 @@ function renderDashboard(container, partners, opportunities) {
   // Per-partner stats
   const partnerStats = partnerList.map(partner => {
     const partnerOpps = opportunities.filter(o => o.partner_id === partner.partner_id);
+    const partnerEvents = events.filter(e => e.partner_id === partner.partner_id);
+    const upcomingPartnerEvents = partnerEvents.filter(e => e.status === 'Upcoming' || e.status === 'In Progress');
     const total = partnerOpps.length;
     const totalVal = partnerOpps.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
-    return { partner, stats: { totalDeals: total, totalValue: totalVal } };
+    const wonVal = partnerOpps.filter(o => o.status === 'Won').reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
+    return {
+      partner,
+      stats: { totalDeals: total, totalValue: totalVal, wonValue: wonVal },
+      events: partnerEvents,
+      upcomingEvents: upcomingPartnerEvents,
+    };
   }).sort((a, b) => b.stats.totalValue - a.stats.totalValue);
 
   // Type distribution data
   const typeData = computeTypeData(partnerList, opportunities);
   const uniqueTypes = Object.keys(typeData);
 
+  // Tab state
+  let activeTab = 'activity';
+
+  // Tab buttons
+  const activityTabBtn = el('button', {
+    class: 'btn btn--primary btn--sm',
+    onClick: () => switchTab('activity'),
+  }, 'Activity Hub');
+
+  const partnersTabBtn = el('button', {
+    class: 'btn btn--secondary btn--sm',
+    onClick: () => switchTab('partners'),
+  }, 'Partners');
+
+  // Tab containers
+  const activityView = el('div', { id: 'dashboard-activity-view' });
+  const partnersView = el('div', { id: 'dashboard-partners-view', style: { display: 'none' } });
+
+  function switchTab(tab) {
+    activeTab = tab;
+    activityTabBtn.className = tab === 'activity' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm';
+    partnersTabBtn.className = tab === 'partners' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm';
+    activityView.style.display = tab === 'activity' ? '' : 'none';
+    partnersView.style.display = tab === 'partners' ? '' : 'none';
+
+    if (tab === 'partners' && !partnersView.hasChildNodes()) {
+      buildPartnersView(partnersView, partnerList, partnerStats, typeData, uniqueTypes, totalPipeline, opportunities);
+    }
+  }
+
+  // Build activity view content
+  buildActivityView(activityView, partnerStats, upcomingEvents, events, opportunities, container);
+
+  const content = el('div', {},
+    // Summary stats
+    el('div', { class: 'stats-grid stagger' },
+      statCard('Total Partners', partnerList.length),
+      statCard('Total Pipeline', formatCurrency(totalPipeline)),
+      statCard('Revenue Won', formatCurrency(wonValue)),
+      statCard('Upcoming Events', upcomingEvents.length)
+    ),
+
+    // Tab toggle
+    el('div', { class: 'view-toggle' }, activityTabBtn, partnersTabBtn),
+
+    // Views
+    activityView,
+    partnersView,
+  );
+
+  mount(container, content);
+}
+
+// ============================================
+// Activity Hub View
+// ============================================
+
+function buildActivityView(container, partnerStats, upcomingEvents, allEvents, opportunities, viewContainer) {
+  // Partner Activity Cards
+  const partnerHubTitle = el('div', { class: 'section-header', style: { marginBottom: 'var(--space-4)' } },
+    el('div', {},
+      el('h3', { class: 'section-header__title' }, 'Partner Activity'),
+      el('p', { class: 'section-header__subtitle' }, 'Events and opportunities by partner')
+    )
+  );
+
+  const partnerCards = partnerStats
+    .filter(ps => ps.stats.totalDeals > 0 || ps.upcomingEvents.length > 0)
+    .map(({ partner, stats, upcomingEvents: partnerUpcoming }) => {
+      const tc = tierSlug(partner.tier);
+      const initials = (partner.display_name || '')
+        .split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || '?';
+
+      const eventChips = partnerUpcoming.slice(0, 3).map(evt =>
+        el('div', {
+          class: 'activity-card__event-chip',
+          onClick: (e) => {
+            e.stopPropagation();
+            openEventModal(evt, viewContainer);
+          },
+        },
+          el('span', {
+            class: 'activity-card__event-dot',
+            style: { background: EVENT_TYPE_COLORS[evt.event_type] || '#9B9A9B' },
+          }),
+          el('span', { class: 'activity-card__event-name' }, evt.title),
+          el('span', { class: 'activity-card__event-date' }, formatDate(evt.event_date))
+        )
+      );
+
+      if (partnerUpcoming.length > 3) {
+        eventChips.push(el('div', { class: 'activity-card__event-more' },
+          `+${partnerUpcoming.length - 3} more events`
+        ));
+      }
+
+      return el('div', {
+        class: 'activity-card',
+        onClick: () => navigate(`/admin/partner-detail?id=${partner.partner_id}`),
+      },
+        el('div', { class: 'activity-card__header' },
+          el('div', { class: `partner-avatar partner-avatar--${tc} partner-avatar--sm` }, initials),
+          el('div', { class: 'activity-card__info' },
+            el('div', { class: 'activity-card__name' }, partner.display_name),
+            el('div', { class: 'activity-card__type' },
+              el('span', { class: `badge badge--xs badge--${tc}` },
+                el('span', { class: 'badge__icon', html: TIER_ICONS[tc] || '' }),
+                partner.tier
+              ),
+              el('span', { class: 'activity-card__partner-type' }, partner.partner_type)
+            )
+          )
+        ),
+        el('div', { class: 'activity-card__metrics' },
+          el('div', { class: 'activity-card__metric' },
+            el('div', { class: 'activity-card__metric-value' }, String(stats.totalDeals)),
+            el('div', { class: 'activity-card__metric-label' }, 'Deals')
+          ),
+          el('div', { class: 'activity-card__metric' },
+            el('div', { class: 'activity-card__metric-value' }, formatCurrency(stats.totalValue)),
+            el('div', { class: 'activity-card__metric-label' }, 'Pipeline')
+          ),
+          el('div', { class: 'activity-card__metric' },
+            el('div', { class: 'activity-card__metric-value' }, String(partnerUpcoming.length)),
+            el('div', { class: 'activity-card__metric-label' }, 'Events')
+          ),
+        ),
+        partnerUpcoming.length > 0
+          ? el('div', { class: 'activity-card__events' },
+              el('div', { class: 'activity-card__events-title' }, 'Upcoming Events'),
+              ...eventChips
+            )
+          : null
+      );
+    });
+
+  // Upcoming Events Timeline
+  const timelineTitle = el('div', { class: 'section-header', style: { marginBottom: 'var(--space-4)', marginTop: 'var(--space-8)' } },
+    el('div', {},
+      el('h3', { class: 'section-header__title' }, 'Upcoming Demand Gen Events'),
+      el('p', { class: 'section-header__subtitle' }, 'Next 60 days')
+    )
+  );
+
+  const now = new Date();
+  const sixtyDaysOut = new Date(now);
+  sixtyDaysOut.setDate(sixtyDaysOut.getDate() + 60);
+
+  const timelineEvents = upcomingEvents
+    .filter(evt => {
+      const d = new Date(evt.event_date);
+      return d >= now && d <= sixtyDaysOut;
+    })
+    .sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
+
+  const getPartnerName = (pid) => {
+    if (!pid) return 'All Partners';
+    const ps = partnerStats.find(p => p.partner.partner_id === pid);
+    return ps ? ps.partner.display_name : pid;
+  };
+
+  const timelineCards = timelineEvents.map(evt => {
+    const checklistItems = parseChecklist(evt.checklist, evt.event_type);
+    const doneCount = checklistItems.filter(i => i.done).length;
+    const totalTasks = checklistItems.length;
+    const pct = totalTasks > 0 ? Math.round((doneCount / totalTasks) * 100) : 0;
+
+    return el('div', {
+      class: 'timeline-card',
+      onClick: () => openEventModal(evt, viewContainer),
+    },
+      el('div', { class: 'timeline-card__date-col' },
+        el('div', { class: 'timeline-card__month' },
+          new Date(evt.event_date).toLocaleDateString('en-US', { month: 'short' })
+        ),
+        el('div', { class: 'timeline-card__day' },
+          String(new Date(evt.event_date).getDate())
+        )
+      ),
+      el('div', { class: 'timeline-card__content' },
+        el('div', { class: 'timeline-card__title' }, evt.title),
+        el('div', { class: 'timeline-card__details' },
+          el('span', {
+            class: 'badge badge--xs',
+            style: { background: EVENT_TYPE_COLORS[evt.event_type] || '#9B9A9B', color: '#fff' }
+          }, evt.event_type),
+          el('span', { class: 'timeline-card__partner' }, getPartnerName(evt.partner_id)),
+          evt.location
+            ? el('span', { class: 'timeline-card__location' }, evt.location)
+            : null,
+        ),
+        totalTasks > 0
+          ? el('div', { class: 'timeline-card__checklist' },
+              el('div', { class: 'timeline-card__checklist-bar' },
+                el('div', { class: 'timeline-card__checklist-fill', style: { width: `${pct}%` } })
+              ),
+              el('span', { class: 'timeline-card__checklist-text' }, `${doneCount}/${totalTasks} tasks`)
+            )
+          : null
+      )
+    );
+  });
+
+  container.appendChild(partnerHubTitle);
+
+  if (partnerCards.length > 0) {
+    container.appendChild(el('div', { class: 'activity-grid' }, ...partnerCards));
+  } else {
+    container.appendChild(el('div', { class: 'empty-state' },
+      el('div', { class: 'empty-state__title' }, 'No partner activity yet'),
+      el('div', { class: 'empty-state__description' }, 'Deals and events will appear here.')
+    ));
+  }
+
+  container.appendChild(timelineTitle);
+
+  if (timelineCards.length > 0) {
+    container.appendChild(el('div', { class: 'timeline-list' }, ...timelineCards));
+  } else {
+    container.appendChild(el('div', { class: 'empty-state' },
+      el('div', { class: 'empty-state__title' }, 'No upcoming events'),
+      el('div', { class: 'empty-state__description' }, 'Events in the next 60 days will appear here.')
+    ));
+  }
+}
+
+// ============================================
+// Partners View (Grid + Map — original dashboard)
+// ============================================
+
+function buildPartnersView(container, partnerList, partnerStats, typeData, uniqueTypes, totalPipeline, opportunities) {
   // Build thumbnail elements
   const thumbElements = partnerStats.map(({ partner, stats }) => partnerThumbnail(partner, stats));
 
@@ -87,7 +339,6 @@ function renderDashboard(container, partners, opportunities) {
     style: { maxWidth: '320px' },
   });
 
-  // Filter function
   function filterPartners() {
     const query = searchInput.value.toLowerCase().trim();
     thumbElements.forEach((thumb, i) => {
@@ -173,29 +424,22 @@ function renderDashboard(container, partners, opportunities) {
     el('div', { id: 'leaflet-map', class: 'leaflet-map-container' })
   );
 
-  const content = el('div', {},
-    // Summary stats
-    el('div', { class: 'stats-grid stagger' },
-      statCard('Total Partners', partnerList.length),
-      statCard('Total Pipeline', formatCurrency(totalPipeline)),
-      statCard('Revenue Won', formatCurrency(wonValue))
-    ),
+  container.appendChild(
+    el('div', {},
+      // Type distribution section
+      el('div', { class: 'type-distribution' },
+        donut,
+        el('div', { class: 'type-breakdown' }, ...typeCards)
+      ),
 
-    // Type distribution section
-    el('div', { class: 'type-distribution' },
-      donut,
-      el('div', { class: 'type-breakdown' }, ...typeCards)
-    ),
+      // View toggle
+      el('div', { class: 'view-toggle' }, gridBtn, mapBtn),
 
-    // View toggle
-    el('div', { class: 'view-toggle' }, gridBtn, mapBtn),
-
-    // Views
-    gridView,
-    mapView,
+      // Views
+      gridView,
+      mapView,
+    )
   );
-
-  mount(container, content);
 
   function switchView(view) {
     const gv = document.getElementById('dashboard-grid-view');

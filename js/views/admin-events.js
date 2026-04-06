@@ -12,6 +12,7 @@ import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { statCard } from '../components/card.js';
+import { parseChecklist, renderChecklist } from '../components/checklist.js';
 
 export const title = 'Events';
 
@@ -81,7 +82,7 @@ function getPartnerName(partnerId) {
 
 function renderView(container, events) {
   let activeView = 'board';
-  let filters = { search: '', partner: '', type: '', status: '' };
+  let filters = { search: '', partners: new Set(), type: '', status: '' };
 
   // Calendar month state — persisted across filter changes and view switches
   const today = new Date();
@@ -90,7 +91,11 @@ function renderView(container, events) {
 
   function getFiltered() {
     return events.filter(evt => {
-      if (filters.partner && evt.partner_id !== filters.partner) return false;
+      if (filters.partners.size > 0) {
+        // If event has no partner, only show if 'all' partners chip includes it
+        if (!evt.partner_id && !filters.partners.has('__none__')) return false;
+        if (evt.partner_id && !filters.partners.has(evt.partner_id)) return false;
+      }
       if (filters.type && evt.event_type !== filters.type) return false;
       if (filters.status && evt.status !== filters.status) return false;
       if (filters.search) {
@@ -109,6 +114,93 @@ function renderView(container, events) {
   const inProgress = events.filter(e => e.status === 'In Progress').length;
   const completed = events.filter(e => e.status === 'Completed').length;
 
+  // Compute event counts per partner for chips
+  const partnerEventCounts = {};
+  events.forEach(evt => {
+    const pid = evt.partner_id || '__none__';
+    partnerEventCounts[pid] = (partnerEventCounts[pid] || 0) + 1;
+  });
+
+  // Partner chip filters
+  const PARTNER_TYPE_COLORS = {
+    'Technology': '#1a73e8', 'OEM': '#ECB22E',
+    'MSP/SI': '#69BE28', 'MENA Regional Distributor': '#E01E5A',
+  };
+
+  const chipContainer = el('div', { class: 'partner-chips' });
+
+  // "All" chip
+  const allChip = el('button', {
+    class: 'partner-chip partner-chip--active',
+    onClick: () => {
+      filters.partners.clear();
+      updateChipStates();
+      refreshContent();
+    },
+  },
+    el('span', { class: 'partner-chip__name' }, 'All Partners'),
+    el('span', { class: 'partner-chip__count' }, String(events.length))
+  );
+  allChip.dataset.partnerId = '__all__';
+  chipContainer.appendChild(allChip);
+
+  // Per-partner chips
+  const partnerChips = [];
+  (cachedPartners || []).forEach(p => {
+    const count = partnerEventCounts[p.partner_id] || 0;
+    if (count === 0) return; // Only show partners with events
+    const color = PARTNER_TYPE_COLORS[p.partner_type] || '#9B9A9B';
+    const chip = el('button', {
+      class: 'partner-chip',
+      onClick: () => {
+        if (filters.partners.has(p.partner_id)) {
+          filters.partners.delete(p.partner_id);
+        } else {
+          filters.partners.add(p.partner_id);
+        }
+        updateChipStates();
+        refreshContent();
+      },
+    },
+      el('span', { class: 'partner-chip__dot', style: { background: color } }),
+      el('span', { class: 'partner-chip__name' }, p.display_name),
+      el('span', { class: 'partner-chip__count' }, String(count))
+    );
+    chip.dataset.partnerId = p.partner_id;
+    partnerChips.push(chip);
+    chipContainer.appendChild(chip);
+  });
+
+  // "No Partner" chip if any events have no partner
+  if (partnerEventCounts['__none__']) {
+    const noneChip = el('button', {
+      class: 'partner-chip',
+      onClick: () => {
+        if (filters.partners.has('__none__')) {
+          filters.partners.delete('__none__');
+        } else {
+          filters.partners.add('__none__');
+        }
+        updateChipStates();
+        refreshContent();
+      },
+    },
+      el('span', { class: 'partner-chip__name' }, 'All Partners (shared)'),
+      el('span', { class: 'partner-chip__count' }, String(partnerEventCounts['__none__']))
+    );
+    noneChip.dataset.partnerId = '__none__';
+    partnerChips.push(noneChip);
+    chipContainer.appendChild(noneChip);
+  }
+
+  function updateChipStates() {
+    const isAll = filters.partners.size === 0;
+    allChip.classList.toggle('partner-chip--active', isAll);
+    partnerChips.forEach(chip => {
+      chip.classList.toggle('partner-chip--active', filters.partners.has(chip.dataset.partnerId));
+    });
+  }
+
   // Filter controls
   const searchInput = el('input', {
     class: 'search-bar__input',
@@ -117,20 +209,20 @@ function renderView(container, events) {
     onInput: debounce((e) => { filters.search = e.target.value; refreshContent(); }, 200),
   });
 
-  const partnerSelect = el('select', {
-    class: 'form-select filter-bar__select',
-    onChange: (e) => { filters.partner = e.target.value; refreshContent(); },
-  },
-    el('option', { value: '' }, 'All Partners'),
-    ...(cachedPartners || []).map(p => el('option', { value: p.partner_id }, p.display_name))
-  );
-
   const typeSelect = el('select', {
     class: 'form-select filter-bar__select',
     onChange: (e) => { filters.type = e.target.value; refreshContent(); },
   },
     el('option', { value: '' }, 'All Types'),
     ...EVENT_TYPES.map(t => el('option', { value: t }, t))
+  );
+
+  const statusSelect = el('select', {
+    class: 'form-select filter-bar__select',
+    onChange: (e) => { filters.status = e.target.value; refreshContent(); },
+  },
+    el('option', { value: '' }, 'All Statuses'),
+    ...EVENT_STATUSES.map(s => el('option', { value: s }, s))
   );
 
   // View toggle buttons
@@ -163,14 +255,17 @@ function renderView(container, events) {
       statCard('Completed', completed)
     ),
 
+    // Partner chip filters
+    chipContainer,
+
     // Filters + view toggle
     el('div', { class: 'filter-bar' },
       el('div', { class: 'filter-bar__search' },
         el('span', { class: 'search-bar__icon', html: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M12.5 12.5L16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
         searchInput
       ),
-      partnerSelect,
       typeSelect,
+      statusSelect,
       el('div', { class: 'view-toggle', style: { marginBottom: '0' } }, boardBtn, calendarBtn, listBtn),
     ),
 
@@ -257,6 +352,7 @@ function renderBoard(events) {
           evt.event_id, evt.title, evt.description, evt.event_date,
           evt.end_date || evt.event_date, evt.event_type, evt.location,
           evt.url, evt.created_by, evt.created_at, status, evt.partner_id || '',
+          evt.checklist || '',
         ];
 
         if (isConfigured()) {
@@ -279,10 +375,32 @@ function renderBoard(events) {
 }
 
 function createEventCard(evt) {
+  // Checklist progress
+  const checklistItems = parseChecklist(evt.checklist, evt.event_type);
+  const doneCount = checklistItems.filter(i => i.done).length;
+  const totalTasks = checklistItems.length;
+  const pct = totalTasks > 0 ? Math.round((doneCount / totalTasks) * 100) : 0;
+
+  const actions = el('div', { class: 'kanban__card-actions' },
+    el('button', {
+      class: 'kanban__card-action-btn',
+      title: 'Edit',
+      onClick: (e) => { e.stopPropagation(); openEventModal(evt, document.getElementById('view-container')); },
+      html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M10.5 1.5l2 2-8 8H2.5v-2l8-8z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    }),
+    el('button', {
+      class: 'kanban__card-action-btn kanban__card-action-btn--danger',
+      title: 'Delete',
+      onClick: (e) => { e.stopPropagation(); handleDelete(evt); },
+      html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M5 4V2.5h4V4M5.5 6v4M8.5 6v4M3 4l.5 8h7l.5-8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    }),
+  );
+
   const card = el('div', {
     class: 'kanban__card',
     draggable: 'true',
   },
+    actions,
     el('div', { class: 'kanban__card-title' }, evt.title),
     el('div', { class: 'kanban__card-subtitle' },
       formatDate(evt.event_date) +
@@ -296,16 +414,29 @@ function createEventCard(evt) {
     ),
     evt.location
       ? el('div', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: 'var(--space-1)' } }, evt.location)
+      : null,
+    // Checklist progress mini-bar
+    totalTasks > 0
+      ? el('div', { class: 'kanban__card-checklist', title: `${doneCount}/${totalTasks} tasks complete` },
+          el('svg', { width: '12', height: '12', viewBox: '0 0 12 12', html: '<path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' }),
+          el('span', { class: 'kanban__card-checklist-text' }, `${doneCount}/${totalTasks}`),
+          el('div', { class: 'kanban__card-checklist-bar' },
+            el('div', { class: 'kanban__card-checklist-fill', style: { width: `${pct}%` } })
+          )
+        )
       : null
   );
 
   card.addEventListener('dragstart', (e) => {
     e.dataTransfer.setData('text/plain', evt.event_id);
+    e.dataTransfer.effectAllowed = 'move';
     card.classList.add('dragging');
   });
 
   card.addEventListener('dragend', () => {
     card.classList.remove('dragging');
+    // Remove all dragover indicators
+    document.querySelectorAll('.kanban__column--dragover').forEach(col => col.classList.remove('kanban__column--dragover'));
   });
 
   card.addEventListener('click', () => {
@@ -576,6 +707,12 @@ function getStatusBadge(status) {
 export function openEventModal(event, container, onSaved) {
   const isEdit = !!event;
 
+  // Parse or initialize checklist
+  let checklistItems = parseChecklist(
+    isEdit ? event.checklist : null,
+    isEdit ? event.event_type : 'Other'
+  );
+
   const partnerOptions = [
     { value: '', label: 'All Partners (no specific partner)' },
     ...(cachedPartners || []).map(p => ({ value: p.partner_id, label: p.display_name })),
@@ -620,16 +757,45 @@ export function openEventModal(event, container, onSaved) {
     description: event.description,
   } : {};
 
+  // Build the checklist UI
+  const checklistSection = el('div', { class: 'checklist-section' },
+    el('div', { class: 'checklist-section__header' },
+      el('h3', { class: 'checklist-section__title' }, 'Event Checklist'),
+      el('p', { class: 'checklist-section__subtitle' }, 'Track tasks for this event')
+    ),
+  );
+
+  const checklistWidget = renderChecklist(checklistItems, (updatedItems) => {
+    checklistItems = updatedItems;
+    // Auto-save checklist if editing existing event
+    if (isEdit) {
+      const checklistJson = JSON.stringify(checklistItems);
+      const values = [
+        event.event_id, event.title, event.description, event.event_date,
+        event.end_date || event.event_date, event.event_type, event.location,
+        event.url, event.created_by, event.created_at, event.status || 'Upcoming',
+        event.partner_id || '', checklistJson,
+      ];
+      if (isConfigured()) {
+        updateRow(CONFIG.SHEET_EVENTS, event._rowIndex, values).catch(() => {});
+      } else {
+        updateDemoRow(CONFIG.SHEET_EVENTS, event._rowIndex, values);
+      }
+    }
+  });
+  checklistSection.appendChild(checklistWidget);
+
   const form = buildForm(fields, async (data) => {
     try {
       const user = getCurrentUser();
+      const checklistJson = JSON.stringify(checklistItems);
 
       if (isEdit) {
         const values = [
           event.event_id, data.title, data.description, data.event_date,
           data.end_date || data.event_date, data.event_type, data.location,
           data.url, event.created_by, event.created_at, data.status || 'Upcoming',
-          data.partner_id || '',
+          data.partner_id || '', checklistJson,
         ];
 
         if (isConfigured()) {
@@ -643,7 +809,7 @@ export function openEventModal(event, container, onSaved) {
           uuid('evt'), data.title, data.description, data.event_date,
           data.end_date || data.event_date, data.event_type, data.location,
           data.url, user.partner_id, nowISO(), data.status || 'Upcoming',
-          data.partner_id || '',
+          data.partner_id || '', checklistJson,
         ];
 
         if (isConfigured()) {
@@ -661,9 +827,12 @@ export function openEventModal(event, container, onSaved) {
     }
   }, initialValues);
 
+  // Combine form and checklist in modal content
+  const modalContent = el('div', {}, form, checklistSection);
+
   openModal({
     title: isEdit ? 'Edit Event' : 'New Demand Gen Event',
-    content: form,
+    content: modalContent,
     footer: [
       el('button', { class: 'btn btn--secondary', onClick: closeModal }, 'Cancel'),
       el('button', {
