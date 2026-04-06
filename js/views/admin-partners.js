@@ -65,7 +65,8 @@ function renderView(container, partners) {
                 p.display_name?.toLowerCase().includes(q) ||
                 p.username?.toLowerCase().includes(q) ||
                 p.partner_type?.toLowerCase().includes(q) ||
-                p.region?.toLowerCase().includes(q)
+                p.region?.toLowerCase().includes(q) ||
+                p.hq_location?.toLowerCase().includes(q)
               );
               renderCards(filtered);
             }, 200),
@@ -125,8 +126,8 @@ function renderCards(partners) {
       el('div', { class: 'partner-mgmt-card__details' },
         detailRow('Type', p.partner_type || '—'),
         detailRow('Region', p.region || '—'),
+        detailRow('HQ', p.hq_location || '—'),
         detailRow('Status', null, el('span', { class: `badge badge--xs badge--${p.status?.toLowerCase() || 'active'}` }, p.status || 'active')),
-        detailRow('Joined', formatDate(p.created_at)),
       ),
 
       // Card actions
@@ -192,7 +193,7 @@ function openPartnerModal(partner) {
     {
       name: 'partner_type', label: 'Partner Type', type: 'select', required: true,
       placeholder: 'Select type...',
-      options: ['Technology', 'MSP/SI'],
+      options: ['Technology', 'MSP/SI', 'OEM', 'MENA Regional Distributor'],
     },
     {
       name: 'tier', label: 'Tier', type: 'select', required: true,
@@ -208,6 +209,7 @@ function openPartnerModal(partner) {
       options: ['active', 'inactive'],
     },
     { type: 'row-end' },
+    { name: 'hq_location', label: 'HQ Location', placeholder: 'e.g., Chicago, Illinois, USA' },
   ];
 
   const initialValues = isEdit ? {
@@ -217,6 +219,7 @@ function openPartnerModal(partner) {
     tier: partner.tier,
     region: partner.region,
     status: partner.status,
+    hq_location: partner.hq_location,
   } : {};
 
   const form = buildForm(fields, async (data) => {
@@ -233,6 +236,7 @@ function openPartnerModal(partner) {
           partner.is_admin || 'FALSE',
           partner.password_hash || '',
           data.status,
+          data.hq_location || '',
         ];
 
         if (isConfigured()) {
@@ -255,6 +259,7 @@ function openPartnerModal(partner) {
           'FALSE',
           passwordHash,
           data.status || 'active',
+          data.hq_location || '',
         ];
 
         if (isConfigured()) {
