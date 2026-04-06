@@ -20,6 +20,15 @@ export const CONFIG = {
   SPREADSHEET_ID: 'YOUR_SPREADSHEET_ID_HERE',
   SHEETS_BASE_URL: 'https://sheets.googleapis.com/v4/spreadsheets',
 
+  // Google OAuth (for Admin SSO login)
+  // Setup: Google Cloud Console > APIs & Services > Credentials > Create OAuth Client ID
+  // Application type: Web application
+  // Authorized JavaScript origins: your GitHub Pages URL (e.g., https://yourusername.github.io)
+  GOOGLE_CLIENT_ID: 'YOUR_GOOGLE_CLIENT_ID_HERE',
+
+  // Allowed admin email(s) — only these Google accounts can log in as admin
+  ADMIN_EMAILS: ['your-email@gmail.com'],
+
   // Sheet names (must match your Google Spreadsheet tab names)
   SHEET_PARTNERS: 'Partners',
   SHEET_OPPORTUNITIES: 'Opportunities',
