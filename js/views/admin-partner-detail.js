@@ -80,9 +80,9 @@ function renderDetail(container, partner, opportunities, partnerEvents) {
 
     // Partner header
     el('div', { class: 'detail-header' },
-      partner.logo_url
-        ? el('img', { src: partner.logo_url, class: 'partner-avatar partner-avatar--img partner-avatar--detail' })
-        : null,
+      el('div', { class: `partner-avatar partner-avatar--${tierClass}` },
+        (partner.display_name || '').split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || '?'
+      ),
       el('div', { class: 'detail-header__info' },
         el('div', { style: { display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-2)' } },
           el('h2', { class: 'detail-header__name' }, partner.display_name),
