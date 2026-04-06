@@ -5,6 +5,25 @@
 import { el } from '../utils/dom.js';
 
 /**
+ * Normalize any date string to YYYY-MM-DD format for HTML date inputs.
+ * Handles ISO dates, US dates (M/D/YYYY), and other formats parseable by Date().
+ */
+function toISODateString(str) {
+  if (!str) return '';
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  // Strip time portion if present (e.g. "2026-04-10T00:00:00")
+  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) return str.split('T')[0];
+  // Try parsing with Date constructor (handles "4/29/2026", "April 29, 2026", etc.)
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Build a form from field definitions.
  * @param {Array} fields - Array of field configs
  * @param {Function} onSubmit - Called with form data object
@@ -66,14 +85,26 @@ function createFormGroup(field, initialValue) {
   let input;
 
   switch (field.type) {
-    case 'select':
+    case 'select': {
+      // If the current value isn't in the options, add it so the form shows the correct value
+      const optionsList = [...field.options];
+      if (value) {
+        const valueStr = String(value);
+        const exists = optionsList.some(opt =>
+          (typeof opt === 'string' ? opt : opt.value) === valueStr
+        );
+        if (!exists) {
+          optionsList.unshift({ value: valueStr, label: valueStr });
+        }
+      }
+
       input = el('select', {
         class: 'form-select',
         id: `field-${field.name}`,
         name: field.name,
       },
         field.placeholder ? el('option', { value: '', disabled: true }, field.placeholder) : null,
-        ...field.options.map(opt => {
+        ...optionsList.map(opt => {
           const optValue = typeof opt === 'string' ? opt : opt.value;
           const optLabel = typeof opt === 'string' ? opt : opt.label;
           return el('option', { value: optValue }, optLabel);
@@ -86,6 +117,7 @@ function createFormGroup(field, initialValue) {
         input.selectedIndex = 0;
       }
       break;
+    }
 
     case 'textarea':
       input = el('textarea', {
@@ -103,8 +135,11 @@ function createFormGroup(field, initialValue) {
         id: `field-${field.name}`,
         name: field.name,
       });
-      // Must set value via property, not attribute, for date inputs to display correctly
-      if (value) input.value = String(value);
+      // Normalize to YYYY-MM-DD (HTML date inputs only accept this format)
+      if (value) {
+        const normalized = toISODateString(String(value));
+        if (normalized) input.value = normalized;
+      }
       break;
 
     case 'number':
