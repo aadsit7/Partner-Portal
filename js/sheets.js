@@ -215,7 +215,7 @@ export async function deleteRow(sheetName, rowIndex) {
 // ============================================
 
 const SHEET_HEADERS = {
-  [CONFIG.SHEET_PARTNERS]: ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status'],
+  [CONFIG.SHEET_PARTNERS]: ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status', 'logo_url'],
   [CONFIG.SHEET_OPPORTUNITIES]: ['opportunity_id', 'partner_id', 'deal_name', 'customer_name', 'deal_value', 'status', 'stage', 'expected_close', 'description', 'created_at', 'updated_at'],
   [CONFIG.SHEET_EVENTS]: ['event_id', 'title', 'description', 'event_date', 'end_date', 'event_type', 'location', 'url', 'created_by', 'created_at', 'status', 'partner_id'],
 };
@@ -352,14 +352,14 @@ export async function testConnection() {
 // ============================================
 
 let demoPartners = [
-  ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status'],
-  ['p_admin001', 'admin', 'Portal Admin', '', 'Gold', 'Global', '2026-01-01', 'TRUE', '', 'active'],
-  ['p_nerdio1', 'nerdio', 'Nerdio', 'Technology', 'Gold', 'North America', '2026-01-15', 'FALSE', '', 'active'],
-  ['p_ridgep1', 'ridgepoint', 'RidgePoint', 'MSP/SI', 'Silver', 'North America', '2026-02-01', 'FALSE', '', 'active'],
-  ['p_insigh1', 'insight', 'Insight', 'MSP/SI', 'Gold', 'North America', '2026-02-10', 'FALSE', '', 'active'],
-  ['p_syscd01', 'systemcenterdudes', 'System Center Dudes', 'Technology', 'Bronze', 'EMEA', '2026-02-20', 'FALSE', '', 'active'],
-  ['p_gitrub1', 'gitrubix', 'GitRubix', 'Technology', 'Silver', 'APAC', '2026-03-01', 'FALSE', '', 'active'],
-  ['p_qualc01', 'qualcomm', 'Qualcomm', 'Technology', 'Gold', 'North America', '2026-03-10', 'FALSE', '', 'active'],
+  ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status', 'logo_url'],
+  ['p_admin001', 'admin', 'Portal Admin', '', 'Gold', 'Global', '2026-01-01', 'TRUE', '', 'active', ''],
+  ['p_nerdio1', 'nerdio', 'Nerdio', 'Technology', 'Gold', 'North America', '2026-01-15', 'FALSE', '', 'active', ''],
+  ['p_ridgep1', 'ridgepoint', 'RidgePoint', 'MSP/SI', 'Silver', 'North America', '2026-02-01', 'FALSE', '', 'active', ''],
+  ['p_insigh1', 'insight', 'Insight', 'MSP/SI', 'Gold', 'North America', '2026-02-10', 'FALSE', '', 'active', ''],
+  ['p_syscd01', 'systemcenterdudes', 'System Center Dudes', 'Technology', 'Bronze', 'EMEA', '2026-02-20', 'FALSE', '', 'active', ''],
+  ['p_gitrub1', 'gitrubix', 'GitRubix', 'Technology', 'Silver', 'APAC', '2026-03-01', 'FALSE', '', 'active', ''],
+  ['p_qualc01', 'qualcomm', 'Qualcomm', 'Technology', 'Gold', 'North America', '2026-03-10', 'FALSE', '', 'active', ''],
 ];
 
 let demoOpportunities = [
@@ -393,7 +393,7 @@ let demoEvents = [
 // ============================================
 
 const DEMO_STORAGE_KEY = 'pp_demo_data';
-const DEMO_SCHEMA_VERSION = 3; // Bump when demo data structure changes
+const DEMO_SCHEMA_VERSION = 4; // Bump when demo data structure changes
 
 function persistDemoData() {
   try {
