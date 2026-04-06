@@ -57,7 +57,7 @@ function renderView(container, partners) {
               filtered = partners.filter(p =>
                 p.display_name?.toLowerCase().includes(q) ||
                 p.username?.toLowerCase().includes(q) ||
-                p.contact_email?.toLowerCase().includes(q) ||
+                p.partner_type?.toLowerCase().includes(q) ||
                 p.region?.toLowerCase().includes(q)
               );
               updateTable(filtered);
@@ -102,7 +102,7 @@ function updateTable(partners) {
       el('thead', {},
         el('tr', {},
           el('th', {}, 'Partner'),
-          el('th', {}, 'Contact'),
+          el('th', {}, 'Type'),
           el('th', {}, 'Tier'),
           el('th', {}, 'Region'),
           el('th', {}, 'Status'),
@@ -118,8 +118,7 @@ function updateTable(partners) {
               el('div', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' } }, p.username)
             ),
             el('td', {},
-              el('div', {}, p.contact_email),
-              el('div', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' } }, p.contact_phone)
+              el('span', { class: `badge badge--${p.partner_type === 'Technology' ? 'admin' : 'in-progress'}` }, p.partner_type || '—')
             ),
             el('td', {}, el('span', { class: `badge badge--${p.tier?.toLowerCase() || 'bronze'}` }, p.tier || 'Bronze')),
             el('td', {}, p.region),
@@ -152,32 +151,34 @@ function openPartnerModal(partner, container) {
   const isEdit = !!partner;
 
   const fields = [
-    { name: 'username', label: 'Username', required: true, placeholder: 'e.g., acme' },
-    { name: 'display_name', label: 'Company Name', required: true, placeholder: 'e.g., Acme Technologies' },
+    { name: 'username', label: 'Username', required: true, placeholder: 'e.g., nerdio' },
+    { name: 'display_name', label: 'Company Name', required: true, placeholder: 'e.g., Nerdio' },
     { type: 'row-start' },
-    { name: 'contact_email', label: 'Email', type: 'email', required: true, placeholder: 'partner@company.com' },
-    { name: 'contact_phone', label: 'Phone', type: 'tel', placeholder: '(555) 123-4567' },
-    { type: 'row-end' },
-    { type: 'row-start' },
+    {
+      name: 'partner_type', label: 'Partner Type', type: 'select', required: true,
+      placeholder: 'Select type...',
+      options: ['Technology', 'MSP/SI'],
+    },
     {
       name: 'tier', label: 'Tier', type: 'select', required: true,
       placeholder: 'Select tier...',
       options: ['Gold', 'Silver', 'Bronze'],
     },
-    { name: 'region', label: 'Region', required: true, placeholder: 'e.g., North America' },
     { type: 'row-end' },
+    { type: 'row-start' },
+    { name: 'region', label: 'Region', required: true, placeholder: 'e.g., North America' },
     {
       name: 'status', label: 'Status', type: 'select',
       default: 'active',
       options: ['active', 'inactive'],
     },
+    { type: 'row-end' },
   ];
 
   const initialValues = isEdit ? {
     username: partner.username,
     display_name: partner.display_name,
-    contact_email: partner.contact_email,
-    contact_phone: partner.contact_phone,
+    partner_type: partner.partner_type,
     tier: partner.tier,
     region: partner.region,
     status: partner.status,
@@ -190,8 +191,7 @@ function openPartnerModal(partner, container) {
           partner.partner_id,
           data.username,
           data.display_name,
-          data.contact_email,
-          data.contact_phone,
+          data.partner_type,
           data.tier,
           data.region,
           partner.created_at,
@@ -213,8 +213,7 @@ function openPartnerModal(partner, container) {
           uuid('p'),
           data.username,
           data.display_name,
-          data.contact_email,
-          data.contact_phone,
+          data.partner_type,
           data.tier,
           data.region,
           nowISO(),

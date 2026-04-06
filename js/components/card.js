@@ -62,7 +62,7 @@ export function partnerCard(partner, stats, { onClick } = {}) {
     el('div', { class: 'card__header' },
       el('div', {},
         el('div', { class: 'card__title' }, partner.display_name),
-        el('div', { class: 'card__subtitle' }, partner.contact_email)
+        el('div', { class: 'card__subtitle' }, partner.partner_type || '—')
       ),
       el('span', { class: `badge badge--${tierClass}` }, partner.tier)
     ),
