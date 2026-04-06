@@ -142,37 +142,7 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
           )
     ),
 
-    // Section 2: Call Transcripts
-    el('div', { class: 'detail-section' },
-      el('div', { class: 'detail-section__header' },
-        el('h3', { class: 'detail-section__title' }, 'Call Transcripts'),
-        el('div', { style: { display: 'flex', gap: 'var(--space-2)' } },
-          transcripts.length > 0
-            ? el('button', {
-                class: 'btn btn--secondary btn--sm',
-                onClick: () => downloadAllTranscriptsPDF(partner, transcripts),
-              }, 'Export All PDF')
-            : null,
-          el('button', {
-            class: 'btn btn--primary btn--sm',
-            onClick: () => openTranscriptModal(partner, null, transcripts, () => reRender(partner.partner_id)),
-          },
-            el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-            'Add Transcript'
-          ),
-        )
-      ),
-      transcripts.length > 0
-        ? el('div', { class: 'transcript-list' },
-            ...transcripts.map(t => transcriptCard(t, partner))
-          )
-        : el('div', { class: 'empty-state', style: { padding: 'var(--space-8) var(--space-4)' } },
-            el('div', { class: 'empty-state__title' }, 'No transcripts yet'),
-            el('div', { class: 'empty-state__description' }, 'Click "Add Transcript" to log a call with this partner.')
-          )
-    ),
-
-    // Section 3: Opportunities
+    // Section 2: Opportunities
     el('div', { class: 'detail-section' },
       el('div', { class: 'detail-section__header' },
         el('h3', { class: 'detail-section__title' }, `Opportunities (${opportunities.length})`),
@@ -207,6 +177,36 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
         : el('div', { class: 'empty-state', style: { padding: 'var(--space-8) var(--space-4)' } },
             el('div', { class: 'empty-state__title' }, 'No deals registered'),
             el('div', { class: 'empty-state__description' }, 'Click "New Opportunity" to add a deal for this partner.')
+          )
+    ),
+
+    // Section 3: Call Transcripts
+    el('div', { class: 'detail-section' },
+      el('div', { class: 'detail-section__header' },
+        el('h3', { class: 'detail-section__title' }, 'Call Transcripts'),
+        el('div', { style: { display: 'flex', gap: 'var(--space-2)' } },
+          transcripts.length > 0
+            ? el('button', {
+                class: 'btn btn--secondary btn--sm',
+                onClick: () => downloadAllTranscriptsPDF(partner, transcripts),
+              }, 'Export All PDF')
+            : null,
+          el('button', {
+            class: 'btn btn--primary btn--sm',
+            onClick: () => openTranscriptModal(partner, null, transcripts, () => reRender(partner.partner_id)),
+          },
+            el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
+            'Add Transcript'
+          ),
+        )
+      ),
+      transcripts.length > 0
+        ? el('div', { class: 'transcript-list' },
+            ...transcripts.map(t => transcriptCard(t, partner))
+          )
+        : el('div', { class: 'empty-state', style: { padding: 'var(--space-8) var(--space-4)' } },
+            el('div', { class: 'empty-state__title' }, 'No transcripts yet'),
+            el('div', { class: 'empty-state__description' }, 'Click "Add Transcript" to log a call with this partner.')
           )
     ),
   );
