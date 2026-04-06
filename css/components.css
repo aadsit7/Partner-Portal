@@ -1058,3 +1058,88 @@
   font-size: 10px;
   padding: 1px 6px;
 }
+
+/* ---------- Partner Thumbnail Grid ---------- */
+.partner-thumb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--space-6);
+}
+
+.partner-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--space-6) var(--space-4) var(--space-5);
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-light);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+}
+
+.partner-thumb:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-3px);
+  border-color: var(--color-primary);
+}
+
+.partner-thumb__name {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.partner-thumb__stats {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-top: var(--space-2);
+}
+
+/* ---------- Partner Avatar ---------- */
+.partner-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  color: white;
+  flex-shrink: 0;
+}
+
+.partner-avatar--gold {
+  background: linear-gradient(135deg, #ECB22E, #d4a017);
+}
+
+.partner-avatar--silver {
+  background: linear-gradient(135deg, #9B9A9B, #7a7a7a);
+}
+
+.partner-avatar--bronze {
+  background: linear-gradient(135deg, #b4783c, #8b5e30);
+}
+
+/* ---------- Detail Sections (inline, no tabs) ---------- */
+.detail-section {
+  margin-bottom: var(--space-8);
+}
+
+.detail-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+}
+
+.detail-section__title {
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  color: var(--color-text-primary);
+}

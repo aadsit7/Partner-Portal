@@ -8,15 +8,12 @@ import { el, mount, formatCurrency } from '../utils/dom.js';
 import { formatDate } from '../utils/date.js';
 import { navigate } from '../router.js';
 import { dealCard, statCard } from '../components/card.js';
-import { renderCalendar } from '../components/calendar.js';
 import { openModal } from '../components/modal.js';
 import { openEventModal } from './admin-events.js';
 import { openOppModal } from './admin-opportunities.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 
 export const title = 'Partner Detail';
-
-let calendarInstance = null;
 
 export async function render(container, params) {
   const partnerId = params?.id;
@@ -46,9 +43,8 @@ export async function render(container, params) {
     }
 
     const partnerOpps = opportunities.filter(o => o.partner_id === partnerId);
-    // Events assigned to this partner OR global events (no partner_id)
     const partnerEvents = events.filter(e => !e.partner_id || e.partner_id === partnerId);
-    renderDetail(container, partner, partnerOpps, partnerEvents, events);
+    renderDetail(container, partner, partnerOpps, partnerEvents);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },
       el('div', { class: 'empty-state__title' }, 'Error loading data'),
@@ -62,11 +58,14 @@ function reRender(partnerId) {
   render(viewContainer, { id: partnerId });
 }
 
-function renderDetail(container, partner, opportunities, partnerEvents, allEvents) {
+function renderDetail(container, partner, opportunities, partnerEvents) {
   const tierClass = partner.tier?.toLowerCase() || 'bronze';
   const totalValue = opportunities.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
   const wonDeals = opportunities.filter(o => o.status === 'Won');
   const wonValue = wonDeals.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
+
+  // Sort events by date descending
+  const sortedEvents = [...partnerEvents].sort((a, b) => new Date(b.event_date) - new Date(a.event_date));
 
   const content = el('div', {},
     // Back button
@@ -107,156 +106,74 @@ function renderDetail(container, partner, opportunities, partnerEvents, allEvent
       )
     ),
 
-    // Tab bar
-    el('div', { class: 'tab-bar', id: 'detail-tabs' },
-      el('button', {
-        class: 'tab-bar__tab tab-bar__tab--active',
-        dataset: { tab: 'opportunities' },
-        onClick: (e) => switchTab(e.currentTarget, 'opportunities'),
-      }, `Opportunities (${opportunities.length})`),
-      el('button', {
-        class: 'tab-bar__tab',
-        dataset: { tab: 'demandgen' },
-        onClick: (e) => switchTab(e.currentTarget, 'demandgen'),
-      }, 'Demand Gen'),
-      el('button', {
-        class: 'tab-bar__tab',
-        dataset: { tab: 'resources' },
-        onClick: (e) => switchTab(e.currentTarget, 'resources'),
-      }, 'Resources'),
+    // Section 1: Joint Lead Generation Events
+    el('div', { class: 'detail-section' },
+      el('div', { class: 'detail-section__header' },
+        el('h3', { class: 'detail-section__title' }, 'Joint Lead Generation Events'),
+        el('button', {
+          class: 'btn btn--primary btn--sm',
+          onClick: () => {
+            openEventModal(null, container, () => reRender(partner.partner_id));
+            setTimeout(() => {
+              const sel = document.querySelector('#field-partner_id');
+              if (sel) sel.value = partner.partner_id;
+            }, 50);
+          },
+        },
+          el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
+          'New Event'
+        )
+      ),
+      sortedEvents.length > 0
+        ? el('div', { class: 'card-grid stagger' },
+            ...sortedEvents.map(evt => eventCard(evt))
+          )
+        : el('div', { class: 'empty-state', style: { padding: 'var(--space-8) var(--space-4)' } },
+            el('div', { class: 'empty-state__title' }, 'No events yet'),
+            el('div', { class: 'empty-state__description' }, 'Click "New Event" to create a joint lead generation event for this partner.')
+          )
     ),
 
-    // Tab panels
-    el('div', { id: 'tab-panels' },
-      el('div', { class: 'tab-panel tab-panel--active', id: 'panel-opportunities' },
-        renderOpportunitiesPanel(opportunities, partner)
+    // Section 2: Opportunities
+    el('div', { class: 'detail-section' },
+      el('div', { class: 'detail-section__header' },
+        el('h3', { class: 'detail-section__title' }, `Opportunities (${opportunities.length})`),
+        el('button', {
+          class: 'btn btn--primary btn--sm',
+          onClick: () => {
+            openOppModal(null, null, () => reRender(partner.partner_id));
+            setTimeout(() => {
+              const sel = document.querySelector('#field-partner_id');
+              if (sel) { sel.value = partner.partner_id; }
+            }, 50);
+          },
+        },
+          el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
+          'New Opportunity'
+        )
       ),
-      el('div', { class: 'tab-panel', id: 'panel-demandgen' },
-        renderDemandGenPanel(partnerEvents, container, partner, allEvents)
+
+      el('div', { class: 'stats-grid stagger', style: { marginBottom: 'var(--space-6)' } },
+        statCard('Total Deals', opportunities.length),
+        statCard('Active Pipeline', formatCurrency(totalValue)),
+        statCard('Deals Won', wonDeals.length),
+        statCard('Revenue Won', formatCurrency(wonValue))
       ),
-      el('div', { class: 'tab-panel', id: 'panel-resources' },
-        renderResourcesPanel()
-      ),
-    )
+
+      opportunities.length > 0
+        ? el('div', { class: 'card-grid stagger' },
+            ...opportunities.map(opp => dealCard(opp, {
+              onEdit: (o) => openOppModal(o, null, () => reRender(partner.partner_id)),
+            }))
+          )
+        : el('div', { class: 'empty-state', style: { padding: 'var(--space-8) var(--space-4)' } },
+            el('div', { class: 'empty-state__title' }, 'No deals registered'),
+            el('div', { class: 'empty-state__description' }, 'Click "New Opportunity" to add a deal for this partner.')
+          )
+    ),
   );
 
   mount(container, content);
-
-  // Render calendar after DOM is in place
-  const calContainer = document.getElementById('detail-calendar-container');
-  if (calContainer) {
-    calendarInstance = renderCalendar(calContainer, partnerEvents, showEventDetail);
-  }
-}
-
-function switchTab(tabEl, tabId) {
-  const tabs = document.querySelectorAll('.tab-bar__tab');
-  tabs.forEach(t => t.classList.remove('tab-bar__tab--active'));
-  tabEl.classList.add('tab-bar__tab--active');
-
-  const panels = document.querySelectorAll('.tab-panel');
-  panels.forEach(p => p.classList.remove('tab-panel--active'));
-  const targetPanel = document.getElementById(`panel-${tabId}`);
-  if (targetPanel) targetPanel.classList.add('tab-panel--active');
-}
-
-function renderOpportunitiesPanel(opportunities, partner) {
-  const totalValue = opportunities.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
-  const wonDeals = opportunities.filter(o => o.status === 'Won');
-  const wonValue = wonDeals.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
-
-  return el('div', {},
-    // Header with action button
-    el('div', {
-      style: {
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        marginTop: 'var(--space-4)', marginBottom: 'var(--space-4)',
-      }
-    },
-      el('div', {}),
-      el('button', {
-        class: 'btn btn--primary btn--sm',
-        onClick: () => {
-          // Pre-set partner_id in the modal
-          openOppModal(null, null, () => reRender(partner.partner_id));
-          // After modal opens, set the partner selector
-          setTimeout(() => {
-            const sel = document.querySelector('#field-partner_id');
-            if (sel) { sel.value = partner.partner_id; }
-          }, 50);
-        },
-      },
-        el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-        'New Opportunity'
-      )
-    ),
-
-    el('div', { class: 'stats-grid stagger' },
-      statCard('Total Deals', opportunities.length),
-      statCard('Active Pipeline', formatCurrency(totalValue)),
-      statCard('Deals Won', wonDeals.length),
-      statCard('Revenue Won', formatCurrency(wonValue))
-    ),
-
-    opportunities.length > 0
-      ? el('div', { class: 'card-grid stagger' },
-          ...opportunities.map(opp => dealCard(opp, {
-            onEdit: (o) => openOppModal(o, null, () => reRender(partner.partner_id)),
-          }))
-        )
-      : el('div', { class: 'empty-state' },
-          el('div', { class: 'empty-state__title' }, 'No deals registered'),
-          el('div', { class: 'empty-state__description' }, 'Click "New Opportunity" to add a deal for this partner.')
-        )
-  );
-}
-
-function renderDemandGenPanel(events, container, partner, allEvents) {
-  const now = new Date();
-  const upcoming = events
-    .filter(e => new Date(e.event_date) >= now)
-    .sort((a, b) => new Date(a.event_date) - new Date(b.event_date))
-    .slice(0, 4);
-
-  return el('div', { style: { paddingTop: 'var(--space-4)' } },
-    el('div', {
-      style: {
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        marginBottom: 'var(--space-6)',
-      }
-    },
-      el('h3', {
-        style: { fontSize: 'var(--text-lg)', fontWeight: 'var(--font-semibold)' }
-      }, 'Demand Gen Events'),
-      el('button', {
-        class: 'btn btn--primary btn--sm',
-        onClick: () => {
-          openEventModal(null, container, () => reRender(partner.partner_id));
-          // Pre-set partner
-          setTimeout(() => {
-            const sel = document.querySelector('#field-partner_id');
-            if (sel) sel.value = partner.partner_id;
-          }, 50);
-        },
-      },
-        el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-        'New Event'
-      )
-    ),
-
-    upcoming.length > 0
-      ? el('div', { class: 'card-grid stagger', style: { marginBottom: 'var(--space-8)' } },
-          ...upcoming.map(evt => eventCard(evt))
-        )
-      : el('div', { style: { marginBottom: 'var(--space-8)', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' } },
-          'No upcoming events for this partner'
-        ),
-
-    el('h3', {
-      style: { fontSize: 'var(--text-lg)', fontWeight: 'var(--font-semibold)', marginBottom: 'var(--space-4)' }
-    }, 'Calendar'),
-    el('div', { id: 'detail-calendar-container' })
-  );
 }
 
 function eventCard(evt) {
@@ -309,29 +226,4 @@ function showEventDetail(evt) {
   openModal({ title: evt.title, content });
 }
 
-function renderResourcesPanel() {
-  return el('div', {
-    style: {
-      marginTop: 'var(--space-4)',
-      borderRadius: 'var(--radius-lg)',
-      overflow: 'hidden',
-      border: '1px solid var(--color-border-light)',
-    }
-  },
-    el('iframe', {
-      src: CONFIG.SUPPORT_URL,
-      style: {
-        width: '100%', height: 'calc(100vh - 380px)', border: 'none', minHeight: '500px',
-      },
-      title: 'Resources',
-      sandbox: 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox',
-    })
-  );
-}
-
-export function cleanup() {
-  if (calendarInstance) {
-    calendarInstance.destroy();
-    calendarInstance = null;
-  }
-}
+export function cleanup() {}
