@@ -1855,8 +1855,9 @@
 }
 
 .calendar__nav-btn {
-  width: 32px;
+  min-width: 32px;
   height: 32px;
+  padding: 0 var(--space-2);
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -1889,7 +1890,7 @@
 }
 
 .calendar__day {
-  min-height: 90px;
+  min-height: 100px;
   border-right: 1px solid var(--color-border-light);
   border-bottom: 1px solid var(--color-border-light);
   padding: var(--space-1);
@@ -1925,9 +1926,9 @@
 
 .calendar__event-chip {
   display: block;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: var(--font-medium);
-  padding: 2px 6px;
+  padding: 3px 6px;
   margin-top: 2px;
   border-radius: 3px;
   white-space: nowrap;
@@ -1935,11 +1936,14 @@
   text-overflow: ellipsis;
   cursor: pointer;
   color: white;
-  transition: opacity var(--transition-fast);
+  border-left: 3px solid transparent;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+  line-height: 1.3;
 }
 
 .calendar__event-chip:hover {
   opacity: 0.85;
+  transform: translateX(1px);
 }
 
 .calendar__event-chip--webinar { background: #0e8ab5; }
@@ -1947,3 +1951,45 @@
 .calendar__event-chip--conference { background: #002244; }
 .calendar__event-chip--campaign { background: #b88a0e; }
 .calendar__event-chip--other { background: #9B9A9B; }
+
+.calendar__more-events {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  padding: 1px 6px;
+  cursor: default;
+}
+
+/* Calendar Legend */
+.calendar__legend {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.calendar__legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.calendar__legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.calendar__legend-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* Calendar Empty State */
+.calendar__empty-msg {
+  text-align: center;
+  padding: var(--space-4) var(--space-6);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
