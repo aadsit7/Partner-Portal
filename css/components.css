@@ -2735,3 +2735,28 @@
   font-style: italic;
   text-align: center;
 }
+
+/* ============================================
+   Lead Source on Kanban Cards
+   ============================================ */
+
+.kanban__card-lead-source {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  font-size: 10px;
+  color: var(--color-success);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kanban__card-lead-source svg {
+  flex-shrink: 0;
+}
+
+.kanban__card-lead-source span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
