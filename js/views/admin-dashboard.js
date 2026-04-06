@@ -104,9 +104,7 @@ function partnerThumbnail(partner, stats) {
     class: 'partner-thumb',
     onClick: () => navigate(`/admin/partner-detail?id=${partner.partner_id}`),
   },
-    partner.logo_url
-      ? el('img', { src: partner.logo_url, class: 'partner-avatar partner-avatar--img' })
-      : el('div', { class: `partner-avatar partner-avatar--${tierClass}` }, initials),
+    el('div', { class: `partner-avatar partner-avatar--${tierClass}` }, initials),
     el('div', { class: 'partner-thumb__name' }, partner.display_name),
     el('span', { class: `badge badge--xs badge--${tierClass}` }, partner.tier),
     el('div', { class: 'partner-thumb__stats' },

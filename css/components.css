@@ -1126,58 +1126,10 @@
   background: linear-gradient(135deg, #b4783c, #8b5e30);
 }
 
-.partner-avatar--img {
-  width: 64px;
-  height: 64px;
-  border-radius: var(--radius-full);
-  object-fit: cover;
-  border: 2px solid var(--color-border-light);
-}
-
-.partner-avatar--detail {
-  width: 56px;
-  height: 56px;
-  flex-shrink: 0;
-}
-
-/* ---------- Logo Upload ---------- */
-.logo-upload {
-  border: 2px dashed var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.logo-upload:hover {
-  border-color: var(--color-primary-lighter);
-  background: rgba(0, 34, 68, 0.02);
-}
-
-.logo-preview {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 80px;
-}
-
-.logo-preview__img {
-  width: 80px;
-  height: 80px;
-  border-radius: var(--radius-full);
-  object-fit: cover;
-}
-
-.logo-preview__placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
+.partner-avatar--sm {
+  width: 36px;
+  height: 36px;
+  font-size: var(--text-xs);
 }
 
 /* ---------- Detail Sections (inline, no tabs) ---------- */
