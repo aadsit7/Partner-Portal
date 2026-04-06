@@ -36,6 +36,14 @@ const TYPE_CHIP_CLASS = {
   'Other': 'other',
 };
 
+const TYPE_CHIP_COLORS = {
+  'Webinar': '#0e8ab5',
+  'Workshop': '#1a8a5a',
+  'Conference': '#002244',
+  'Campaign': '#b88a0e',
+  'Other': '#9B9A9B',
+};
+
 export async function render(container) {
   setTopbarTitle('Demand Gen Events');
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
@@ -74,6 +82,11 @@ function getPartnerName(partnerId) {
 function renderView(container, events) {
   let activeView = 'board';
   let filters = { search: '', partner: '', type: '', status: '' };
+
+  // Calendar month state — persisted across filter changes and view switches
+  const today = new Date();
+  let calYear = today.getFullYear();
+  let calMonth = today.getMonth();
 
   function getFiltered() {
     return events.filter(evt => {
@@ -181,7 +194,7 @@ function renderView(container, events) {
     if (activeView === 'board') {
       viewContainer.appendChild(renderBoard(filtered));
     } else if (activeView === 'calendar') {
-      viewContainer.appendChild(renderCalendar(filtered));
+      viewContainer.appendChild(renderCalendar(filtered, calYear, calMonth, (y, m) => { calYear = y; calMonth = m; }));
     } else {
       viewContainer.appendChild(renderList(filtered));
     }
@@ -289,7 +302,6 @@ function createEventCard(evt) {
   card.addEventListener('dragstart', (e) => {
     e.dataTransfer.setData('text/plain', evt.event_id);
     card.classList.add('dragging');
-    setTimeout(() => card.classList.add('dragging'), 0);
   });
 
   card.addEventListener('dragend', () => {
@@ -307,40 +319,77 @@ function createEventCard(evt) {
 // Calendar View
 // ============================================
 
-function renderCalendar(events) {
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+
+function renderCalendar(events, year, month, setMonth) {
   const today = new Date();
-  let currentYear = today.getFullYear();
-  let currentMonth = today.getMonth();
+  let currentYear = year;
+  let currentMonth = month;
 
   const wrapper = el('div');
+
+  function navigate(delta) {
+    currentMonth += delta;
+    if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+    if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+    setMonth(currentYear, currentMonth);
+    buildCalendar();
+  }
+
+  function goToday() {
+    currentYear = today.getFullYear();
+    currentMonth = today.getMonth();
+    setMonth(currentYear, currentMonth);
+    buildCalendar();
+  }
 
   function buildCalendar() {
     wrapper.innerHTML = '';
 
-    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'];
+    const dayCells = buildDayCells(currentYear, currentMonth, events, today);
+    const hasEvents = dayCells.some(cell => cell.dataset.eventCount > 0);
+
+    // Type legend
+    const legend = el('div', { class: 'calendar__legend' },
+      ...Object.entries(TYPE_CHIP_COLORS).map(([type, color]) =>
+        el('div', { class: 'calendar__legend-item' },
+          el('span', { class: 'calendar__legend-dot', style: { background: color } }),
+          el('span', { class: 'calendar__legend-label' }, type)
+        )
+      )
+    );
 
     const calendar = el('div', { class: 'calendar' },
       // Header
       el('div', { class: 'calendar__header' },
         el('div', { class: 'calendar__nav' },
-          el('button', { class: 'calendar__nav-btn', onClick: () => { currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; } buildCalendar(); }, html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 3L4 7l5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
-          el('button', { class: 'calendar__nav-btn', onClick: () => { currentMonth = today.getMonth(); currentYear = today.getFullYear(); buildCalendar(); } }, 'Today'),
-          el('button', { class: 'calendar__nav-btn', onClick: () => { currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear++; } buildCalendar(); }, html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l5 4-5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
+          el('button', { class: 'calendar__nav-btn', onClick: () => navigate(-1), html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 3L4 7l5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
+          el('button', { class: 'calendar__nav-btn', onClick: goToday }, 'Today'),
+          el('button', { class: 'calendar__nav-btn', onClick: () => navigate(1), html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l5 4-5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
         ),
-        el('div', { class: 'calendar__title' }, `${monthNames[currentMonth]} ${currentYear}`),
-        el('div') // spacer
+        el('div', { class: 'calendar__title' }, `${MONTH_NAMES[currentMonth]} ${currentYear}`),
+        legend
       ),
-      // Day headers
+      // Grid
       el('div', { class: 'calendar__grid' },
         ...['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d =>
           el('div', { class: 'calendar__day-header' }, d)
         ),
-        ...buildDayCells(currentYear, currentMonth, events, today)
+        ...dayCells
       )
     );
 
     wrapper.appendChild(calendar);
+
+    // Empty month message
+    if (!hasEvents) {
+      wrapper.appendChild(
+        el('div', { class: 'calendar__empty-msg' },
+          `No events match your filters for ${MONTH_NAMES[currentMonth]} ${currentYear}`
+        )
+      );
+    }
   }
 
   buildCalendar();
@@ -358,7 +407,9 @@ function buildDayCells(year, month, events, today) {
   const prevMonth = new Date(year, month, 0);
   for (let i = startDow - 1; i >= 0; i--) {
     const day = prevMonth.getDate() - i;
-    cells.push(createDayCell(day, true, [], false));
+    const cell = createDayCell(day, true, [], false);
+    cell.dataset.eventCount = '0';
+    cells.push(cell);
   }
 
   // Current month days
@@ -366,21 +417,26 @@ function buildDayCells(year, month, events, today) {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
 
-    // Find events on this day
+    // Find events on this day (with null guard)
     const dayEvents = events.filter(evt => {
       const start = evt.event_date;
-      const end = evt.end_date || evt.event_date;
+      if (!start) return false;
+      const end = evt.end_date || start;
       return start <= dateStr && dateStr <= end;
     });
 
-    cells.push(createDayCell(d, false, dayEvents, isToday));
+    const cell = createDayCell(d, false, dayEvents, isToday);
+    cell.dataset.eventCount = String(dayEvents.length);
+    cells.push(cell);
   }
 
   // Next month padding
   const remaining = 7 - (cells.length % 7);
   if (remaining < 7) {
     for (let i = 1; i <= remaining; i++) {
-      cells.push(createDayCell(i, true, [], false));
+      const cell = createDayCell(i, true, [], false);
+      cell.dataset.eventCount = '0';
+      cells.push(cell);
     }
   }
 
@@ -392,22 +448,42 @@ function createDayCell(dayNum, isOtherMonth, dayEvents, isToday) {
   if (isOtherMonth) classes.push('calendar__day--other-month');
   if (isToday) classes.push('calendar__day--today');
 
-  const chips = dayEvents.slice(0, 3).map(evt => {
+  const chips = dayEvents.slice(0, 4).map(evt => {
     const typeClass = TYPE_CHIP_CLASS[evt.event_type] || 'other';
+    const statusColor = STATUS_COLORS[evt.status] || '#9B9A9B';
+    const partnerName = getPartnerName(evt.partner_id);
+
+    // Rich tooltip
+    const tooltipParts = [evt.title];
+    if (evt.event_date) {
+      let dateRange = formatDate(evt.event_date);
+      if (evt.end_date && evt.end_date !== evt.event_date) dateRange += ` — ${formatDate(evt.end_date)}`;
+      tooltipParts.push(dateRange);
+    }
+    if (evt.event_type) tooltipParts.push(`Type: ${evt.event_type}`);
+    if (evt.status) tooltipParts.push(`Status: ${evt.status}`);
+    if (partnerName) tooltipParts.push(`Partner: ${partnerName}`);
+    if (evt.location) tooltipParts.push(`Location: ${evt.location}`);
+
+    const chipLabel = partnerName
+      ? `${evt.title} · ${partnerName}`
+      : evt.title;
+
     return el('div', {
       class: `calendar__event-chip calendar__event-chip--${typeClass}`,
-      title: evt.title,
+      style: { borderLeftColor: statusColor },
+      title: tooltipParts.join('\n'),
       onClick: (e) => {
         e.stopPropagation();
         openEventModal(evt, document.getElementById('view-container'));
       },
-    }, evt.title);
+    }, chipLabel);
   });
 
-  if (dayEvents.length > 3) {
+  if (dayEvents.length > 4) {
     chips.push(el('div', {
-      style: { fontSize: '10px', color: 'var(--color-text-muted)', padding: '1px 4px' },
-    }, `+${dayEvents.length - 3} more`));
+      class: 'calendar__more-events',
+    }, `+${dayEvents.length - 4} more`));
   }
 
   return el('div', { class: classes.join(' ') },
