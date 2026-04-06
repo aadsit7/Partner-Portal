@@ -3,7 +3,7 @@
 // ============================================
 
 import { CONFIG, getRuntimeConfig, setRuntimeConfig } from '../config.js';
-import { isConfigured, testConnection, initializeSheet, seedSheetData } from '../sheets.js';
+import { isConfigured, testConnection, initializeSheet, seedSheetData, syncHeaders } from '../sheets.js';
 import { el, mount } from '../utils/dom.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { showToast } from '../components/toast.js';
@@ -47,6 +47,7 @@ export async function render(container) {
   const saveBtn = el('button', { class: 'btn btn--primary', onClick: handleSave }, 'Save Configuration');
   const testBtn = el('button', { class: 'btn btn--secondary', onClick: handleTest }, 'Test Connection');
   const initBtn = el('button', { class: 'btn btn--success', onClick: handleInit }, 'Initialize Sheet');
+  const syncBtn = el('button', { class: 'btn btn--secondary', onClick: handleSync }, 'Sync Headers');
   const seedBtn = el('button', { class: 'btn btn--secondary', onClick: handleSeed }, 'Seed Demo Data');
 
   const content = el('div', { class: 'setup-page' },
@@ -99,6 +100,7 @@ export async function render(container) {
       ),
       el('div', { class: 'setup-actions' },
         initBtn,
+        syncBtn,
         seedBtn
       ),
       el('div', { class: 'form-hint', style: { marginTop: 'var(--space-3)' } },
@@ -161,6 +163,21 @@ export async function render(container) {
     } finally {
       initBtn.disabled = false;
       initBtn.textContent = 'Initialize Sheet';
+    }
+  }
+
+  async function handleSync() {
+    syncBtn.disabled = true;
+    syncBtn.textContent = 'Syncing...';
+    try {
+      await syncHeaders();
+      showToast('Headers synced to current schema', 'success');
+      checkStatus();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      syncBtn.disabled = false;
+      syncBtn.textContent = 'Sync Headers';
     }
   }
 
