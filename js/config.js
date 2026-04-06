@@ -14,10 +14,34 @@
 //    https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit
 // 9. Paste values below
 
+const RUNTIME_CONFIG_KEY = 'pp_runtime_config';
+
+/**
+ * Get a runtime config value (localStorage override → hardcoded fallback).
+ */
+export function getRuntimeConfig(key) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(RUNTIME_CONFIG_KEY) || '{}');
+    if (stored[key]) return stored[key];
+  } catch { /* ignore */ }
+  return CONFIG[key] || '';
+}
+
+/**
+ * Set a runtime config value in localStorage.
+ */
+export function setRuntimeConfig(key, value) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(RUNTIME_CONFIG_KEY) || '{}');
+    stored[key] = value;
+    localStorage.setItem(RUNTIME_CONFIG_KEY, JSON.stringify(stored));
+  } catch { /* ignore */ }
+}
+
 export const CONFIG = {
   // Google Sheets API
   API_KEY: 'YOUR_GOOGLE_API_KEY_HERE',
-  SPREADSHEET_ID: 'YOUR_SPREADSHEET_ID_HERE',
+  SPREADSHEET_ID: '18Yhe3Yiq9_eI7kBxtFOzdu6Pb0_VUx730TYjq1xPjzI',
   SHEETS_BASE_URL: 'https://sheets.googleapis.com/v4/spreadsheets',
 
   // Google OAuth (for Admin SSO login)
