@@ -12,10 +12,10 @@ import { setTopbarTitle } from '../components/sidebar.js';
 
 let calendarInstance = null;
 
-export const title = 'Marketing Plan';
+export const title = 'Demand Gen';
 
 export async function render(container) {
-  setTopbarTitle('Joint Marketing Plan');
+  setTopbarTitle('Demand Gen');
 
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
 

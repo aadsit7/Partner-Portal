@@ -1,8 +1,8 @@
 // ============================================
-// Hash-Based SPA Router
+// Hash-Based SPA Router (with query param support)
 // ============================================
 
-import { getCurrentUser, isAdmin } from './auth.js';
+import { getCurrentUser } from './auth.js';
 
 const routes = [];
 let currentCleanup = null;
@@ -24,10 +24,22 @@ export function navigate(path) {
 }
 
 /**
- * Get the current hash path.
+ * Get the current hash path (without query params).
  */
 export function getCurrentPath() {
-  return window.location.hash.slice(1) || '/login';
+  const full = window.location.hash.slice(1) || '/login';
+  return full.split('?')[0];
+}
+
+/**
+ * Get query params from the current hash.
+ * e.g., #/admin/partner-detail?id=p_acme001 → { id: 'p_acme001' }
+ */
+export function getQueryParams() {
+  const full = window.location.hash.slice(1) || '';
+  const qIndex = full.indexOf('?');
+  if (qIndex === -1) return {};
+  return Object.fromEntries(new URLSearchParams(full.slice(qIndex + 1)));
 }
 
 /**
@@ -43,6 +55,7 @@ export function initRouter() {
  */
 async function handleRoute() {
   const path = getCurrentPath();
+  const params = getQueryParams();
   const user = getCurrentUser();
 
   // Auth guard: redirect to login if no session
@@ -53,13 +66,13 @@ async function handleRoute() {
 
   // Already logged in, redirect away from login
   if (path === '/login' && user) {
-    navigate(user.is_admin ? '/admin/dashboard' : '/partner/dashboard');
+    navigate(user.is_admin ? '/admin/dashboard' : '/partner/opportunities');
     return;
   }
 
   // Role guard: prevent partner from accessing admin routes
   if (path.startsWith('/admin') && user && !user.is_admin) {
-    navigate('/partner/dashboard');
+    navigate('/partner/opportunities');
     return;
   }
 
@@ -75,7 +88,7 @@ async function handleRoute() {
   if (!route) {
     // Default fallback
     if (user) {
-      navigate(user.is_admin ? '/admin/dashboard' : '/partner/dashboard');
+      navigate(user.is_admin ? '/admin/dashboard' : '/partner/opportunities');
     } else {
       navigate('/login');
     }
@@ -93,10 +106,10 @@ async function handleRoute() {
     document.title = `${route.title} — Partner Portal`;
   }
 
-  // Render view
+  // Render view (pass params as second argument)
   const container = document.getElementById('view-container');
   if (route.render) {
-    await route.render(container);
+    await route.render(container, params);
   }
 
   if (route.cleanup) {
@@ -104,5 +117,5 @@ async function handleRoute() {
   }
 
   // Dispatch custom event for sidebar to update active state
-  window.dispatchEvent(new CustomEvent('routechange', { detail: { path } }));
+  window.dispatchEvent(new CustomEvent('routechange', { detail: { path, params } }));
 }

@@ -13,10 +13,10 @@ import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 
-export const title = 'Dashboard';
+export const title = 'Opportunities';
 
 export async function render(container) {
-  setTopbarTitle('Dashboard');
+  setTopbarTitle('Opportunities');
 
   const user = getCurrentUser();
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));

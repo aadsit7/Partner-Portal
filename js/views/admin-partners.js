@@ -6,6 +6,7 @@ import { readSheetAsObjects, appendRow, updateRow, isConfigured, addDemoRow, upd
 import { CONFIG } from '../config.js';
 import { sha256 } from '../utils/hash.js';
 import { el, mount, uuid, $, debounce } from '../utils/dom.js';
+import { navigate } from '../router.js';
 import { nowISO, formatDate } from '../utils/date.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { buildForm } from '../components/form.js';
@@ -126,6 +127,11 @@ function updateTable(partners) {
             el('td', {}, formatDate(p.created_at)),
             el('td', {},
               el('div', { class: 'table__actions' },
+                el('button', {
+                  class: 'btn btn--ghost btn--sm',
+                  style: { color: 'var(--color-primary)' },
+                  onClick: () => navigate(`/admin/partner-detail?id=${p.partner_id}`),
+                }, 'View'),
                 el('button', {
                   class: 'btn btn--ghost btn--sm',
                   onClick: () => openPartnerModal(p),

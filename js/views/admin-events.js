@@ -15,7 +15,7 @@ import { setTopbarTitle } from '../components/sidebar.js';
 export const title = 'Events';
 
 export async function render(container) {
-  setTopbarTitle('Events Management');
+  setTopbarTitle('Demand Gen Events');
 
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
 
@@ -31,13 +31,12 @@ export async function render(container) {
 }
 
 function renderView(container, events) {
-  // Sort by date descending (most recent first)
   const sorted = [...events].sort((a, b) => new Date(b.event_date) - new Date(a.event_date));
 
   const content = el('div', {},
     el('div', { class: 'section-header' },
       el('div', {},
-        el('h2', { class: 'section-header__title' }, 'Events'),
+        el('h2', { class: 'section-header__title' }, 'Demand Gen Events'),
         el('p', { class: 'section-header__subtitle' }, `${events.length} events in the calendar`)
       ),
       el('button', {
@@ -45,11 +44,10 @@ function renderView(container, events) {
         onClick: () => openEventModal(null, container),
       },
         el('span', { html: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-        'Add Event'
+        'New Demand Gen Event'
       ),
     ),
 
-    // Events table
     sorted.length > 0
       ? el('div', { class: 'table-wrapper' },
           el('table', { class: 'table' },
@@ -58,6 +56,7 @@ function renderView(container, events) {
                 el('th', {}, 'Event'),
                 el('th', {}, 'Date'),
                 el('th', {}, 'Type'),
+                el('th', {}, 'Status'),
                 el('th', {}, 'Location'),
                 el('th', {}, 'Actions')
               )
@@ -87,6 +86,9 @@ function renderView(container, events) {
                   el('td', {},
                     el('span', { class: `badge badge--${getTypeBadge(evt.event_type)}` }, evt.event_type)
                   ),
+                  el('td', {},
+                    el('span', { class: `badge badge--${getStatusBadge(evt.status)}` }, evt.status || 'Upcoming')
+                  ),
                   el('td', {}, evt.location || '—'),
                   el('td', {},
                     el('div', { class: 'table__actions' },
@@ -108,7 +110,7 @@ function renderView(container, events) {
         )
       : el('div', { class: 'empty-state' },
           el('div', { class: 'empty-state__title' }, 'No events yet'),
-          el('div', { class: 'empty-state__description' }, 'Create your first marketing event to populate the partner calendar.'),
+          el('div', { class: 'empty-state__description' }, 'Create your first demand gen event to populate the partner calendar.'),
           el('button', {
             class: 'btn btn--primary',
             onClick: () => openEventModal(null, container),
@@ -130,11 +132,21 @@ function getTypeBadge(type) {
   return map[type] || 'silver';
 }
 
-function openEventModal(event, container) {
+function getStatusBadge(status) {
+  const map = {
+    'Upcoming': 'registered',
+    'In Progress': 'in-progress',
+    'Completed': 'won',
+    'Cancelled': 'lost',
+  };
+  return map[status] || 'registered';
+}
+
+export function openEventModal(event, container, onSaved) {
   const isEdit = !!event;
 
   const fields = [
-    { name: 'title', label: 'Event Title', required: true, placeholder: 'e.g., Q2 Partner Kickoff Webinar' },
+    { name: 'title', label: 'Event Name', required: true, placeholder: 'e.g., Q2 Partner Kickoff Webinar' },
     { type: 'row-start' },
     { name: 'event_date', label: 'Start Date', type: 'date', required: true },
     { name: 'end_date', label: 'End Date', type: 'date' },
@@ -145,8 +157,13 @@ function openEventModal(event, container) {
       placeholder: 'Select type...',
       options: ['Webinar', 'Workshop', 'Conference', 'Campaign', 'Other'],
     },
-    { name: 'location', label: 'Location', placeholder: 'e.g., Virtual (Zoom), San Francisco, CA' },
+    {
+      name: 'status', label: 'Status', type: 'select',
+      default: 'Upcoming',
+      options: ['Upcoming', 'In Progress', 'Completed', 'Cancelled'],
+    },
     { type: 'row-end' },
+    { name: 'location', label: 'Location', placeholder: 'e.g., Virtual (Zoom), San Francisco, CA' },
     { name: 'url', label: 'Event URL', type: 'url', placeholder: 'https://...' },
     { name: 'description', label: 'Description', type: 'textarea', placeholder: 'Describe the event...' },
   ];
@@ -156,6 +173,7 @@ function openEventModal(event, container) {
     event_date: event.event_date,
     end_date: event.end_date,
     event_type: event.event_type,
+    status: event.status || 'Upcoming',
     location: event.location,
     url: event.url,
     description: event.description,
@@ -177,6 +195,7 @@ function openEventModal(event, container) {
           data.url,
           event.created_by,
           event.created_at,
+          data.status || 'Upcoming',
         ];
 
         if (isConfigured()) {
@@ -198,6 +217,7 @@ function openEventModal(event, container) {
           data.url,
           user.partner_id,
           nowISO(),
+          data.status || 'Upcoming',
         ];
 
         if (isConfigured()) {
@@ -210,15 +230,20 @@ function openEventModal(event, container) {
       }
 
       closeModal();
-      const viewContainer = document.getElementById('view-container');
-      await render(viewContainer);
+
+      if (onSaved) {
+        onSaved();
+      } else {
+        const viewContainer = document.getElementById('view-container');
+        await render(viewContainer);
+      }
     } catch (err) {
       showToast(err.message || 'Failed to save event', 'error');
     }
   }, initialValues);
 
   openModal({
-    title: isEdit ? 'Edit Event' : 'Create New Event',
+    title: isEdit ? 'Edit Event' : 'New Demand Gen Event',
     content: form,
     footer: [
       el('button', { class: 'btn btn--secondary', onClick: closeModal }, 'Cancel'),

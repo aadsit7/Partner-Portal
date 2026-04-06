@@ -5,6 +5,7 @@
 import { readSheetAsObjects } from '../sheets.js';
 import { CONFIG } from '../config.js';
 import { el, mount, formatCurrency } from '../utils/dom.js';
+import { navigate } from '../router.js';
 import { partnerCard, statCard } from '../components/card.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 
@@ -128,7 +129,9 @@ function renderDashboard(container, partners, opportunities) {
     }, 'Partners'),
     partnerStats.length > 0
       ? el('div', { class: 'card-grid stagger' },
-          ...partnerStats.map(({ partner, stats }) => partnerCard(partner, stats))
+          ...partnerStats.map(({ partner, stats }) => partnerCard(partner, stats, {
+            onClick: (p) => navigate(`/admin/partner-detail?id=${p.partner_id}`),
+          }))
         )
       : el('div', { class: 'empty-state' },
           el('div', { class: 'empty-state__title' }, 'No partners yet'),

@@ -6,10 +6,10 @@ import { CONFIG } from '../config.js';
 import { el, mount } from '../utils/dom.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 
-export const title = 'Support & Resources';
+export const title = 'Resources';
 
 export async function render(container) {
-  setTopbarTitle('Support & Resources');
+  setTopbarTitle('Resources');
 
   const content = el('div', {
     style: {
