@@ -11,14 +11,18 @@ import { openModal, closeModal, confirmDialog } from '../components/modal.js';
 import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
 import { setTopbarTitle } from '../components/sidebar.js';
+import { statCard } from '../components/card.js';
 
 export const title = 'Opportunities';
 
 let cachedPartners = null;
+let cachedOpps = null;
+
+const OPP_STAGES = ['Prospect', 'Qualified', 'Proposal', 'Negotiation', 'Closed'];
+const OPP_STATUSES = ['Registered', 'In Progress', 'Won', 'Lost'];
 
 export async function render(container) {
   setTopbarTitle('Opportunities');
-
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
 
   try {
@@ -27,6 +31,7 @@ export async function render(container) {
       readSheetAsObjects(CONFIG.SHEET_PARTNERS),
     ]);
     cachedPartners = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
+    cachedOpps = opportunities;
     renderView(container, opportunities);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },
@@ -36,22 +41,38 @@ export async function render(container) {
   }
 }
 
+function reRender() {
+  const viewContainer = document.getElementById('view-container');
+  render(viewContainer);
+}
+
 function getPartnerName(partnerId) {
   if (!partnerId || !cachedPartners) return '';
   const p = cachedPartners.find(p => p.partner_id === partnerId);
   return p ? p.display_name : partnerId;
 }
 
-function renderView(container, opportunities) {
-  let filtered = [...opportunities];
-  let activePartnerFilter = '';
+// ============================================
+// Main View
+// ============================================
 
-  const partnerOptions = [
-    el('option', { value: '' }, 'All Partners'),
-    ...(cachedPartners || []).map(p =>
-      el('option', { value: p.partner_id }, p.display_name)
-    ),
-  ];
+function renderView(container, opportunities) {
+  let activeView = 'board';
+  let filters = { search: '', partner: '', status: '' };
+
+  function getFiltered() {
+    return opportunities.filter(opp => {
+      if (filters.partner && opp.partner_id !== filters.partner) return false;
+      if (filters.status && opp.status !== filters.status) return false;
+      if (filters.search) {
+        const q = filters.search.toLowerCase();
+        if (!(opp.deal_name?.toLowerCase().includes(q) ||
+              opp.customer_name?.toLowerCase().includes(q) ||
+              getPartnerName(opp.partner_id)?.toLowerCase().includes(q))) return false;
+      }
+      return true;
+    });
+  }
 
   // Stats
   const totalValue = opportunities.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
@@ -59,13 +80,41 @@ function renderView(container, opportunities) {
   const wonValue = wonDeals.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
   const activeDeals = opportunities.filter(o => o.status !== 'Won' && o.status !== 'Lost');
 
-  const tableWrapper = el('div', { id: 'opps-table-wrapper' });
+  // Filter controls
+  const searchInput = el('input', {
+    class: 'search-bar__input',
+    type: 'text',
+    placeholder: 'Search opportunities...',
+    onInput: debounce((e) => { filters.search = e.target.value; refreshContent(); }, 200),
+  });
+
+  const partnerSelect = el('select', {
+    class: 'form-select filter-bar__select',
+    onChange: (e) => { filters.partner = e.target.value; refreshContent(); },
+  },
+    el('option', { value: '' }, 'All Partners'),
+    ...(cachedPartners || []).map(p => el('option', { value: p.partner_id }, p.display_name))
+  );
+
+  const statusSelect = el('select', {
+    class: 'form-select filter-bar__select',
+    onChange: (e) => { filters.status = e.target.value; refreshContent(); },
+  },
+    el('option', { value: '' }, 'All Statuses'),
+    ...OPP_STATUSES.map(s => el('option', { value: s }, s))
+  );
+
+  // View toggle
+  const boardBtn = el('button', { class: 'btn btn--primary btn--sm', onClick: () => switchView('board') }, 'Board');
+  const listBtn = el('button', { class: 'btn btn--secondary btn--sm', onClick: () => switchView('list') }, 'List');
+
+  const viewContainer = el('div', { id: 'opps-view-container' });
 
   const content = el('div', {},
     el('div', { class: 'section-header' },
       el('div', {},
         el('h2', { class: 'section-header__title' }, 'Opportunities'),
-        el('p', { class: 'section-header__subtitle' }, `${opportunities.length} total opportunities · ${formatCurrency(totalValue)} pipeline`)
+        el('p', { class: 'section-header__subtitle' }, `${opportunities.length} total · ${formatCurrency(totalValue)} pipeline`)
       ),
       el('button', {
         class: 'btn btn--primary',
@@ -76,121 +125,204 @@ function renderView(container, opportunities) {
       ),
     ),
 
-    // Stats bar
-    el('div', { class: 'stats-grid stagger', style: { marginBottom: 'var(--space-6)' } },
-      statMini('Total Deals', opportunities.length),
-      statMini('Active Pipeline', formatCurrency(totalValue - wonValue)),
-      statMini('Won Revenue', formatCurrency(wonValue)),
-      statMini('Active', activeDeals.length),
+    // Stats
+    el('div', { class: 'stats-grid stagger' },
+      statCard('Total Deals', opportunities.length),
+      statCard('Active Pipeline', formatCurrency(totalValue - wonValue)),
+      statCard('Won Revenue', formatCurrency(wonValue)),
+      statCard('Active Deals', activeDeals.length)
     ),
 
-    // Filter bar
+    // Filter + view toggle
     el('div', { class: 'filter-bar' },
       el('div', { class: 'filter-bar__search' },
         el('span', { class: 'search-bar__icon', html: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M12.5 12.5L16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-        el('input', {
-          class: 'search-bar__input',
-          type: 'text',
-          placeholder: 'Search opportunities...',
-          onInput: debounce((e) => {
-            const q = e.target.value.toLowerCase();
-            filtered = opportunities.filter(o => {
-              const matchesPartner = !activePartnerFilter || o.partner_id === activePartnerFilter;
-              const matchesSearch = !q
-                || o.deal_name?.toLowerCase().includes(q)
-                || o.customer_name?.toLowerCase().includes(q)
-                || getPartnerName(o.partner_id)?.toLowerCase().includes(q);
-              return matchesPartner && matchesSearch;
-            });
-            updateTable(tableWrapper, filtered, container);
-          }, 200),
-        })
+        searchInput
       ),
-      el('select', {
-        class: 'form-select filter-bar__select',
-        onChange: (e) => {
-          activePartnerFilter = e.target.value;
-          const searchVal = document.querySelector('.filter-bar .search-bar__input')?.value?.toLowerCase() || '';
-          filtered = opportunities.filter(o => {
-            const matchesPartner = !activePartnerFilter || o.partner_id === activePartnerFilter;
-            const matchesSearch = !searchVal
-              || o.deal_name?.toLowerCase().includes(searchVal)
-              || o.customer_name?.toLowerCase().includes(searchVal);
-            return matchesPartner && matchesSearch;
-          });
-          updateTable(tableWrapper, filtered, container);
-        }
-      }, ...partnerOptions),
+      partnerSelect,
+      statusSelect,
+      el('div', { class: 'view-toggle', style: { marginBottom: '0' } }, boardBtn, listBtn),
     ),
 
-    tableWrapper,
+    viewContainer,
   );
 
   mount(container, content);
-  updateTable(tableWrapper, filtered, container);
-}
 
-function updateTable(wrapper, opportunities, container) {
-  const sorted = [...opportunities].sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
-
-  wrapper.innerHTML = '';
-
-  if (sorted.length === 0) {
-    wrapper.appendChild(
-      el('div', { class: 'empty-state', style: { marginTop: 'var(--space-8)' } },
-        el('div', { class: 'empty-state__title' }, 'No matching opportunities'),
-        el('div', { class: 'empty-state__description' }, 'Try adjusting your filters or create a new opportunity.')
-      )
-    );
-    return;
+  function switchView(view) {
+    activeView = view;
+    boardBtn.className = view === 'board' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm';
+    listBtn.className = view === 'list' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm';
+    refreshContent();
   }
 
-  wrapper.appendChild(
-    el('div', { class: 'table-wrapper' },
-      el('table', { class: 'table' },
-        el('thead', {},
-          el('tr', {},
-            el('th', {}, 'Deal'),
-            el('th', {}, 'Partner'),
-            el('th', {}, 'Value'),
-            el('th', {}, 'Stage'),
-            el('th', {}, 'Status'),
-            el('th', {}, 'Close Date'),
-            el('th', {}, 'Actions')
-          )
+  function refreshContent() {
+    const filtered = getFiltered();
+    viewContainer.innerHTML = '';
+    if (activeView === 'board') {
+      viewContainer.appendChild(renderBoard(filtered));
+    } else {
+      viewContainer.appendChild(renderList(filtered));
+    }
+  }
+
+  refreshContent();
+}
+
+// ============================================
+// Board View (Kanban by Stage)
+// ============================================
+
+function renderBoard(opportunities) {
+  const board = el('div', { class: 'kanban' });
+
+  OPP_STAGES.forEach(stage => {
+    const stageOpps = opportunities.filter(o => (o.stage || 'Prospect') === stage);
+    const stageValue = stageOpps.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
+
+    const cardsContainer = el('div', { class: 'kanban__cards' });
+
+    stageOpps
+      .sort((a, b) => (parseFloat(b.deal_value) || 0) - (parseFloat(a.deal_value) || 0))
+      .forEach(opp => {
+        const card = createOppCard(opp);
+        cardsContainer.appendChild(card);
+      });
+
+    const column = el('div', { class: 'kanban__column' },
+      el('div', { class: 'kanban__column-header' },
+        el('div', {},
+          el('span', { class: 'kanban__column-title' }, stage),
+          el('div', { class: 'kanban__column-total' }, formatCurrency(stageValue)),
         ),
-        el('tbody', {},
-          ...sorted.map(opp =>
-            el('tr', {},
-              el('td', {},
-                el('div', { style: { fontWeight: 'var(--font-semibold)' } }, opp.deal_name),
-                el('div', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' } }, opp.customer_name)
-              ),
-              el('td', {},
-                el('span', { class: 'badge badge--admin' }, getPartnerName(opp.partner_id))
-              ),
-              el('td', { style: { fontWeight: 'var(--font-semibold)' } },
-                formatCurrency(parseFloat(opp.deal_value) || 0)
-              ),
-              el('td', {},
-                el('span', { class: 'badge badge--silver' }, opp.stage)
-              ),
-              el('td', {},
-                el('span', { class: `badge badge--${getStatusBadge(opp.status)}` }, opp.status)
-              ),
-              el('td', {}, opp.expected_close ? formatDate(opp.expected_close) : '—'),
-              el('td', {},
-                el('div', { class: 'table__actions' },
-                  el('button', {
-                    class: 'btn btn--ghost btn--sm',
-                    onClick: () => openOppModal(opp, container),
-                  }, 'Edit'),
-                  el('button', {
-                    class: 'btn btn--ghost btn--sm',
-                    style: { color: 'var(--color-danger)' },
-                    onClick: () => handleDelete(opp, container),
-                  }, 'Delete')
-                )
+        el('span', { class: 'kanban__column-count' }, String(stageOpps.length))
+      ),
+      cardsContainer
+    );
+
+    // Drop zone
+    column.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      column.classList.add('kanban__column--dragover');
+    });
+
+    column.addEventListener('dragleave', () => {
+      column.classList.remove('kanban__column--dragover');
+    });
+
+    column.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      column.classList.remove('kanban__column--dragover');
+      const oppId = e.dataTransfer.getData('text/plain');
+      if (!oppId) return;
+
+      const opp = cachedOpps.find(o => o.opportunity_id === oppId);
+      if (!opp || opp.stage === stage) return;
+
+      try {
+        const values = [
+          opp.opportunity_id, opp.partner_id, opp.deal_name, opp.customer_name,
+          opp.deal_value, opp.status, stage, opp.expected_close,
+          opp.description, opp.created_at, nowISO(),
+        ];
+
+        if (isConfigured()) {
+          await updateRow(CONFIG.SHEET_OPPORTUNITIES, opp._rowIndex, values);
+        } else {
+          updateDemoRow(CONFIG.SHEET_OPPORTUNITIES, opp._rowIndex, values);
+        }
+
+        showToast(`Moved "${opp.deal_name}" to ${stage}`, 'success');
+        reRender();
+      } catch (err) {
+        showToast(err.message || 'Failed to update opportunity', 'error');
+      }
+    });
+
+    board.appendChild(column);
+  });
+
+  return board;
+}
+
+function createOppCard(opp) {
+  const card = el('div', {
+    class: 'kanban__card',
+    draggable: 'true',
+  },
+    el('div', { class: 'kanban__card-title' }, opp.deal_name),
+    el('div', { class: 'kanban__card-subtitle' }, opp.customer_name),
+    el('div', { class: 'kanban__card-meta' },
+      el('span', { class: `badge badge--${getStatusBadge(opp.status)}` }, opp.status),
+      el('span', { class: 'badge badge--admin' }, getPartnerName(opp.partner_id)),
+    ),
+    el('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--space-2)' } },
+      el('div', { class: 'kanban__card-value' }, formatCurrency(parseFloat(opp.deal_value) || 0)),
+      opp.expected_close
+        ? el('div', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' } }, formatDate(opp.expected_close))
+        : null
+    )
+  );
+
+  card.addEventListener('dragstart', (e) => {
+    e.dataTransfer.setData('text/plain', opp.opportunity_id);
+    card.classList.add('dragging');
+  });
+
+  card.addEventListener('dragend', () => {
+    card.classList.remove('dragging');
+  });
+
+  card.addEventListener('click', () => {
+    openOppModal(opp, document.getElementById('view-container'));
+  });
+
+  return card;
+}
+
+// ============================================
+// List View (Table)
+// ============================================
+
+function renderList(opportunities) {
+  const sorted = [...opportunities].sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+
+  if (sorted.length === 0) {
+    return el('div', { class: 'empty-state', style: { marginTop: 'var(--space-8)' } },
+      el('div', { class: 'empty-state__title' }, 'No matching opportunities'),
+      el('div', { class: 'empty-state__description' }, 'Try adjusting your filters or create a new opportunity.')
+    );
+  }
+
+  return el('div', { class: 'table-wrapper' },
+    el('table', { class: 'table' },
+      el('thead', {},
+        el('tr', {},
+          el('th', {}, 'Deal'),
+          el('th', {}, 'Partner'),
+          el('th', {}, 'Value'),
+          el('th', {}, 'Stage'),
+          el('th', {}, 'Status'),
+          el('th', {}, 'Close Date'),
+          el('th', {}, 'Actions')
+        )
+      ),
+      el('tbody', {},
+        ...sorted.map(opp =>
+          el('tr', {},
+            el('td', {},
+              el('div', { style: { fontWeight: 'var(--font-semibold)' } }, opp.deal_name),
+              el('div', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' } }, opp.customer_name)
+            ),
+            el('td', {}, el('span', { class: 'badge badge--admin' }, getPartnerName(opp.partner_id))),
+            el('td', { style: { fontWeight: 'var(--font-semibold)' } }, formatCurrency(parseFloat(opp.deal_value) || 0)),
+            el('td', {}, el('span', { class: 'badge badge--silver' }, opp.stage)),
+            el('td', {}, el('span', { class: `badge badge--${getStatusBadge(opp.status)}` }, opp.status)),
+            el('td', {}, opp.expected_close ? formatDate(opp.expected_close) : '—'),
+            el('td', {},
+              el('div', { class: 'table__actions' },
+                el('button', { class: 'btn btn--ghost btn--sm', onClick: () => openOppModal(opp, document.getElementById('view-container')) }, 'Edit'),
+                el('button', { class: 'btn btn--ghost btn--sm', style: { color: 'var(--color-danger)' }, onClick: () => handleDelete(opp) }, 'Delete')
               )
             )
           )
@@ -200,22 +332,18 @@ function updateTable(wrapper, opportunities, container) {
   );
 }
 
+// ============================================
+// Helpers
+// ============================================
+
 function getStatusBadge(status) {
-  const map = {
-    'Registered': 'registered',
-    'In Progress': 'in-progress',
-    'Won': 'won',
-    'Lost': 'lost',
-  };
+  const map = { 'Registered': 'registered', 'In Progress': 'in-progress', 'Won': 'won', 'Lost': 'lost' };
   return map[status] || 'silver';
 }
 
-function statMini(label, value) {
-  return el('div', { class: 'stat-card' },
-    el('div', { class: 'stat-card__label' }, label),
-    el('div', { class: 'stat-card__value' }, String(value)),
-  );
-}
+// ============================================
+// Opportunity Modal (Create/Edit)
+// ============================================
 
 export function openOppModal(opp, container, onSaved) {
   const isEdit = !!opp;
@@ -241,12 +369,12 @@ export function openOppModal(opp, container, onSaved) {
     {
       name: 'stage', label: 'Stage', type: 'select', required: true,
       placeholder: 'Select stage...',
-      options: ['Prospect', 'Qualified', 'Proposal', 'Negotiation', 'Closed'],
+      options: OPP_STAGES,
     },
     {
       name: 'status', label: 'Status', type: 'select',
       default: 'Registered',
-      options: ['Registered', 'In Progress', 'Won', 'Lost'],
+      options: OPP_STATUSES,
     },
     { type: 'row-end' },
     { name: 'description', label: 'Description', type: 'textarea', placeholder: 'Brief description of the opportunity...' },
@@ -267,17 +395,9 @@ export function openOppModal(opp, container, onSaved) {
     try {
       if (isEdit) {
         const values = [
-          opp.opportunity_id,
-          data.partner_id,
-          data.deal_name,
-          data.customer_name,
-          data.deal_value,
-          data.status || 'Registered',
-          data.stage,
-          data.expected_close,
-          data.description,
-          opp.created_at,
-          nowISO(),
+          opp.opportunity_id, data.partner_id, data.deal_name, data.customer_name,
+          data.deal_value, data.status || 'Registered', data.stage,
+          data.expected_close, data.description, opp.created_at, nowISO(),
         ];
 
         if (isConfigured()) {
@@ -285,21 +405,12 @@ export function openOppModal(opp, container, onSaved) {
         } else {
           updateDemoRow(CONFIG.SHEET_OPPORTUNITIES, opp._rowIndex, values);
         }
-
         showToast('Opportunity updated!', 'success');
       } else {
         const values = [
-          uuid('opp'),
-          data.partner_id,
-          data.deal_name,
-          data.customer_name,
-          data.deal_value,
-          data.status || 'Registered',
-          data.stage,
-          data.expected_close,
-          data.description,
-          nowISO(),
-          nowISO(),
+          uuid('opp'), data.partner_id, data.deal_name, data.customer_name,
+          data.deal_value, data.status || 'Registered', data.stage,
+          data.expected_close, data.description, nowISO(), nowISO(),
         ];
 
         if (isConfigured()) {
@@ -307,18 +418,11 @@ export function openOppModal(opp, container, onSaved) {
         } else {
           addDemoRow(CONFIG.SHEET_OPPORTUNITIES, values);
         }
-
         showToast('Opportunity created!', 'success');
       }
 
       closeModal();
-
-      if (onSaved) {
-        onSaved();
-      } else {
-        const viewContainer = document.getElementById('view-container');
-        await render(viewContainer);
-      }
+      if (onSaved) { onSaved(); } else { reRender(); }
     } catch (err) {
       showToast(err.message || 'Failed to save opportunity', 'error');
     }
@@ -337,12 +441,11 @@ export function openOppModal(opp, container, onSaved) {
   });
 }
 
-async function handleDelete(opp, container) {
+async function handleDelete(opp) {
   const confirmed = await confirmDialog(
     'Delete Opportunity',
     `Are you sure you want to delete "${opp.deal_name}"? This action cannot be undone.`
   );
-
   if (!confirmed) return;
 
   try {
@@ -351,10 +454,8 @@ async function handleDelete(opp, container) {
     } else {
       deleteDemoRow(CONFIG.SHEET_OPPORTUNITIES, opp._rowIndex);
     }
-
     showToast('Opportunity deleted', 'success');
-    const viewContainer = document.getElementById('view-container');
-    await render(viewContainer);
+    reRender();
   } catch (err) {
     showToast(err.message || 'Failed to delete opportunity', 'error');
   }
@@ -362,4 +463,5 @@ async function handleDelete(opp, container) {
 
 export function cleanup() {
   cachedPartners = null;
+  cachedOpps = null;
 }

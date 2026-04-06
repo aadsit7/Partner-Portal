@@ -75,6 +75,11 @@ export async function readSheet(sheetName) {
   const res = await fetch(url, token ? { headers: { 'Authorization': `Bearer ${token}` } } : undefined);
 
   if (!res.ok) {
+    // Fall back to demo data on auth/permission errors
+    if (res.status === 401 || res.status === 403) {
+      console.warn(`Sheets API auth failed (${res.status}), using demo data for ${sheetName}`);
+      return getDemoData(sheetName);
+    }
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error?.message || `Failed to read ${sheetName}`);
   }
