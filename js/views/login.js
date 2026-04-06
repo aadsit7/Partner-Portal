@@ -350,24 +350,37 @@ function requestSheetsAccessToken() {
       return;
     }
 
+    // Timeout to prevent hanging forever if callback never fires
+    const timeout = setTimeout(() => resolve(null), 15000);
+
     tokenClient.callback = (tokenResponse) => {
+      clearTimeout(timeout);
       if (tokenResponse.error) {
-        // Silent prompt failed — retry with consent
-        if (tokenResponse.error === 'access_denied' || tokenResponse.error === 'popup_closed_by_user') {
-          resolve(null);
-          return;
-        }
+        // Any error on silent prompt — try again with consent dialog
         tokenClient.callback = (retryResponse) => {
+          if (retryResponse.error) {
+            resolve(null);
+            return;
+          }
           resolve(retryResponse.access_token || null);
         };
-        tokenClient.requestAccessToken({ prompt: 'consent' });
+        try {
+          tokenClient.requestAccessToken({ prompt: 'consent' });
+        } catch {
+          resolve(null);
+        }
         return;
       }
       resolve(tokenResponse.access_token || null);
     };
 
     // Try silent first (works if user previously granted consent)
-    tokenClient.requestAccessToken({ prompt: '' });
+    try {
+      tokenClient.requestAccessToken({ prompt: '' });
+    } catch {
+      clearTimeout(timeout);
+      resolve(null);
+    }
   });
 }
 
