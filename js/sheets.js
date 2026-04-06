@@ -262,24 +262,47 @@ export async function initializeSheet() {
     }
   }
 
-  // 3. Write header rows to each tab (only if the tab is empty)
+  // 3. Always overwrite header rows to keep them in sync with code schema
   for (const tabName of tabsToCreate) {
-    const checkUrl = `${base}/values/${encodeURIComponent(tabName)}!A1:A1`;
-    const checkRes = await fetch(checkUrl, { headers });
-    const checkData = await checkRes.json();
-
-    if (!checkData.values || checkData.values.length === 0) {
-      const headerRow = SHEET_HEADERS[tabName];
-      const writeUrl = `${base}/values/${encodeURIComponent(tabName)}!A1?valueInputOption=RAW`;
-      await fetch(writeUrl, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ values: [headerRow] }),
-      });
-    }
+    const headerRow = SHEET_HEADERS[tabName];
+    const writeUrl = `${base}/values/${encodeURIComponent(tabName)}!A1?valueInputOption=RAW`;
+    await fetch(writeUrl, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ values: [headerRow] }),
+    });
   }
 
   return { success: true, tabsCreated: requests.length };
+}
+
+/**
+ * Sync header rows in all tabs to match current code schema.
+ * Overwrites row 1 in each tab. Does NOT affect data rows.
+ */
+export async function syncHeaders() {
+  const base = getBaseUrl();
+  const token = getAccessToken();
+  if (!token) throw new Error('OAuth token required — please log in with Google SSO first.');
+
+  const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+  const tabs = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS];
+
+  for (const tabName of tabs) {
+    const headerRow = SHEET_HEADERS[tabName];
+    const url = `${base}/values/${encodeURIComponent(tabName)}!A1?valueInputOption=RAW`;
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ values: [headerRow] }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `Failed to sync headers for ${tabName}`);
+    }
+  }
+
+  return { success: true };
 }
 
 /**
