@@ -138,6 +138,7 @@ function openNewDealModal(user, container) {
         data.description,
         nowISO(),
         nowISO(),
+        '[]',
       ];
 
       if (isConfigured()) {

@@ -224,6 +224,7 @@ function renderBoard(opportunities) {
           opp.opportunity_id, opp.partner_id, opp.deal_name, opp.customer_name,
           opp.deal_value, opp.status, stage, opp.expected_close,
           opp.description, opp.created_at, nowISO(),
+          opp.notes || '',
         ];
 
         if (isConfigured()) {
@@ -366,6 +367,13 @@ function getStatusBadge(status) {
 export function openOppModal(opp, container, onSaved) {
   const isEdit = !!opp;
 
+  // Parse existing notes
+  let notes = [];
+  if (isEdit && opp.notes) {
+    try { notes = JSON.parse(opp.notes); } catch { notes = []; }
+  }
+  if (!Array.isArray(notes)) notes = [];
+
   const partnerOptions = (cachedPartners || []).map(p => ({
     value: p.partner_id,
     label: p.display_name,
@@ -411,11 +419,14 @@ export function openOppModal(opp, container, onSaved) {
 
   const form = buildForm(fields, async (data) => {
     try {
+      const notesJson = JSON.stringify(notes);
+
       if (isEdit) {
         const values = [
           opp.opportunity_id, data.partner_id, data.deal_name, data.customer_name,
           data.deal_value, data.status || 'Registered', data.stage,
           data.expected_close, data.description, opp.created_at, nowISO(),
+          notesJson,
         ];
 
         if (isConfigured()) {
@@ -429,6 +440,7 @@ export function openOppModal(opp, container, onSaved) {
           uuid('opp'), data.partner_id, data.deal_name, data.customer_name,
           data.deal_value, data.status || 'Registered', data.stage,
           data.expected_close, data.description, nowISO(), nowISO(),
+          notesJson,
         ];
 
         if (isConfigured()) {
@@ -446,9 +458,14 @@ export function openOppModal(opp, container, onSaved) {
     }
   }, initialValues);
 
+  // Build notes history section
+  const notesSection = buildNotesSection(notes);
+
+  const modalContent = el('div', {}, form, notesSection);
+
   openModal({
     title: isEdit ? 'Edit Opportunity' : 'New Opportunity',
-    content: form,
+    content: modalContent,
     footer: [
       el('button', { class: 'btn btn--secondary', onClick: closeModal }, 'Cancel'),
       el('button', {
@@ -457,6 +474,88 @@ export function openOppModal(opp, container, onSaved) {
       }, isEdit ? 'Save Changes' : 'Create Opportunity'),
     ],
   });
+}
+
+// ============================================
+// Notes History Section
+// ============================================
+
+function formatNoteDate(isoString) {
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+    }) + ' \u00B7 ' + d.toLocaleTimeString('en-US', {
+      hour: 'numeric', minute: '2-digit', hour12: true,
+    });
+  } catch {
+    return isoString;
+  }
+}
+
+function buildNotesSection(notes) {
+  const section = el('div', { class: 'notes-section' },
+    el('div', { class: 'notes-section__header' },
+      el('h3', { class: 'notes-section__title' }, 'Notes History'),
+      el('p', { class: 'notes-section__subtitle' }, 'Track updates and activity for this opportunity')
+    ),
+  );
+
+  const notesList = el('div', { class: 'notes-list' });
+
+  function rebuildList() {
+    notesList.innerHTML = '';
+
+    if (notes.length === 0) {
+      notesList.appendChild(
+        el('div', { class: 'notes-empty' }, 'No notes yet. Add a note to start tracking activity.')
+      );
+      return;
+    }
+
+    // Display newest first
+    [...notes].forEach((note) => {
+      notesList.appendChild(
+        el('div', { class: 'notes-item' },
+          el('div', { class: 'notes-item__date' }, formatNoteDate(note.date)),
+          el('div', { class: 'notes-item__text' }, note.text)
+        )
+      );
+    });
+  }
+
+  // Add note input
+  const noteInput = el('textarea', {
+    class: 'notes-input',
+    placeholder: 'Add a note...',
+    rows: '2',
+  });
+
+  const addBtn = el('button', {
+    class: 'btn btn--primary btn--sm',
+    onClick: () => {
+      const text = noteInput.value.trim();
+      if (!text) return;
+      notes.unshift({ date: nowISO(), text });
+      noteInput.value = '';
+      rebuildList();
+    },
+  }, '+ Add Note');
+
+  noteInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      addBtn.click();
+    }
+  });
+
+  section.appendChild(
+    el('div', { class: 'notes-add' }, noteInput, addBtn)
+  );
+  section.appendChild(notesList);
+
+  rebuildList();
+  return section;
 }
 
 async function handleDelete(opp) {

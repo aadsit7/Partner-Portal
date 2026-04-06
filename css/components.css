@@ -2619,3 +2619,119 @@
   color: var(--color-text-muted);
   white-space: nowrap;
 }
+
+/* ============================================
+   Notes History (Opportunities)
+   ============================================ */
+
+.notes-section {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border-light);
+}
+
+.notes-section__header {
+  margin-bottom: var(--space-4);
+}
+
+.notes-section__title {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.notes-section__subtitle {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.notes-add {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  margin-bottom: var(--space-4);
+}
+
+.notes-input {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  resize: vertical;
+  min-height: 44px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.notes-input:focus {
+  border-color: var(--color-primary);
+}
+
+.notes-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.notes-item {
+  padding: var(--space-3) var(--space-3);
+  border-left: 3px solid var(--color-border-light);
+  margin-left: var(--space-2);
+  position: relative;
+}
+
+.notes-item:hover {
+  border-left-color: var(--color-primary);
+  background: rgba(0, 34, 68, 0.015);
+}
+
+.notes-item::before {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: 16px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+}
+
+.notes-item:hover::before {
+  border-color: var(--color-primary);
+}
+
+.notes-item__date {
+  font-size: 11px;
+  font-weight: var(--font-semibold);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-1);
+}
+
+.notes-item__text {
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.notes-empty {
+  padding: var(--space-4) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  font-style: italic;
+  text-align: center;
+}

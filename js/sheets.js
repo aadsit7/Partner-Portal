@@ -221,7 +221,7 @@ export async function deleteRow(sheetName, rowIndex) {
 
 const SHEET_HEADERS = {
   [CONFIG.SHEET_PARTNERS]: ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status', 'hq_location'],
-  [CONFIG.SHEET_OPPORTUNITIES]: ['opportunity_id', 'partner_id', 'deal_name', 'customer_name', 'deal_value', 'status', 'stage', 'expected_close', 'description', 'created_at', 'updated_at'],
+  [CONFIG.SHEET_OPPORTUNITIES]: ['opportunity_id', 'partner_id', 'deal_name', 'customer_name', 'deal_value', 'status', 'stage', 'expected_close', 'description', 'created_at', 'updated_at', 'notes'],
   [CONFIG.SHEET_EVENTS]: ['event_id', 'title', 'description', 'event_date', 'end_date', 'event_type', 'location', 'url', 'created_by', 'created_at', 'status', 'partner_id', 'checklist'],
   [CONFIG.SHEET_TRANSCRIPTS]: ['transcript_id', 'partner_id', 'partner_name', 'conversation_date', 'transcript_text', 'created_at'],
 };
@@ -397,18 +397,18 @@ let demoPartners = [
 ];
 
 let demoOpportunities = [
-  ['opportunity_id', 'partner_id', 'deal_name', 'customer_name', 'deal_value', 'status', 'stage', 'expected_close', 'description', 'created_at', 'updated_at'],
-  ['opp_001', 'p_nerdio1', 'Azure Virtual Desktop Rollout', 'TechCorp Industries', '150000', 'In Progress', 'Proposal', '2026-06-15', 'AVD deployment for 500-seat enterprise', '2026-03-01', '2026-04-01'],
-  ['opp_002', 'p_nerdio1', 'Cloud Desktop Optimization', 'Metro Health Systems', '85000', 'Registered', 'Qualified', '2026-07-30', 'Cloud desktop optimization for healthcare provider', '2026-03-15', '2026-03-15'],
-  ['opp_003', 'p_ridgep1', 'Managed Services Engagement', 'Global Retail Co', '200000', 'In Progress', 'Negotiation', '2026-05-20', 'Full managed services for 200 retail locations', '2026-02-10', '2026-03-28'],
-  ['opp_004', 'p_ridgep1', 'Network Infrastructure Refresh', 'EuroBank AG', '120000', 'Won', 'Closed', '2026-03-15', 'Complete network infrastructure refresh', '2026-01-20', '2026-03-15'],
-  ['opp_005', 'p_insigh1', 'Digital Workspace Transformation', 'Contoso Ltd', '275000', 'In Progress', 'Proposal', '2026-08-01', 'End-to-end digital workspace transformation', '2026-03-01', '2026-04-01'],
-  ['opp_006', 'p_insigh1', 'Hybrid Cloud Migration', 'Woodgrove Bank', '180000', 'Registered', 'Qualified', '2026-09-15', 'Hybrid cloud migration for financial services', '2026-03-20', '2026-03-20'],
-  ['opp_007', 'p_syscd01', 'SCCM to Intune Migration', 'Fabrikam Inc', '95000', 'In Progress', 'Negotiation', '2026-07-01', 'Migrate 10K endpoints from SCCM to Intune', '2026-02-15', '2026-03-28'],
-  ['opp_008', 'p_getrb1', 'DevOps Pipeline Modernization', 'Northwind Traders', '110000', 'Registered', 'Prospect', '2026-08-15', 'CI/CD pipeline modernization with GitHub Actions', '2026-04-01', '2026-04-01'],
-  ['opp_009', 'p_qualc01', 'Edge Computing Platform', 'Adventure Works', '320000', 'In Progress', 'Proposal', '2026-09-30', 'Edge computing solution for manufacturing IoT', '2026-02-15', '2026-03-20'],
-  ['opp_010', 'p_qualc01', 'AI Accelerator Deployment', 'Tailspin Toys', '75000', 'Won', 'Closed', '2026-03-01', 'AI inference accelerator deployment', '2026-01-10', '2026-03-01'],
-  ['opp_011', 'p_nerdio1', 'Cost Optimization Assessment', 'Sunrise Media', '60000', 'Lost', 'Closed', '2026-02-28', 'Cloud cost optimization assessment', '2025-12-01', '2026-02-28'],
+  ['opportunity_id', 'partner_id', 'deal_name', 'customer_name', 'deal_value', 'status', 'stage', 'expected_close', 'description', 'created_at', 'updated_at', 'notes'],
+  ['opp_001', 'p_nerdio1', 'Azure Virtual Desktop Rollout', 'TechCorp Industries', '150000', 'In Progress', 'Proposal', '2026-06-15', 'AVD deployment for 500-seat enterprise', '2026-03-01', '2026-04-01', JSON.stringify([{date:'2026-04-01T10:30:00',text:'Submitted proposal to TechCorp. They want to start Phase 1 by end of Q2.'},{date:'2026-03-20T14:00:00',text:'Technical deep-dive with customer IT team. They have 500 seats across 3 offices.'},{date:'2026-03-01T09:00:00',text:'Initial discovery call. Customer interested in AVD for remote workforce.'}])],
+  ['opp_002', 'p_nerdio1', 'Cloud Desktop Optimization', 'Metro Health Systems', '85000', 'Registered', 'Qualified', '2026-07-30', 'Cloud desktop optimization for healthcare provider', '2026-03-15', '2026-03-15', JSON.stringify([{date:'2026-03-15T11:00:00',text:'Registered deal. Healthcare provider looking to optimize cloud desktop costs.'}])],
+  ['opp_003', 'p_ridgep1', 'Managed Services Engagement', 'Global Retail Co', '200000', 'In Progress', 'Negotiation', '2026-05-20', 'Full managed services for 200 retail locations', '2026-02-10', '2026-03-28', JSON.stringify([{date:'2026-03-28T16:00:00',text:'Pricing negotiation in progress. Customer wants to start with 50 locations pilot.'},{date:'2026-03-10T09:30:00',text:'SOW review meeting completed. Customer approved scope of work.'},{date:'2026-02-10T10:00:00',text:'Kicked off engagement discussion with Global Retail Co leadership team.'}])],
+  ['opp_004', 'p_ridgep1', 'Network Infrastructure Refresh', 'EuroBank AG', '120000', 'Won', 'Closed', '2026-03-15', 'Complete network infrastructure refresh', '2026-01-20', '2026-03-15', JSON.stringify([{date:'2026-03-15T15:00:00',text:'Deal closed! PO received. Implementation starts April 1.'},{date:'2026-02-20T10:00:00',text:'Final presentation to CTO. Positive feedback received.'}])],
+  ['opp_005', 'p_insigh1', 'Digital Workspace Transformation', 'Contoso Ltd', '275000', 'In Progress', 'Proposal', '2026-08-01', 'End-to-end digital workspace transformation', '2026-03-01', '2026-04-01', JSON.stringify([{date:'2026-04-01T13:00:00',text:'Proposal submitted. Awaiting feedback from Contoso procurement team.'},{date:'2026-03-15T11:00:00',text:'Requirements workshop completed with Contoso IT leadership.'}])],
+  ['opp_006', 'p_insigh1', 'Hybrid Cloud Migration', 'Woodgrove Bank', '180000', 'Registered', 'Qualified', '2026-09-15', 'Hybrid cloud migration for financial services', '2026-03-20', '2026-03-20', ''],
+  ['opp_007', 'p_syscd01', 'SCCM to Intune Migration', 'Fabrikam Inc', '95000', 'In Progress', 'Negotiation', '2026-07-01', 'Migrate 10K endpoints from SCCM to Intune', '2026-02-15', '2026-03-28', JSON.stringify([{date:'2026-03-28T14:30:00',text:'Contract terms finalized. Legal review in progress on both sides.'},{date:'2026-03-01T10:00:00',text:'POC completed successfully. Customer moving forward with full migration.'}])],
+  ['opp_008', 'p_getrb1', 'DevOps Pipeline Modernization', 'Northwind Traders', '110000', 'Registered', 'Prospect', '2026-08-15', 'CI/CD pipeline modernization with GitHub Actions', '2026-04-01', '2026-04-01', ''],
+  ['opp_009', 'p_qualc01', 'Edge Computing Platform', 'Adventure Works', '320000', 'In Progress', 'Proposal', '2026-09-30', 'Edge computing solution for manufacturing IoT', '2026-02-15', '2026-03-20', JSON.stringify([{date:'2026-03-20T09:00:00',text:'Revised proposal sent with updated pricing for 5 manufacturing sites.'},{date:'2026-03-05T15:00:00',text:'Site visit to Adventure Works main factory. Identified 5 deployment locations.'}])],
+  ['opp_010', 'p_qualc01', 'AI Accelerator Deployment', 'Tailspin Toys', '75000', 'Won', 'Closed', '2026-03-01', 'AI inference accelerator deployment', '2026-01-10', '2026-03-01', JSON.stringify([{date:'2026-03-01T12:00:00',text:'Deal closed. Hardware shipped. On-site installation scheduled for March 15.'},{date:'2026-02-15T10:00:00',text:'Demo completed. Customer impressed with inference performance benchmarks.'}])],
+  ['opp_011', 'p_nerdio1', 'Cost Optimization Assessment', 'Sunrise Media', '60000', 'Lost', 'Closed', '2026-02-28', 'Cloud cost optimization assessment', '2025-12-01', '2026-02-28', JSON.stringify([{date:'2026-02-28T11:00:00',text:'Lost to competitor. Customer went with a lower-cost alternative.'},{date:'2026-01-15T14:00:00',text:'Assessment findings presented. Identified $40K in annual savings potential.'}])],
 ];
 
 let demoEvents = [
@@ -431,7 +431,7 @@ let demoTranscripts = [
 // ============================================
 
 const DEMO_STORAGE_KEY = 'pp_demo_data';
-const DEMO_SCHEMA_VERSION = 9; // Bump when demo data structure changes
+const DEMO_SCHEMA_VERSION = 10; // Bump when demo data structure changes
 
 function persistDemoData() {
   try {
