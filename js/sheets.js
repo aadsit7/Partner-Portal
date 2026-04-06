@@ -218,6 +218,7 @@ const SHEET_HEADERS = {
   [CONFIG.SHEET_PARTNERS]: ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status'],
   [CONFIG.SHEET_OPPORTUNITIES]: ['opportunity_id', 'partner_id', 'deal_name', 'customer_name', 'deal_value', 'status', 'stage', 'expected_close', 'description', 'created_at', 'updated_at'],
   [CONFIG.SHEET_EVENTS]: ['event_id', 'title', 'description', 'event_date', 'end_date', 'event_type', 'location', 'url', 'created_by', 'created_at', 'status', 'partner_id'],
+  [CONFIG.SHEET_TRANSCRIPTS]: ['transcript_id', 'partner_id', 'partner_name', 'conversation_date', 'transcript_text', 'created_at'],
 };
 
 /**
@@ -242,7 +243,7 @@ export async function initializeSheet() {
 
   // 2. Build batchUpdate requests to add missing tabs
   const requests = [];
-  const tabsToCreate = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS];
+  const tabsToCreate = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS, CONFIG.SHEET_TRANSCRIPTS];
 
   for (const tabName of tabsToCreate) {
     if (!existingSheets.includes(tabName)) {
@@ -286,7 +287,7 @@ export async function syncHeaders() {
   if (!token) throw new Error('OAuth token required — please log in with Google SSO first.');
 
   const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
-  const tabs = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS];
+  const tabs = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS, CONFIG.SHEET_TRANSCRIPTS];
 
   for (const tabName of tabs) {
     const headerRow = SHEET_HEADERS[tabName];
@@ -321,6 +322,7 @@ export async function seedSheetData() {
     { sheet: CONFIG.SHEET_PARTNERS, rows: demoPartners.slice(1) },
     { sheet: CONFIG.SHEET_OPPORTUNITIES, rows: demoOpportunities.slice(1) },
     { sheet: CONFIG.SHEET_EVENTS, rows: demoEvents.slice(1) },
+    { sheet: CONFIG.SHEET_TRANSCRIPTS, rows: demoTranscripts.slice(1) },
   ];
 
   for (const { sheet, rows } of datasets) {
@@ -411,12 +413,16 @@ let demoEvents = [
   ['evt_007', 'Summer Pipeline Blitz', 'Summer demand gen campaign focusing on pipeline acceleration.', '2026-06-01', '2026-06-30', 'Campaign', 'Digital', '', 'p_admin001', '2026-04-05', 'Upcoming', 'p_qualc01'],
 ];
 
+let demoTranscripts = [
+  ['transcript_id', 'partner_id', 'partner_name', 'conversation_date', 'transcript_text', 'created_at'],
+];
+
 // ============================================
 // Demo data localStorage persistence
 // ============================================
 
 const DEMO_STORAGE_KEY = 'pp_demo_data';
-const DEMO_SCHEMA_VERSION = 4; // Bump when demo data structure changes
+const DEMO_SCHEMA_VERSION = 5; // Bump when demo data structure changes
 
 function persistDemoData() {
   try {
@@ -425,6 +431,7 @@ function persistDemoData() {
       partners: demoPartners,
       opportunities: demoOpportunities,
       events: demoEvents,
+      transcripts: demoTranscripts,
     }));
   } catch { /* quota exceeded — silently ignore */ }
 }
@@ -442,6 +449,7 @@ function loadPersistedDemoData() {
     if (data.partners) demoPartners = data.partners;
     if (data.opportunities) demoOpportunities = data.opportunities;
     if (data.events) demoEvents = data.events;
+    if (data.transcripts) demoTranscripts = data.transcripts;
     return true;
   } catch {
     return false;
@@ -463,6 +471,7 @@ function getDemoData(sheetName) {
     case CONFIG.SHEET_PARTNERS: return [...demoPartners.map(r => [...r])];
     case CONFIG.SHEET_OPPORTUNITIES: return [...demoOpportunities.map(r => [...r])];
     case CONFIG.SHEET_EVENTS: return [...demoEvents.map(r => [...r])];
+    case CONFIG.SHEET_TRANSCRIPTS: return [...demoTranscripts.map(r => [...r])];
     default: return [];
   }
 }
@@ -475,6 +484,7 @@ export function addDemoRow(sheetName, values) {
     case CONFIG.SHEET_PARTNERS: demoPartners.push(values); break;
     case CONFIG.SHEET_OPPORTUNITIES: demoOpportunities.push(values); break;
     case CONFIG.SHEET_EVENTS: demoEvents.push(values); break;
+    case CONFIG.SHEET_TRANSCRIPTS: demoTranscripts.push(values); break;
   }
   persistDemoData();
 }
@@ -488,6 +498,7 @@ export function updateDemoRow(sheetName, rowIndex, values) {
     case CONFIG.SHEET_PARTNERS: data = demoPartners; break;
     case CONFIG.SHEET_OPPORTUNITIES: data = demoOpportunities; break;
     case CONFIG.SHEET_EVENTS: data = demoEvents; break;
+    case CONFIG.SHEET_TRANSCRIPTS: data = demoTranscripts; break;
     default: return;
   }
   if (data[rowIndex - 1]) {
@@ -505,6 +516,7 @@ export function deleteDemoRow(sheetName, rowIndex) {
     case CONFIG.SHEET_PARTNERS: data = demoPartners; break;
     case CONFIG.SHEET_OPPORTUNITIES: data = demoOpportunities; break;
     case CONFIG.SHEET_EVENTS: data = demoEvents; break;
+    case CONFIG.SHEET_TRANSCRIPTS: data = demoTranscripts; break;
     default: return;
   }
   data.splice(rowIndex - 1, 1);
