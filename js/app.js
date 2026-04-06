@@ -14,6 +14,7 @@ import * as partnerResources from './views/partner-resources.js';
 import * as adminDashboard from './views/admin-dashboard.js';
 import * as adminPartners from './views/admin-partners.js';
 import * as adminEvents from './views/admin-events.js';
+import * as adminPartnerDetail from './views/admin-partner-detail.js';
 
 // ---- Register Routes ----
 
@@ -23,8 +24,9 @@ addRoute('/login', {
   cleanup: loginView.cleanup,
 });
 
-addRoute('/partner/dashboard', {
-  title: 'Dashboard',
+// Partner routes (renamed tabs)
+addRoute('/partner/opportunities', {
+  title: 'Opportunities',
   render: async (container) => {
     setupAppShell();
     await partnerDashboard.render(container);
@@ -32,8 +34,8 @@ addRoute('/partner/dashboard', {
   cleanup: partnerDashboard.cleanup,
 });
 
-addRoute('/partner/marketing', {
-  title: 'Marketing Plan',
+addRoute('/partner/demandgen', {
+  title: 'Demand Gen',
   render: async (container) => {
     setupAppShell();
     await partnerMarketing.render(container);
@@ -42,7 +44,7 @@ addRoute('/partner/marketing', {
 });
 
 addRoute('/partner/resources', {
-  title: 'Support & Resources',
+  title: 'Resources',
   render: async (container) => {
     setupAppShell();
     await partnerResources.render(container);
@@ -50,6 +52,18 @@ addRoute('/partner/resources', {
   cleanup: partnerResources.cleanup,
 });
 
+// Legacy routes — redirect to new names
+addRoute('/partner/dashboard', {
+  title: 'Opportunities',
+  render: async () => { navigate('/partner/opportunities'); },
+});
+
+addRoute('/partner/marketing', {
+  title: 'Demand Gen',
+  render: async () => { navigate('/partner/demandgen'); },
+});
+
+// Admin routes
 addRoute('/admin/dashboard', {
   title: 'Admin Dashboard',
   render: async (container) => {
@@ -75,6 +89,15 @@ addRoute('/admin/events', {
     await adminEvents.render(container);
   },
   cleanup: adminEvents.cleanup,
+});
+
+addRoute('/admin/partner-detail', {
+  title: 'Partner Detail',
+  render: async (container, params) => {
+    setupAppShell();
+    await adminPartnerDetail.render(container, params);
+  },
+  cleanup: adminPartnerDetail.cleanup,
 });
 
 // ---- App Shell Setup ----

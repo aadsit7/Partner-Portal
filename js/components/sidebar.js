@@ -7,9 +7,9 @@ import { navigate, getCurrentPath } from '../router.js';
 import { el, $ } from '../utils/dom.js';
 
 const PARTNER_NAV = [
-  { path: '/partner/dashboard', label: 'Dashboard', icon: 'dashboard' },
-  { path: '/partner/marketing', label: 'Marketing Plan', icon: 'calendar' },
-  { path: '/partner/resources', label: 'Support & Resources', icon: 'support' },
+  { path: '/partner/opportunities', label: 'Opportunities', icon: 'dashboard' },
+  { path: '/partner/demandgen', label: 'Demand Gen', icon: 'calendar' },
+  { path: '/partner/resources', label: 'Resources', icon: 'support' },
 ];
 
 const ADMIN_NAV = [
@@ -104,7 +104,10 @@ function updateActiveLink(e) {
   const path = e.detail.path;
   const links = document.querySelectorAll('.sidebar__link');
   links.forEach(link => {
-    link.classList.toggle('sidebar__link--active', link.dataset.path === path);
+    // When on partner-detail, highlight the Dashboard link
+    const isActive = link.dataset.path === path
+      || (path === '/admin/partner-detail' && link.dataset.path === '/admin/dashboard');
+    link.classList.toggle('sidebar__link--active', isActive);
   });
 }
 

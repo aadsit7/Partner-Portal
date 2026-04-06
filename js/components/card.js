@@ -52,10 +52,13 @@ export function dealCard(opp, { onEdit, onView } = {}) {
 /**
  * Create a partner summary card (for admin view).
  */
-export function partnerCard(partner, stats) {
+export function partnerCard(partner, stats, { onClick } = {}) {
   const tierClass = partner.tier?.toLowerCase() || 'bronze';
 
-  return el('div', { class: 'card' },
+  return el('div', {
+    class: `card${onClick ? ' card--clickable' : ''}`,
+    onClick: onClick ? () => onClick(partner) : undefined,
+  },
     el('div', { class: 'card__header' },
       el('div', {},
         el('div', { class: 'card__title' }, partner.display_name),

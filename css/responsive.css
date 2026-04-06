@@ -43,6 +43,26 @@
   }
 }
 
+/* Tablet detail header */
+@media (max-width: 1024px) {
+  .detail-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .detail-header__stats {
+    width: 100%;
+    justify-content: flex-start;
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border-light);
+  }
+
+  .detail-header__stat:first-child {
+    border-left: none;
+    padding-left: 0;
+  }
+}
+
 /* Mobile (< 640px) */
 @media (max-width: 640px) {
   :root {
@@ -132,6 +152,30 @@
 
   .calendar__title {
     font-size: var(--text-base);
+  }
+
+  /* Detail header mobile */
+  .detail-header__stats {
+    gap: var(--space-4);
+  }
+
+  .detail-header__stat {
+    padding: 0 var(--space-3);
+  }
+
+  .detail-header__name {
+    font-size: var(--text-xl);
+  }
+
+  /* Tab bar mobile */
+  .tab-bar {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tab-bar__tab {
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-xs);
   }
 
   /* Table responsive */
