@@ -76,7 +76,7 @@
 }
 
 .calendar__day:hover {
-  background: rgba(139, 92, 246, 0.03);
+  background: rgba(0, 34, 68, 0.03);
 }
 
 .calendar__day--outside {
@@ -85,7 +85,7 @@
 }
 
 .calendar__day--today {
-  background: rgba(139, 92, 246, 0.04);
+  background: rgba(0, 34, 68, 0.04);
 }
 
 .calendar__day-number {
@@ -135,8 +135,8 @@
 }
 
 .calendar__event--conference {
-  background: rgba(139, 92, 246, 0.15);
-  color: #6d28d9;
+  background: rgba(0, 34, 68, 0.15);
+  color: #002244;
 }
 
 .calendar__event--campaign {

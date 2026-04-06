@@ -36,7 +36,7 @@ export async function render(container) {
         style: {
           width: '56px',
           height: '56px',
-          background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-light))',
+          background: 'linear-gradient(135deg, var(--color-primary), var(--color-accent))',
           borderRadius: 'var(--radius-lg)',
           display: 'flex',
           alignItems: 'center',

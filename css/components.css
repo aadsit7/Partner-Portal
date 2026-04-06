@@ -219,8 +219,8 @@
 }
 
 .badge--admin {
-  background: rgba(139, 92, 246, 0.12);
-  color: #6d28d9;
+  background: rgba(0, 34, 68, 0.12);
+  color: #002244;
 }
 
 /* ---------- Forms ---------- */
@@ -250,7 +250,7 @@
 
 .form-input:focus {
   border-color: var(--color-primary-lighter);
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12);
+  box-shadow: 0 0 0 3px rgba(0, 34, 68, 0.12);
 }
 
 .form-input::placeholder {
@@ -285,7 +285,7 @@
 
 .form-select:focus {
   border-color: var(--color-primary-lighter);
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12);
+  box-shadow: 0 0 0 3px rgba(0, 34, 68, 0.12);
 }
 
 .form-textarea {
@@ -303,7 +303,7 @@
 
 .form-textarea:focus {
   border-color: var(--color-primary-lighter);
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12);
+  box-shadow: 0 0 0 3px rgba(0, 34, 68, 0.12);
 }
 
 .form-error {
@@ -535,7 +535,7 @@
 }
 
 .table tr:hover td {
-  background: rgba(139, 92, 246, 0.02);
+  background: rgba(0, 34, 68, 0.02);
 }
 
 .table__actions {
@@ -627,7 +627,7 @@
 .search-bar__input:focus {
   background: var(--color-surface);
   border-color: var(--color-primary-lighter);
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12);
+  box-shadow: 0 0 0 3px rgba(0, 34, 68, 0.12);
 }
 
 /* ---------- Section header ---------- */
