@@ -1,0 +1,165 @@
+// ============================================
+// Dynamic Form Builder
+// ============================================
+
+import { el } from '../utils/dom.js';
+
+/**
+ * Build a form from field definitions.
+ * @param {Array} fields - Array of field configs
+ * @param {Function} onSubmit - Called with form data object
+ * @param {Object} initialValues - Pre-fill values
+ * @returns {HTMLFormElement}
+ */
+export function buildForm(fields, onSubmit, initialValues = {}) {
+  const form = el('form', { class: 'form', onSubmit: (e) => {
+    e.preventDefault();
+    const data = getFormData(form, fields);
+    if (validateForm(form, fields, data)) {
+      onSubmit(data);
+    }
+  }});
+
+  let currentRow = null;
+
+  fields.forEach((field, idx) => {
+    if (field.type === 'row-start') {
+      currentRow = el('div', { class: 'form-row' });
+      return;
+    }
+    if (field.type === 'row-end') {
+      if (currentRow) {
+        form.appendChild(currentRow);
+        currentRow = null;
+      }
+      return;
+    }
+
+    const group = createFormGroup(field, initialValues[field.name]);
+
+    if (currentRow) {
+      currentRow.appendChild(group);
+    } else {
+      form.appendChild(group);
+    }
+  });
+
+  // Close any open row
+  if (currentRow) form.appendChild(currentRow);
+
+  return form;
+}
+
+function createFormGroup(field, initialValue) {
+  const group = el('div', { class: 'form-group' });
+  const value = initialValue ?? field.default ?? '';
+
+  if (field.label) {
+    group.appendChild(
+      el('label', { class: 'form-label', for: `field-${field.name}` },
+        field.label,
+        field.required ? el('span', { style: { color: 'var(--color-danger)', marginLeft: '2px' } }, '*') : null
+      )
+    );
+  }
+
+  let input;
+
+  switch (field.type) {
+    case 'select':
+      input = el('select', {
+        class: 'form-select',
+        id: `field-${field.name}`,
+        name: field.name,
+      },
+        field.placeholder ? el('option', { value: '', disabled: true, selected: !value }, field.placeholder) : null,
+        ...field.options.map(opt => {
+          const optValue = typeof opt === 'string' ? opt : opt.value;
+          const optLabel = typeof opt === 'string' ? opt : opt.label;
+          return el('option', { value: optValue, selected: optValue === value }, optLabel);
+        })
+      );
+      break;
+
+    case 'textarea':
+      input = el('textarea', {
+        class: 'form-textarea',
+        id: `field-${field.name}`,
+        name: field.name,
+        placeholder: field.placeholder || '',
+      }, String(value));
+      break;
+
+    case 'date':
+      input = el('input', {
+        class: 'form-input',
+        type: 'date',
+        id: `field-${field.name}`,
+        name: field.name,
+        value: String(value),
+      });
+      break;
+
+    case 'number':
+      input = el('input', {
+        class: 'form-input',
+        type: 'number',
+        id: `field-${field.name}`,
+        name: field.name,
+        placeholder: field.placeholder || '',
+        value: String(value),
+        min: field.min,
+        step: field.step || 'any',
+      });
+      break;
+
+    default: // text, email, tel, url
+      input = el('input', {
+        class: 'form-input',
+        type: field.type || 'text',
+        id: `field-${field.name}`,
+        name: field.name,
+        placeholder: field.placeholder || '',
+        value: String(value),
+      });
+  }
+
+  group.appendChild(input);
+  group.appendChild(el('div', { class: 'form-error', id: `error-${field.name}` }));
+
+  return group;
+}
+
+function getFormData(form, fields) {
+  const data = {};
+  fields.forEach(f => {
+    if (f.type === 'row-start' || f.type === 'row-end') return;
+    const input = form.querySelector(`[name="${f.name}"]`);
+    if (input) {
+      data[f.name] = input.value.trim();
+    }
+  });
+  return data;
+}
+
+function validateForm(form, fields, data) {
+  let valid = true;
+
+  fields.forEach(f => {
+    if (f.type === 'row-start' || f.type === 'row-end') return;
+
+    const errEl = form.querySelector(`#error-${f.name}`);
+    const input = form.querySelector(`[name="${f.name}"]`);
+
+    if (errEl) errEl.textContent = '';
+    if (input) input.classList.remove('form-input--error');
+
+    if (f.required && !data[f.name]) {
+      if (errEl) errEl.textContent = `${f.label || f.name} is required`;
+      if (input) input.classList.add('form-input--error');
+      valid = false;
+    }
+  });
+
+  return valid;
+}
