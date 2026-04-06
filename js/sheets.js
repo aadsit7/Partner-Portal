@@ -3,8 +3,29 @@
 // ============================================
 
 import { CONFIG } from './config.js';
+import { getAccessToken } from './auth.js';
 
 const BASE = `${CONFIG.SHEETS_BASE_URL}/${CONFIG.SPREADSHEET_ID}`;
+
+/**
+ * Build fetch headers — includes Bearer token when an OAuth access token is available.
+ */
+function getAuthHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  const token = getAccessToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+/**
+ * Build the auth query parameter — use API key when no Bearer token is available.
+ */
+function getAuthParam() {
+  const token = getAccessToken();
+  return token ? '' : `key=${CONFIG.API_KEY}`;
+}
 
 /**
  * Check if Google Sheets is configured.
@@ -21,8 +42,9 @@ export function isConfigured() {
 export async function readSheet(sheetName) {
   if (!isConfigured()) return getDemoData(sheetName);
 
-  const url = `${BASE}/values/${encodeURIComponent(sheetName)}?key=${CONFIG.API_KEY}`;
-  const res = await fetch(url);
+  const url = `${BASE}/values/${encodeURIComponent(sheetName)}?${getAuthParam()}`;
+  const token = getAccessToken();
+  const res = await fetch(url, token ? { headers: { 'Authorization': `Bearer ${token}` } } : undefined);
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -59,12 +81,13 @@ export async function appendRow(sheetName, values) {
     return { updates: { updatedRows: 1 } };
   }
 
+  const authParam = getAuthParam();
   const url = `${BASE}/values/${encodeURIComponent(sheetName)}:append`
-    + `?valueInputOption=USER_ENTERED&key=${CONFIG.API_KEY}`;
+    + `?valueInputOption=USER_ENTERED${authParam ? '&' + authParam : ''}`;
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ values: [values] }),
   });
 
@@ -89,12 +112,13 @@ export async function updateRow(sheetName, rowIndex, values) {
   }
 
   const range = `${sheetName}!A${rowIndex}:${String.fromCharCode(64 + values.length)}${rowIndex}`;
+  const authParam = getAuthParam();
   const url = `${BASE}/values/${encodeURIComponent(range)}`
-    + `?valueInputOption=USER_ENTERED&key=${CONFIG.API_KEY}`;
+    + `?valueInputOption=USER_ENTERED${authParam ? '&' + authParam : ''}`;
 
   const res = await fetch(url, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ values: [values] }),
   });
 
@@ -117,19 +141,21 @@ export async function deleteRow(sheetName, rowIndex) {
   }
 
   // First, get the sheet's numeric gid
-  const metaUrl = `${BASE}?key=${CONFIG.API_KEY}&fields=sheets.properties`;
-  const metaRes = await fetch(metaUrl);
+  const authParam = getAuthParam();
+  const metaUrl = `${BASE}?${authParam}&fields=sheets.properties`;
+  const token = getAccessToken();
+  const metaRes = await fetch(metaUrl, token ? { headers: { 'Authorization': `Bearer ${token}` } } : undefined);
   const meta = await metaRes.json();
   const sheet = meta.sheets?.find(s => s.properties.title === sheetName);
 
   if (!sheet) throw new Error(`Sheet "${sheetName}" not found`);
 
   const sheetId = sheet.properties.sheetId;
-  const url = `${BASE}:batchUpdate?key=${CONFIG.API_KEY}`;
+  const url = `${BASE}:batchUpdate${authParam ? '?' + authParam : ''}`;
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       requests: [{
         deleteDimension: {
@@ -194,6 +220,53 @@ let demoEvents = [
   ['evt_007', 'Summer Pipeline Blitz', 'Summer demand gen campaign focusing on pipeline acceleration.', '2026-06-01', '2026-06-30', 'Campaign', 'Digital', '', 'p_admin001', '2026-04-05', 'Upcoming'],
 ];
 
+// ============================================
+// Demo data localStorage persistence
+// ============================================
+
+const DEMO_STORAGE_KEY = 'pp_demo_data';
+const DEMO_SCHEMA_VERSION = 2; // Bump when demo data structure changes
+
+function persistDemoData() {
+  try {
+    localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify({
+      version: DEMO_SCHEMA_VERSION,
+      partners: demoPartners,
+      opportunities: demoOpportunities,
+      events: demoEvents,
+    }));
+  } catch { /* quota exceeded — silently ignore */ }
+}
+
+function loadPersistedDemoData() {
+  try {
+    const raw = localStorage.getItem(DEMO_STORAGE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    // Reject stale schema
+    if (data.version !== DEMO_SCHEMA_VERSION) {
+      localStorage.removeItem(DEMO_STORAGE_KEY);
+      return false;
+    }
+    if (data.partners) demoPartners = data.partners;
+    if (data.opportunities) demoOpportunities = data.opportunities;
+    if (data.events) demoEvents = data.events;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Clear persisted demo data (useful for resetting to defaults).
+ */
+export function clearDemoData() {
+  localStorage.removeItem(DEMO_STORAGE_KEY);
+}
+
+// On module init, restore persisted demo data if available
+loadPersistedDemoData();
+
 function getDemoData(sheetName) {
   switch (sheetName) {
     case CONFIG.SHEET_PARTNERS: return [...demoPartners.map(r => [...r])];
@@ -212,6 +285,7 @@ export function addDemoRow(sheetName, values) {
     case CONFIG.SHEET_OPPORTUNITIES: demoOpportunities.push(values); break;
     case CONFIG.SHEET_EVENTS: demoEvents.push(values); break;
   }
+  persistDemoData();
 }
 
 /**
@@ -228,6 +302,7 @@ export function updateDemoRow(sheetName, rowIndex, values) {
   if (data[rowIndex - 1]) {
     data[rowIndex - 1] = values;
   }
+  persistDemoData();
 }
 
 /**
@@ -242,4 +317,5 @@ export function deleteDemoRow(sheetName, rowIndex) {
     default: return;
   }
   data.splice(rowIndex - 1, 1);
+  persistDemoData();
 }

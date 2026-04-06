@@ -46,7 +46,7 @@ export async function login(username, password) {
   delete session._rowIndex;
   session.is_admin = false;
 
-  sessionStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(session));
+  localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(session));
   return session;
 }
 
@@ -57,7 +57,7 @@ export async function login(username, password) {
  * @returns {Object} user session
  * @throws on failure
  */
-export async function loginWithGoogle(credentialResponse) {
+export async function loginWithGoogle(credentialResponse, accessToken = null) {
   // Decode the JWT to get user info
   const payload = decodeJwt(credentialResponse.credential);
 
@@ -87,9 +87,11 @@ export async function loginWithGoogle(credentialResponse) {
     google_picture: payload.picture || null,
     tier: 'Admin',
     status: 'active',
+    access_token: accessToken || null,
+    access_token_expires: accessToken ? Date.now() + 3600 * 1000 : null,
   };
 
-  sessionStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(session));
+  localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(session));
   return session;
 }
 
@@ -141,7 +143,7 @@ export async function loginAsAdmin(username, password) {
   delete session._rowIndex;
   session.is_admin = true;
 
-  sessionStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(session));
+  localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(session));
   return session;
 }
 
@@ -149,7 +151,7 @@ export async function loginAsAdmin(username, password) {
  * Get the current logged-in user, or null.
  */
 export function getCurrentUser() {
-  const raw = sessionStorage.getItem(CONFIG.SESSION_KEY);
+  const raw = localStorage.getItem(CONFIG.SESSION_KEY);
   if (!raw) return null;
   try {
     return JSON.parse(raw);
@@ -167,10 +169,39 @@ export function isAdmin() {
 }
 
 /**
+ * Get the stored OAuth access token, or null if missing/expired.
+ */
+export function getAccessToken() {
+  const user = getCurrentUser();
+  if (!user?.access_token) return null;
+  // Expired (with 5-minute buffer)?
+  if (user.access_token_expires && Date.now() > user.access_token_expires - 300000) {
+    return null;
+  }
+  return user.access_token;
+}
+
+/**
+ * Update the stored access token (e.g., after a silent refresh).
+ */
+export function storeAccessToken(token) {
+  const user = getCurrentUser();
+  if (!user) return;
+  user.access_token = token;
+  user.access_token_expires = Date.now() + 3600 * 1000;
+  localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(user));
+}
+
+/**
  * Log out the current user.
  */
 export function logout() {
-  sessionStorage.removeItem(CONFIG.SESSION_KEY);
+  const user = getCurrentUser();
+  // Revoke Google token if present
+  if (user?.access_token && window.google?.accounts?.oauth2) {
+    try { google.accounts.oauth2.revoke(user.access_token); } catch {}
+  }
+  localStorage.removeItem(CONFIG.SESSION_KEY);
 }
 
 /**
