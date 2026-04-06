@@ -14,13 +14,19 @@ import { setTopbarTitle } from '../components/sidebar.js';
 
 export const title = 'Events';
 
+let cachedPartners = null;
+
 export async function render(container) {
   setTopbarTitle('Demand Gen Events');
 
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
 
   try {
-    const events = await readSheetAsObjects(CONFIG.SHEET_EVENTS);
+    const [events, partners] = await Promise.all([
+      readSheetAsObjects(CONFIG.SHEET_EVENTS),
+      readSheetAsObjects(CONFIG.SHEET_PARTNERS),
+    ]);
+    cachedPartners = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
     renderView(container, events);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },
@@ -28,6 +34,12 @@ export async function render(container) {
       el('div', { class: 'empty-state__description' }, err.message)
     ));
   }
+}
+
+function getPartnerName(partnerId) {
+  if (!partnerId || !cachedPartners) return '';
+  const p = cachedPartners.find(p => p.partner_id === partnerId);
+  return p ? p.display_name : '';
 }
 
 function renderView(container, events) {
@@ -44,7 +56,7 @@ function renderView(container, events) {
         onClick: () => openEventModal(null, container),
       },
         el('span', { html: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-        'New Demand Gen Event'
+        'New Event'
       ),
     ),
 
@@ -57,6 +69,7 @@ function renderView(container, events) {
                 el('th', {}, 'Date'),
                 el('th', {}, 'Type'),
                 el('th', {}, 'Status'),
+                el('th', {}, 'Partner'),
                 el('th', {}, 'Location'),
                 el('th', {}, 'Actions')
               )
@@ -70,7 +83,7 @@ function renderView(container, events) {
                       style: {
                         fontSize: 'var(--text-xs)',
                         color: 'var(--color-text-muted)',
-                        maxWidth: '300px',
+                        maxWidth: '250px',
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
@@ -88,6 +101,11 @@ function renderView(container, events) {
                   ),
                   el('td', {},
                     el('span', { class: `badge badge--${getStatusBadge(evt.status)}` }, evt.status || 'Upcoming')
+                  ),
+                  el('td', {},
+                    evt.partner_id
+                      ? el('span', { class: 'badge badge--admin' }, getPartnerName(evt.partner_id) || evt.partner_id)
+                      : el('span', { style: { color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)' } }, 'All Partners')
                   ),
                   el('td', {}, evt.location || '—'),
                   el('td', {},
@@ -145,6 +163,11 @@ function getStatusBadge(status) {
 export function openEventModal(event, container, onSaved) {
   const isEdit = !!event;
 
+  const partnerOptions = [
+    { value: '', label: 'All Partners (no specific partner)' },
+    ...(cachedPartners || []).map(p => ({ value: p.partner_id, label: p.display_name })),
+  ];
+
   const fields = [
     { name: 'title', label: 'Event Name', required: true, placeholder: 'e.g., Q2 Partner Kickoff Webinar' },
     { type: 'row-start' },
@@ -163,6 +186,10 @@ export function openEventModal(event, container, onSaved) {
       options: ['Upcoming', 'In Progress', 'Completed', 'Cancelled'],
     },
     { type: 'row-end' },
+    {
+      name: 'partner_id', label: 'Assigned Partner', type: 'select',
+      options: partnerOptions,
+    },
     { name: 'location', label: 'Location', placeholder: 'e.g., Virtual (Zoom), San Francisco, CA' },
     { name: 'url', label: 'Event URL', type: 'url', placeholder: 'https://...' },
     { name: 'description', label: 'Description', type: 'textarea', placeholder: 'Describe the event...' },
@@ -174,6 +201,7 @@ export function openEventModal(event, container, onSaved) {
     end_date: event.end_date,
     event_type: event.event_type,
     status: event.status || 'Upcoming',
+    partner_id: event.partner_id || '',
     location: event.location,
     url: event.url,
     description: event.description,
@@ -196,6 +224,7 @@ export function openEventModal(event, container, onSaved) {
           event.created_by,
           event.created_at,
           data.status || 'Upcoming',
+          data.partner_id || '',
         ];
 
         if (isConfigured()) {
@@ -218,6 +247,7 @@ export function openEventModal(event, container, onSaved) {
           user.partner_id,
           nowISO(),
           data.status || 'Upcoming',
+          data.partner_id || '',
         ];
 
         if (isConfigured()) {
@@ -278,4 +308,6 @@ async function handleDelete(event, container) {
   }
 }
 
-export function cleanup() {}
+export function cleanup() {
+  cachedPartners = null;
+}
