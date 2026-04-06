@@ -43,7 +43,22 @@
   }
 }
 
-/* Tablet detail header */
+/* Tablet dashboard and detail */
+@media (max-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-bar__select {
+    width: 100%;
+  }
+}
+
 @media (max-width: 1024px) {
   .detail-header {
     flex-direction: column;
