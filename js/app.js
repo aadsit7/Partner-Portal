@@ -16,6 +16,7 @@ import * as adminPartners from './views/admin-partners.js';
 import * as adminEvents from './views/admin-events.js';
 import * as adminOpportunities from './views/admin-opportunities.js';
 import * as adminPartnerDetail from './views/admin-partner-detail.js';
+import * as adminSetup from './views/admin-setup.js';
 
 // ---- Register Routes ----
 
@@ -108,6 +109,15 @@ addRoute('/admin/partner-detail', {
     await adminPartnerDetail.render(container, params);
   },
   cleanup: adminPartnerDetail.cleanup,
+});
+
+addRoute('/admin/setup', {
+  title: 'Setup',
+  render: async (container) => {
+    setupAppShell();
+    await adminSetup.render(container);
+  },
+  cleanup: adminSetup.cleanup,
 });
 
 // ---- App Shell Setup ----

@@ -2,10 +2,29 @@
 // Google Sheets API Integration
 // ============================================
 
-import { CONFIG } from './config.js';
+import { CONFIG, getRuntimeConfig } from './config.js';
 import { getAccessToken } from './auth.js';
 
-const BASE = `${CONFIG.SHEETS_BASE_URL}/${CONFIG.SPREADSHEET_ID}`;
+/**
+ * Get the effective Spreadsheet ID (runtime override or hardcoded).
+ */
+function getSpreadsheetId() {
+  return getRuntimeConfig('SPREADSHEET_ID') || CONFIG.SPREADSHEET_ID;
+}
+
+/**
+ * Get the effective API key (runtime override or hardcoded).
+ */
+function getApiKey() {
+  return getRuntimeConfig('API_KEY') || CONFIG.API_KEY;
+}
+
+/**
+ * Build the base URL for Sheets API calls.
+ */
+function getBaseUrl() {
+  return `${CONFIG.SHEETS_BASE_URL}/${getSpreadsheetId()}`;
+}
 
 /**
  * Build fetch headers — includes Bearer token when an OAuth access token is available.
@@ -24,15 +43,22 @@ function getAuthHeaders() {
  */
 function getAuthParam() {
   const token = getAccessToken();
-  return token ? '' : `key=${CONFIG.API_KEY}`;
+  if (token) return '';
+  const apiKey = getApiKey();
+  return (apiKey && apiKey !== 'YOUR_GOOGLE_API_KEY_HERE') ? `key=${apiKey}` : '';
 }
 
 /**
  * Check if Google Sheets is configured.
+ * Requires a real Spreadsheet ID. API key is optional if OAuth token is available.
  */
 export function isConfigured() {
-  return CONFIG.API_KEY !== 'YOUR_GOOGLE_API_KEY_HERE'
-    && CONFIG.SPREADSHEET_ID !== 'YOUR_SPREADSHEET_ID_HERE';
+  const spreadsheetId = getSpreadsheetId();
+  if (!spreadsheetId || spreadsheetId === 'YOUR_SPREADSHEET_ID_HERE') return false;
+  // Need either an API key or an OAuth token
+  const apiKey = getApiKey();
+  const token = getAccessToken();
+  return !!token || (!!apiKey && apiKey !== 'YOUR_GOOGLE_API_KEY_HERE');
 }
 
 /**
@@ -42,7 +68,9 @@ export function isConfigured() {
 export async function readSheet(sheetName) {
   if (!isConfigured()) return getDemoData(sheetName);
 
-  const url = `${BASE}/values/${encodeURIComponent(sheetName)}?${getAuthParam()}`;
+  const base = getBaseUrl();
+  const authParam = getAuthParam();
+  const url = `${base}/values/${encodeURIComponent(sheetName)}${authParam ? '?' + authParam : ''}`;
   const token = getAccessToken();
   const res = await fetch(url, token ? { headers: { 'Authorization': `Bearer ${token}` } } : undefined);
 
@@ -81,8 +109,9 @@ export async function appendRow(sheetName, values) {
     return { updates: { updatedRows: 1 } };
   }
 
+  const base = getBaseUrl();
   const authParam = getAuthParam();
-  const url = `${BASE}/values/${encodeURIComponent(sheetName)}:append`
+  const url = `${base}/values/${encodeURIComponent(sheetName)}:append`
     + `?valueInputOption=USER_ENTERED${authParam ? '&' + authParam : ''}`;
 
   const res = await fetch(url, {
@@ -111,9 +140,10 @@ export async function updateRow(sheetName, rowIndex, values) {
     return {};
   }
 
+  const base = getBaseUrl();
   const range = `${sheetName}!A${rowIndex}:${String.fromCharCode(64 + values.length)}${rowIndex}`;
   const authParam = getAuthParam();
-  const url = `${BASE}/values/${encodeURIComponent(range)}`
+  const url = `${base}/values/${encodeURIComponent(range)}`
     + `?valueInputOption=USER_ENTERED${authParam ? '&' + authParam : ''}`;
 
   const res = await fetch(url, {
@@ -140,10 +170,12 @@ export async function deleteRow(sheetName, rowIndex) {
     return {};
   }
 
-  // First, get the sheet's numeric gid
+  const base = getBaseUrl();
   const authParam = getAuthParam();
-  const metaUrl = `${BASE}?${authParam}&fields=sheets.properties`;
   const token = getAccessToken();
+
+  // First, get the sheet's numeric gid
+  const metaUrl = `${base}?fields=sheets.properties${authParam ? '&' + authParam : ''}`;
   const metaRes = await fetch(metaUrl, token ? { headers: { 'Authorization': `Bearer ${token}` } } : undefined);
   const meta = await metaRes.json();
   const sheet = meta.sheets?.find(s => s.properties.title === sheetName);
@@ -151,7 +183,7 @@ export async function deleteRow(sheetName, rowIndex) {
   if (!sheet) throw new Error(`Sheet "${sheetName}" not found`);
 
   const sheetId = sheet.properties.sheetId;
-  const url = `${BASE}:batchUpdate${authParam ? '?' + authParam : ''}`;
+  const url = `${base}:batchUpdate${authParam ? '?' + authParam : ''}`;
 
   const res = await fetch(url, {
     method: 'POST',
@@ -176,6 +208,142 @@ export async function deleteRow(sheetName, rowIndex) {
   }
 
   return res.json();
+}
+
+// ============================================
+// Sheet Initialization & Seeding
+// ============================================
+
+const SHEET_HEADERS = {
+  [CONFIG.SHEET_PARTNERS]: ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status'],
+  [CONFIG.SHEET_OPPORTUNITIES]: ['opportunity_id', 'partner_id', 'deal_name', 'customer_name', 'deal_value', 'status', 'stage', 'expected_close', 'description', 'created_at', 'updated_at'],
+  [CONFIG.SHEET_EVENTS]: ['event_id', 'title', 'description', 'event_date', 'end_date', 'event_type', 'location', 'url', 'created_by', 'created_at', 'status', 'partner_id'],
+};
+
+/**
+ * Initialize the Google Sheet with the 3 required tabs and header rows.
+ * Requires an OAuth token (admin must be logged in).
+ */
+export async function initializeSheet() {
+  const base = getBaseUrl();
+  const token = getAccessToken();
+  if (!token) throw new Error('OAuth token required — please log in with Google SSO first.');
+
+  const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+
+  // 1. Get existing sheet metadata
+  const metaRes = await fetch(`${base}?fields=sheets.properties`, { headers });
+  if (!metaRes.ok) {
+    const err = await metaRes.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'Failed to read spreadsheet metadata');
+  }
+  const meta = await metaRes.json();
+  const existingSheets = meta.sheets?.map(s => s.properties.title) || [];
+
+  // 2. Build batchUpdate requests to add missing tabs
+  const requests = [];
+  const tabsToCreate = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS];
+
+  for (const tabName of tabsToCreate) {
+    if (!existingSheets.includes(tabName)) {
+      requests.push({ addSheet: { properties: { title: tabName } } });
+    }
+  }
+
+  if (requests.length > 0) {
+    const batchRes = await fetch(`${base}:batchUpdate`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ requests }),
+    });
+    if (!batchRes.ok) {
+      const err = await batchRes.json().catch(() => ({}));
+      throw new Error(err.error?.message || 'Failed to create sheet tabs');
+    }
+  }
+
+  // 3. Write header rows to each tab (only if the tab is empty)
+  for (const tabName of tabsToCreate) {
+    const checkUrl = `${base}/values/${encodeURIComponent(tabName)}!A1:A1`;
+    const checkRes = await fetch(checkUrl, { headers });
+    const checkData = await checkRes.json();
+
+    if (!checkData.values || checkData.values.length === 0) {
+      const headerRow = SHEET_HEADERS[tabName];
+      const writeUrl = `${base}/values/${encodeURIComponent(tabName)}!A1?valueInputOption=RAW`;
+      await fetch(writeUrl, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ values: [headerRow] }),
+      });
+    }
+  }
+
+  return { success: true, tabsCreated: requests.length };
+}
+
+/**
+ * Seed the Google Sheet with demo data.
+ * Appends demo rows to each tab (does NOT clear existing data).
+ */
+export async function seedSheetData() {
+  const token = getAccessToken();
+  if (!token) throw new Error('OAuth token required — please log in with Google SSO first.');
+
+  const base = getBaseUrl();
+  const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+
+  // Skip header row (index 0) from demo arrays — headers are already written by initializeSheet
+  const datasets = [
+    { sheet: CONFIG.SHEET_PARTNERS, rows: demoPartners.slice(1) },
+    { sheet: CONFIG.SHEET_OPPORTUNITIES, rows: demoOpportunities.slice(1) },
+    { sheet: CONFIG.SHEET_EVENTS, rows: demoEvents.slice(1) },
+  ];
+
+  for (const { sheet, rows } of datasets) {
+    if (rows.length === 0) continue;
+    const url = `${base}/values/${encodeURIComponent(sheet)}:append?valueInputOption=USER_ENTERED`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ values: rows }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `Failed to seed ${sheet}`);
+    }
+  }
+
+  return { success: true };
+}
+
+/**
+ * Test the connection by reading spreadsheet metadata.
+ */
+export async function testConnection() {
+  const base = getBaseUrl();
+  const token = getAccessToken();
+  const apiKey = getApiKey();
+
+  let url = `${base}?fields=sheets.properties`;
+  const opts = {};
+  if (token) {
+    opts.headers = { 'Authorization': `Bearer ${token}` };
+  } else if (apiKey && apiKey !== 'YOUR_GOOGLE_API_KEY_HERE') {
+    url += `&key=${apiKey}`;
+  } else {
+    throw new Error('No authentication available. Log in with Google SSO or set an API key.');
+  }
+
+  const res = await fetch(url, opts);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'Connection failed');
+  }
+
+  const data = await res.json();
+  const tabs = data.sheets?.map(s => s.properties.title) || [];
+  return { connected: true, tabs };
 }
 
 
