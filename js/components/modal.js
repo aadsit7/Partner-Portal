@@ -11,14 +11,16 @@ let currentModal = null;
  * @param {Object} options - { title, content, footer, onClose }
  * @returns {{ close: Function, element: HTMLElement }}
  */
-export function openModal({ title, content, footer, onClose }) {
+export function openModal({ title, content, footer, onClose, className }) {
   // Close any existing modal
   closeModal();
+
+  const modalClass = className ? `modal ${className}` : 'modal';
 
   const backdrop = el('div', { class: 'modal-backdrop', onClick: (e) => {
     if (e.target === backdrop) closeModal();
   }},
-    el('div', { class: 'modal' },
+    el('div', { class: modalClass },
       el('div', { class: 'modal__header' },
         el('h2', { class: 'modal__title' }, title),
         el('button', {

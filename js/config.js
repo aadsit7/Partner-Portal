@@ -57,6 +57,7 @@ export const CONFIG = {
   SHEET_PARTNERS: 'Partners',
   SHEET_OPPORTUNITIES: 'Opportunities',
   SHEET_EVENTS: 'Events',
+  SHEET_TRANSCRIPTS: 'Transcripts',
 
   // Support & Resources iframe URL
   SUPPORT_URL: 'https://partnerprogram.github.io/Application-Workspace/',
