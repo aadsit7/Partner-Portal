@@ -215,7 +215,7 @@ export async function deleteRow(sheetName, rowIndex) {
 // ============================================
 
 const SHEET_HEADERS = {
-  [CONFIG.SHEET_PARTNERS]: ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status'],
+  [CONFIG.SHEET_PARTNERS]: ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status', 'hq_location'],
   [CONFIG.SHEET_OPPORTUNITIES]: ['opportunity_id', 'partner_id', 'deal_name', 'customer_name', 'deal_value', 'status', 'stage', 'expected_close', 'description', 'created_at', 'updated_at'],
   [CONFIG.SHEET_EVENTS]: ['event_id', 'title', 'description', 'event_date', 'end_date', 'event_type', 'location', 'url', 'created_by', 'created_at', 'status', 'partner_id'],
   [CONFIG.SHEET_TRANSCRIPTS]: ['transcript_id', 'partner_id', 'partner_name', 'conversation_date', 'transcript_text', 'created_at'],
@@ -377,14 +377,17 @@ export async function testConnection() {
 // ============================================
 
 let demoPartners = [
-  ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status'],
-  ['p_admin001', 'admin', 'Portal Admin', '', 'Gold', 'Global', '2026-01-01', 'TRUE', '', 'active'],
-  ['p_nerdio1', 'nerdio', 'Nerdio', 'Technology', 'Gold', 'North America', '2026-01-15', 'FALSE', '', 'active'],
-  ['p_ridgep1', 'ridgepoint', 'RidgePoint', 'MSP/SI', 'Silver', 'North America', '2026-02-01', 'FALSE', '', 'active'],
-  ['p_insigh1', 'insight', 'Insight', 'MSP/SI', 'Gold', 'North America', '2026-02-10', 'FALSE', '', 'active'],
-  ['p_syscd01', 'systemcenterdudes', 'System Center Dudes', 'Technology', 'Bronze', 'EMEA', '2026-02-20', 'FALSE', '', 'active'],
-  ['p_gitrub1', 'gitrubix', 'GitRubix', 'Technology', 'Silver', 'APAC', '2026-03-01', 'FALSE', '', 'active'],
-  ['p_qualc01', 'qualcomm', 'Qualcomm', 'Technology', 'Gold', 'North America', '2026-03-10', 'FALSE', '', 'active'],
+  ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status', 'hq_location'],
+  ['p_admin001', 'admin', 'Portal Admin', '', 'Gold', 'Global', '2026-01-01', 'TRUE', '', 'active', ''],
+  ['p_elant1', 'elantis', 'Elantis', 'MSP/SI', 'Gold', 'North America', '2026-01-10', 'FALSE', '', 'active', 'Edmonton, Alberta, Canada'],
+  ['p_getrb1', 'getrubix', 'GetRubix', 'MSP/SI', 'Silver', 'North America', '2026-01-15', 'FALSE', '', 'active', 'New Jersey, USA'],
+  ['p_infos1', 'infosys', 'Infosys', 'MSP/SI', 'Gold', 'North America', '2026-01-20', 'FALSE', '', 'active', 'Bengaluru, India'],
+  ['p_insigh1', 'insight', 'Insight', 'MSP/SI', 'Gold', 'North America', '2026-02-10', 'FALSE', '', 'active', 'Chandler, Arizona, USA'],
+  ['p_micro1', 'microsoft', 'Microsoft', 'OEM', 'Gold', 'North America', '2026-02-15', 'FALSE', '', 'active', 'Redmond, Washington, USA'],
+  ['p_nerdio1', 'nerdio', 'Nerdio', 'Technology', 'Gold', 'North America', '2026-01-15', 'FALSE', '', 'active', 'Chicago, Illinois, USA'],
+  ['p_qualc01', 'qualcomm', 'Qualcomm', 'Technology', 'Gold', 'North America', '2026-03-10', 'FALSE', '', 'active', 'San Diego, California, USA'],
+  ['p_ridgep1', 'ridgepoint', 'RidgePoint', 'MENA Regional Distributor', 'Silver', 'MENA', '2026-02-01', 'FALSE', '', 'active', 'Dubai, UAE'],
+  ['p_syscd01', 'systemcenterdudes', 'System Center Dudes', 'MSP/SI', 'Bronze', 'North America', '2026-02-20', 'FALSE', '', 'active', 'Montreal, Quebec, Canada'],
 ];
 
 let demoOpportunities = [
@@ -396,7 +399,7 @@ let demoOpportunities = [
   ['opp_005', 'p_insigh1', 'Digital Workspace Transformation', 'Contoso Ltd', '275000', 'In Progress', 'Proposal', '2026-08-01', 'End-to-end digital workspace transformation', '2026-03-01', '2026-04-01'],
   ['opp_006', 'p_insigh1', 'Hybrid Cloud Migration', 'Woodgrove Bank', '180000', 'Registered', 'Qualified', '2026-09-15', 'Hybrid cloud migration for financial services', '2026-03-20', '2026-03-20'],
   ['opp_007', 'p_syscd01', 'SCCM to Intune Migration', 'Fabrikam Inc', '95000', 'In Progress', 'Negotiation', '2026-07-01', 'Migrate 10K endpoints from SCCM to Intune', '2026-02-15', '2026-03-28'],
-  ['opp_008', 'p_gitrub1', 'DevOps Pipeline Modernization', 'Northwind Traders', '110000', 'Registered', 'Prospect', '2026-08-15', 'CI/CD pipeline modernization with GitHub Actions', '2026-04-01', '2026-04-01'],
+  ['opp_008', 'p_getrb1', 'DevOps Pipeline Modernization', 'Northwind Traders', '110000', 'Registered', 'Prospect', '2026-08-15', 'CI/CD pipeline modernization with GitHub Actions', '2026-04-01', '2026-04-01'],
   ['opp_009', 'p_qualc01', 'Edge Computing Platform', 'Adventure Works', '320000', 'In Progress', 'Proposal', '2026-09-30', 'Edge computing solution for manufacturing IoT', '2026-02-15', '2026-03-20'],
   ['opp_010', 'p_qualc01', 'AI Accelerator Deployment', 'Tailspin Toys', '75000', 'Won', 'Closed', '2026-03-01', 'AI inference accelerator deployment', '2026-01-10', '2026-03-01'],
   ['opp_011', 'p_nerdio1', 'Cost Optimization Assessment', 'Sunrise Media', '60000', 'Lost', 'Closed', '2026-02-28', 'Cloud cost optimization assessment', '2025-12-01', '2026-02-28'],
@@ -422,7 +425,7 @@ let demoTranscripts = [
 // ============================================
 
 const DEMO_STORAGE_KEY = 'pp_demo_data';
-const DEMO_SCHEMA_VERSION = 5; // Bump when demo data structure changes
+const DEMO_SCHEMA_VERSION = 6; // Bump when demo data structure changes
 
 function persistDemoData() {
   try {

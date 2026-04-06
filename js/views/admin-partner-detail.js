@@ -94,7 +94,8 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
         ),
         el('div', { class: 'detail-header__meta' },
           partner.partner_type ? el('span', { class: 'detail-header__meta-item' }, partner.partner_type) : null,
-          partner.region ? el('span', { class: 'detail-header__meta-item' }, partner.region) : null
+          partner.region ? el('span', { class: 'detail-header__meta-item' }, partner.region) : null,
+          partner.hq_location ? el('span', { class: 'detail-header__meta-item' }, partner.hq_location) : null
         )
       ),
       el('div', { class: 'detail-header__stats' },
