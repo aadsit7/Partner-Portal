@@ -1,98 +1,13 @@
 /* ============================================
-   Calendar Component
+   Calendar Component (partner marketing view)
+   Styles specific to js/components/calendar.js
+   Base calendar styles are in components.css
    ============================================ */
 
-.calendar {
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border-light);
-  box-shadow: var(--shadow-xs);
-  overflow: hidden;
-}
-
-.calendar__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-5) var(--space-6);
-  border-bottom: 1px solid var(--color-border-light);
-}
-
-.calendar__title {
-  font-size: var(--text-xl);
-  font-weight: var(--font-bold);
-  color: var(--color-text-primary);
-}
-
-.calendar__nav {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.calendar__nav-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-md);
-  color: var(--color-text-secondary);
-  transition: all var(--transition-fast);
-}
-
-.calendar__nav-btn:hover {
-  background: var(--color-border-light);
-  color: var(--color-text-primary);
-}
-
-.calendar__grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-}
-
-.calendar__weekday {
-  padding: var(--space-3) var(--space-2);
-  text-align: center;
-  font-size: var(--text-xs);
-  font-weight: var(--font-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-text-muted);
-  border-bottom: 1px solid var(--color-border-light);
-}
-
-.calendar__day {
-  min-height: 90px;
-  padding: var(--space-2);
-  border-right: 1px solid var(--color-border-light);
-  border-bottom: 1px solid var(--color-border-light);
-  cursor: pointer;
-  transition: background var(--transition-fast);
-}
-
-.calendar__day:nth-child(7n) {
-  border-right: none;
-}
-
-.calendar__day:hover {
-  background: rgba(0, 34, 68, 0.03);
-}
-
+/* calendar.js uses --outside; admin-events.js uses --other-month */
 .calendar__day--outside {
   background: var(--color-bg);
   opacity: 0.4;
-}
-
-.calendar__day--today {
-  background: rgba(0, 34, 68, 0.04);
-}
-
-.calendar__day-number {
-  font-size: var(--text-sm);
-  font-weight: var(--font-medium);
-  color: var(--color-text-secondary);
-  margin-bottom: var(--space-1);
 }
 
 .calendar__day--today .calendar__day-number {
@@ -107,6 +22,27 @@
   font-size: var(--text-xs);
 }
 
+/* calendar.js uses .calendar__day-number */
+.calendar__day-number {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-1);
+}
+
+/* calendar.js uses .calendar__weekday */
+.calendar__weekday {
+  padding: var(--space-3) var(--space-2);
+  text-align: center;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+/* calendar.js uses .calendar__event (not __event-chip) */
 .calendar__event {
   padding: 2px var(--space-2);
   margin-bottom: 2px;
@@ -149,6 +85,7 @@
   color: #616061;
 }
 
+/* calendar.js uses .calendar__more */
 .calendar__more {
   font-size: var(--text-xs);
   color: var(--color-text-muted);
