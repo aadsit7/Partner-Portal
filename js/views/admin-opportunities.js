@@ -378,8 +378,18 @@ function getLeadSourceLabel(leadSource) {
 // Opportunity Modal (Create/Edit)
 // ============================================
 
-export function openOppModal(opp, container, onSaved) {
+export async function openOppModal(opp, container, onSaved) {
   const isEdit = !!opp;
+
+  // Ensure partners and events are loaded (modal may be opened from other views)
+  if (!cachedPartners || !cachedEvents) {
+    const [partners, events] = await Promise.all([
+      cachedPartners ? Promise.resolve(null) : readSheetAsObjects(CONFIG.SHEET_PARTNERS),
+      cachedEvents ? Promise.resolve(null) : readSheetAsObjects(CONFIG.SHEET_EVENTS),
+    ]);
+    if (partners) cachedPartners = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
+    if (events) cachedEvents = events;
+  }
 
   // Parse existing notes
   let notes = [];

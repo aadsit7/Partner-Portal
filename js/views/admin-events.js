@@ -704,8 +704,14 @@ function getStatusBadge(status) {
 // Event Modal (Create/Edit)
 // ============================================
 
-export function openEventModal(event, container, onSaved) {
+export async function openEventModal(event, container, onSaved) {
   const isEdit = !!event;
+
+  // Ensure partners are loaded (modal may be opened from other views like dashboard)
+  if (!cachedPartners) {
+    const partners = await readSheetAsObjects(CONFIG.SHEET_PARTNERS);
+    cachedPartners = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
+  }
 
   // Parse or initialize checklist
   let checklistItems = parseChecklist(
