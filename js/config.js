@@ -26,6 +26,9 @@ export const CONFIG = {
   // Authorized JavaScript origins: your GitHub Pages URL (e.g., https://yourusername.github.io)
   GOOGLE_CLIENT_ID: 'YOUR_GOOGLE_CLIENT_ID_HERE',
 
+  // OAuth scope for Google Sheets read/write access
+  OAUTH_SCOPES: 'https://www.googleapis.com/auth/spreadsheets',
+
   // Allowed admin email(s) — only these Google accounts can log in as admin
   ADMIN_EMAILS: ['your-email@gmail.com'],
 

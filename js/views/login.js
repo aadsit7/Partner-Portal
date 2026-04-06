@@ -2,10 +2,13 @@
 // Login View
 // ============================================
 
-import { login, loginWithGoogle } from '../auth.js';
+import { login, loginWithGoogle, storeAccessToken } from '../auth.js';
 import { navigate } from '../router.js';
 import { CONFIG } from '../config.js';
 import { el, $, mount } from '../utils/dom.js';
+
+// OAuth token client for requesting Sheets API access token
+let tokenClient = null;
 
 export const title = 'Login';
 
@@ -201,6 +204,15 @@ function initGoogleSSO() {
         type: 'standard',
         size: 'large',
       });
+
+      // Also initialize the OAuth token client for Sheets API write access
+      if (window.google?.accounts?.oauth2) {
+        tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: CONFIG.OAUTH_SCOPES,
+          callback: () => {}, // Overwritten at call time
+        });
+      }
     }
   }, 100);
 
@@ -308,7 +320,14 @@ async function handleGoogleCredential(response) {
   }
 
   try {
-    const user = await loginWithGoogle(response);
+    // Step 1: Request an OAuth access token for Sheets API (if token client is ready)
+    let accessToken = null;
+    if (tokenClient) {
+      accessToken = await requestSheetsAccessToken();
+    }
+
+    // Step 2: Authenticate with the Google ID token + store the access token
+    await loginWithGoogle(response, accessToken);
     navigate('/admin/dashboard');
   } catch (err) {
     if (errorEl) errorEl.textContent = err.message || 'Google sign-in failed';
@@ -318,6 +337,59 @@ async function handleGoogleCredential(response) {
       if (textEl) textEl.textContent = 'Sign in with Google';
     }
   }
+}
+
+/**
+ * Request an OAuth access token for Google Sheets write access.
+ * Tries silent prompt first; falls back to consent dialog on first use.
+ */
+function requestSheetsAccessToken() {
+  return new Promise((resolve) => {
+    if (!tokenClient) {
+      resolve(null);
+      return;
+    }
+
+    tokenClient.callback = (tokenResponse) => {
+      if (tokenResponse.error) {
+        // Silent prompt failed — retry with consent
+        if (tokenResponse.error === 'access_denied' || tokenResponse.error === 'popup_closed_by_user') {
+          resolve(null);
+          return;
+        }
+        tokenClient.callback = (retryResponse) => {
+          resolve(retryResponse.access_token || null);
+        };
+        tokenClient.requestAccessToken({ prompt: 'consent' });
+        return;
+      }
+      resolve(tokenResponse.access_token || null);
+    };
+
+    // Try silent first (works if user previously granted consent)
+    tokenClient.requestAccessToken({ prompt: '' });
+  });
+}
+
+/**
+ * Refresh the access token silently (exported for use by sheets.js on 401).
+ */
+export function refreshAccessToken() {
+  return new Promise((resolve) => {
+    if (!tokenClient) {
+      resolve(null);
+      return;
+    }
+    tokenClient.callback = (tokenResponse) => {
+      if (tokenResponse.access_token) {
+        storeAccessToken(tokenResponse.access_token);
+        resolve(tokenResponse.access_token);
+      } else {
+        resolve(null);
+      }
+    };
+    tokenClient.requestAccessToken({ prompt: '' });
+  });
 }
 
 /**
@@ -342,7 +414,7 @@ async function handleLogin(e) {
 
   try {
     const user = await login(username, password);
-    navigate('/partner/dashboard');
+    navigate('/partner/opportunities');
   } catch (err) {
     errorEl.textContent = err.message || 'Invalid username or password';
     btn.disabled = false;
