@@ -8,6 +8,7 @@ import { sha256 } from '../utils/hash.js';
 import { el, mount, uuid, $, debounce } from '../utils/dom.js';
 import { navigate } from '../router.js';
 import { nowISO, formatDate } from '../utils/date.js';
+import { tierSlug, TIER_OPTIONS } from '../utils/tiers.js';
 import { openModal, closeModal, confirmDialog } from '../components/modal.js';
 import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
@@ -108,7 +109,7 @@ function renderCards(partners) {
   grid.className = 'partner-card-grid stagger';
 
   partners.forEach(p => {
-    const tierClass = p.tier?.toLowerCase() || 'bronze';
+    const tierClass = tierSlug(p.tier);
     const initials = partnerInitials(p.display_name);
 
     const card = el('div', { class: 'partner-mgmt-card' },
@@ -119,7 +120,7 @@ function renderCards(partners) {
           el('div', { class: 'partner-mgmt-card__name' }, p.display_name),
           el('div', { class: 'partner-mgmt-card__username' }, p.username),
         ),
-        el('span', { class: `badge badge--${tierClass}` }, p.tier || 'Bronze')
+        el('span', { class: `badge badge--${tierClass}` }, p.tier || 'Registered')
       ),
 
       // Card details
@@ -198,7 +199,7 @@ function openPartnerModal(partner) {
     {
       name: 'tier', label: 'Tier', type: 'select', required: true,
       placeholder: 'Select tier...',
-      options: ['Gold', 'Silver', 'Bronze'],
+      options: TIER_OPTIONS,
     },
     { type: 'row-end' },
     { type: 'row-start' },

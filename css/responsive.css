@@ -2,6 +2,26 @@
    Responsive Breakpoints
    ============================================ */
 
+/* Type distribution responsive */
+@media (max-width: 768px) {
+  .type-distribution {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .type-breakdown {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .filter-pills {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: var(--space-2);
+  }
+}
+
 /* Tablet (640px - 1024px) */
 @media (max-width: 1024px) {
   .app-shell--app {

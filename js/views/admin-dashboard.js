@@ -8,12 +8,20 @@ import { el, mount, formatCurrency, debounce } from '../utils/dom.js';
 import { navigate } from '../router.js';
 import { statCard } from '../components/card.js';
 import { setTopbarTitle } from '../components/sidebar.js';
+import { tierSlug, TIER_COLORS, TIER_ICONS } from '../utils/tiers.js';
 
 export const title = 'Admin Dashboard';
 
 let mapInstance = null;
+let mapMarkers = [];
 
-// Known HQ coordinates for map markers
+const TYPE_COLORS = {
+  'Technology':                '#1a73e8',
+  'OEM':                       '#ECB22E',
+  'MSP/SI':                    '#69BE28',
+  'MENA Regional Distributor': '#E01E5A',
+};
+
 const HQ_COORDINATES = {
   'Edmonton, Alberta, Canada': [53.5461, -113.4938],
   'New Jersey, USA': [40.0583, -74.4057],
@@ -24,12 +32,11 @@ const HQ_COORDINATES = {
   'San Diego, California, USA': [32.7157, -117.1611],
   'Dubai, UAE': [25.2048, 55.2708],
   'Montreal, Quebec, Canada': [45.5017, -73.5673],
-  'Montreal/Blainville, Quebec, Canada': [45.5017, -73.5673],
+  'Austin, Texas, USA': [30.2672, -97.7431],
 };
 
 export async function render(container) {
   setTopbarTitle('Dashboard');
-
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
 
   try {
@@ -37,7 +44,6 @@ export async function render(container) {
       readSheetAsObjects(CONFIG.SHEET_PARTNERS),
       readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES),
     ]);
-
     renderDashboard(container, partners, opportunities);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },
@@ -63,8 +69,15 @@ function renderDashboard(container, partners, opportunities) {
     return { partner, stats: { totalDeals: total, totalValue: totalVal } };
   }).sort((a, b) => b.stats.totalValue - a.stats.totalValue);
 
+  // Type distribution data
+  const typeData = computeTypeData(partnerList, opportunities);
+  const uniqueTypes = Object.keys(typeData);
+
   // Build thumbnail elements
   const thumbElements = partnerStats.map(({ partner, stats }) => partnerThumbnail(partner, stats));
+
+  // Filter state
+  let activeFilter = 'all';
 
   // Search bar
   const searchInput = el('input', {
@@ -74,15 +87,64 @@ function renderDashboard(container, partners, opportunities) {
     style: { maxWidth: '320px' },
   });
 
-  const onSearch = debounce(() => {
+  // Filter function
+  function filterPartners() {
     const query = searchInput.value.toLowerCase().trim();
     thumbElements.forEach((thumb, i) => {
-      const name = partnerStats[i].partner.display_name.toLowerCase();
-      thumb.style.display = name.includes(query) ? '' : 'none';
+      const partner = partnerStats[i].partner;
+      const matchesSearch = !query || partner.display_name.toLowerCase().includes(query);
+      const matchesType = activeFilter === 'all' || partner.partner_type === activeFilter;
+      thumb.style.display = (matchesSearch && matchesType) ? '' : 'none';
     });
-  }, 200);
+    updateMapMarkers();
+  }
 
+  const onSearch = debounce(filterPartners, 200);
   searchInput.addEventListener('input', onSearch);
+
+  // Type breakdown cards
+  const typeCards = [];
+  const allCard = el('div', {
+    class: 'type-card type-card--active',
+    onClick: () => applyFilter('all'),
+  },
+    el('div', { class: 'type-card__header' },
+      el('div', { class: 'type-card__color', style: { background: '#002244' } }),
+      el('div', { class: 'type-card__name' }, 'All Types')
+    ),
+    el('div', { class: 'type-card__count' }, String(partnerList.length)),
+    el('div', { class: 'type-card__pipeline' }, formatCurrency(totalPipeline) + ' pipeline')
+  );
+  allCard.dataset.type = 'all';
+  typeCards.push(allCard);
+
+  uniqueTypes.forEach(type => {
+    const d = typeData[type];
+    const card = el('div', {
+      class: 'type-card',
+      onClick: () => applyFilter(type),
+    },
+      el('div', { class: 'type-card__header' },
+        el('div', { class: 'type-card__color', style: { background: TYPE_COLORS[type] || '#9B9A9B' } }),
+        el('div', { class: 'type-card__name' }, type)
+      ),
+      el('div', { class: 'type-card__count' }, String(d.count)),
+      el('div', { class: 'type-card__pipeline' }, formatCurrency(d.pipeline) + ' pipeline')
+    );
+    card.dataset.type = type;
+    typeCards.push(card);
+  });
+
+  function applyFilter(type) {
+    activeFilter = type;
+    typeCards.forEach(c => {
+      c.classList.toggle('type-card--active', c.dataset.type === type);
+    });
+    filterPartners();
+  }
+
+  // Donut chart
+  const donut = buildDonut(partnerList, typeData);
 
   // View toggle buttons
   const gridBtn = el('button', {
@@ -119,6 +181,12 @@ function renderDashboard(container, partners, opportunities) {
       statCard('Revenue Won', formatCurrency(wonValue))
     ),
 
+    // Type distribution section
+    el('div', { class: 'type-distribution' },
+      donut,
+      el('div', { class: 'type-breakdown' }, ...typeCards)
+    ),
+
     // View toggle
     el('div', { class: 'view-toggle' }, gridBtn, mapBtn),
 
@@ -144,6 +212,7 @@ function renderDashboard(container, partners, opportunities) {
         setTimeout(() => initMap(partnerList), 50);
       } else {
         mapInstance.invalidateSize();
+        updateMapMarkers();
       }
     } else {
       gv.style.display = '';
@@ -152,6 +221,62 @@ function renderDashboard(container, partners, opportunities) {
       mapBtn.className = 'btn btn--secondary btn--sm';
     }
   }
+
+  function updateMapMarkers() {
+    if (!mapInstance) return;
+    mapMarkers.forEach(({ marker, partner }) => {
+      const visible = activeFilter === 'all' || partner.partner_type === activeFilter;
+      if (visible) {
+        marker.addTo(mapInstance);
+      } else {
+        marker.remove();
+      }
+    });
+  }
+}
+
+function computeTypeData(partnerList, opportunities) {
+  const data = {};
+  partnerList.forEach(p => {
+    const type = p.partner_type || 'Other';
+    if (!data[type]) data[type] = { count: 0, pipeline: 0 };
+    data[type].count++;
+    const partnerPipeline = opportunities
+      .filter(o => o.partner_id === p.partner_id)
+      .reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
+    data[type].pipeline += partnerPipeline;
+  });
+  return data;
+}
+
+function buildDonut(partnerList, typeData) {
+  const total = partnerList.length;
+  if (total === 0) {
+    return el('div', { class: 'type-donut', style: { background: '#f0f0f0' } },
+      el('div', { class: 'type-donut__hole' },
+        el('div', { class: 'type-donut__total' }, '0'),
+        el('div', { class: 'type-donut__label' }, 'Partners')
+      )
+    );
+  }
+
+  let cumulative = 0;
+  const stops = [];
+  for (const [type, d] of Object.entries(typeData)) {
+    const start = cumulative;
+    cumulative += (d.count / total) * 360;
+    const color = TYPE_COLORS[type] || '#9B9A9B';
+    stops.push(`${color} ${start}deg ${cumulative}deg`);
+  }
+
+  return el('div', { class: 'type-donut', style: {
+    background: `conic-gradient(${stops.join(', ')})`
+  }},
+    el('div', { class: 'type-donut__hole' },
+      el('div', { class: 'type-donut__total' }, String(total)),
+      el('div', { class: 'type-donut__label' }, 'Partners')
+    )
+  );
 }
 
 function initMap(partners) {
@@ -165,7 +290,7 @@ function initMap(partners) {
     maxZoom: 18,
   }).addTo(mapInstance);
 
-  const markers = [];
+  mapMarkers = [];
 
   partners.forEach(partner => {
     const loc = partner.hq_location;
@@ -174,9 +299,8 @@ function initMap(partners) {
     const coords = HQ_COORDINATES[loc];
     if (!coords) return;
 
-    const tierClass = partner.tier?.toLowerCase() || 'bronze';
-    const tierColors = { gold: '#d4a017', silver: '#7a7a7a', bronze: '#8b5e30' };
-    const color = tierColors[tierClass] || '#002244';
+    const tc = tierSlug(partner.tier);
+    const color = TIER_COLORS[tc] || '#002244';
 
     const icon = L.divIcon({
       className: 'map-marker',
@@ -200,17 +324,17 @@ function initMap(partners) {
       </div>
     `, { maxWidth: 250 });
 
-    markers.push(marker);
+    mapMarkers.push({ marker, partner });
   });
 
-  if (markers.length > 0) {
-    const group = L.featureGroup(markers);
+  if (mapMarkers.length > 0) {
+    const group = L.featureGroup(mapMarkers.map(m => m.marker));
     mapInstance.fitBounds(group.getBounds().pad(0.3));
   }
 }
 
 function partnerThumbnail(partner, stats) {
-  const tierClass = partner.tier?.toLowerCase() || 'bronze';
+  const tc = tierSlug(partner.tier);
   const initials = (partner.display_name || '')
     .split(/\s+/)
     .map(w => w[0] || '')
@@ -222,9 +346,12 @@ function partnerThumbnail(partner, stats) {
     class: 'partner-thumb',
     onClick: () => navigate(`/admin/partner-detail?id=${partner.partner_id}`),
   },
-    el('div', { class: `partner-avatar partner-avatar--${tierClass}` }, initials),
+    el('div', { class: `partner-avatar partner-avatar--${tc}` }, initials),
     el('div', { class: 'partner-thumb__name' }, partner.display_name),
-    el('span', { class: `badge badge--xs badge--${tierClass}` }, partner.tier),
+    el('span', { class: `badge badge--xs badge--${tc}` },
+      el('span', { class: 'badge__icon', html: TIER_ICONS[tc] || '' }),
+      partner.tier
+    ),
     partner.hq_location
       ? el('div', { class: 'partner-thumb__location' }, partner.hq_location)
       : null,
@@ -239,4 +366,5 @@ export function cleanup() {
     mapInstance.remove();
     mapInstance = null;
   }
+  mapMarkers = [];
 }

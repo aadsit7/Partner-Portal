@@ -7,6 +7,7 @@ import { CONFIG } from '../config.js';
 import { el, mount, formatCurrency, uuid } from '../utils/dom.js';
 import { formatDate, todayISO, nowISO } from '../utils/date.js';
 import { navigate } from '../router.js';
+import { tierSlug, TIER_ICONS } from '../utils/tiers.js';
 import { dealCard, statCard } from '../components/card.js';
 import { openModal, closeModal, confirmDialog } from '../components/modal.js';
 import { openEventModal } from './admin-events.js';
@@ -65,7 +66,7 @@ function reRender(partnerId) {
 }
 
 function renderDetail(container, partner, opportunities, partnerEvents, transcripts) {
-  const tierClass = partner.tier?.toLowerCase() || 'bronze';
+  const tierClass = tierSlug(partner.tier);
   const totalValue = opportunities.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
   const wonDeals = opportunities.filter(o => o.status === 'Won');
   const wonValue = wonDeals.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
@@ -90,7 +91,10 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
       el('div', { class: 'detail-header__info' },
         el('div', { style: { display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-2)' } },
           el('h2', { class: 'detail-header__name' }, partner.display_name),
-          el('span', { class: `badge badge--${tierClass}` }, partner.tier)
+          el('span', { class: `badge badge--${tierClass}` },
+            el('span', { class: 'badge__icon', html: TIER_ICONS[tierClass] || '' }),
+            partner.tier
+          )
         ),
         el('div', { class: 'detail-header__meta' },
           partner.partner_type ? el('span', { class: 'detail-header__meta-item' }, partner.partner_type) : null,
