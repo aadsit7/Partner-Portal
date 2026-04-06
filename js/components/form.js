@@ -72,13 +72,19 @@ function createFormGroup(field, initialValue) {
         id: `field-${field.name}`,
         name: field.name,
       },
-        field.placeholder ? el('option', { value: '', disabled: true, selected: !value }, field.placeholder) : null,
+        field.placeholder ? el('option', { value: '', disabled: true }, field.placeholder) : null,
         ...field.options.map(opt => {
           const optValue = typeof opt === 'string' ? opt : opt.value;
           const optLabel = typeof opt === 'string' ? opt : opt.label;
-          return el('option', { value: optValue, selected: optValue === value }, optLabel);
+          return el('option', { value: optValue }, optLabel);
         })
       );
+      // Set value via property after options are appended for reliable pre-selection
+      if (value) {
+        input.value = String(value);
+      } else if (field.placeholder) {
+        input.selectedIndex = 0;
+      }
       break;
 
     case 'textarea':
@@ -96,8 +102,9 @@ function createFormGroup(field, initialValue) {
         type: 'date',
         id: `field-${field.name}`,
         name: field.name,
-        value: String(value),
       });
+      // Must set value via property, not attribute, for date inputs to display correctly
+      if (value) input.value = String(value);
       break;
 
     case 'number':
@@ -107,10 +114,10 @@ function createFormGroup(field, initialValue) {
         id: `field-${field.name}`,
         name: field.name,
         placeholder: field.placeholder || '',
-        value: String(value),
         min: field.min,
         step: field.step || 'any',
       });
+      if (value !== '' && value !== undefined) input.value = String(value);
       break;
 
     default: // text, email, tel, url
@@ -120,8 +127,8 @@ function createFormGroup(field, initialValue) {
         id: `field-${field.name}`,
         name: field.name,
         placeholder: field.placeholder || '',
-        value: String(value),
       });
+      if (value !== '' && value !== undefined) input.value = String(value);
   }
 
   group.appendChild(input);
