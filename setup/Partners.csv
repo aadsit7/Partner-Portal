@@ -1,0 +1,6 @@
+partner_id,username,display_name,contact_email,contact_phone,tier,region,created_at,is_admin,password_hash,status
+p_admin001,admin,Portal Admin,admin@company.com,,Gold,Global,2026-01-01,TRUE,086635fbac324f4fd646adfbf065623c72536f2d53f61c922d828f5c4e46888b,active
+p_acme001,acme,Acme Technologies,john@acmetech.com,(555) 123-4567,Gold,North America,2026-01-15,FALSE,086635fbac324f4fd646adfbf065623c72536f2d53f61c922d828f5c4e46888b,active
+p_globex01,globex,Globex Corp,sarah@globex.com,(555) 987-6543,Silver,EMEA,2026-02-01,FALSE,086635fbac324f4fd646adfbf065623c72536f2d53f61c922d828f5c4e46888b,active
+p_initec1,initech,Initech Solutions,mike@initech.com,(555) 456-7890,Bronze,APAC,2026-02-20,FALSE,086635fbac324f4fd646adfbf065623c72536f2d53f61c922d828f5c4e46888b,active
+p_wayne01,wayne,Wayne Enterprises,bruce@wayne.com,(555) 222-3333,Gold,North America,2026-03-01,FALSE,086635fbac324f4fd646adfbf065623c72536f2d53f61c922d828f5c4e46888b,active
