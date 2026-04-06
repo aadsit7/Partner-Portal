@@ -118,33 +118,8 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
       )
     ),
 
-    // Section 1: Joint Events (webinars, workshops, conferences, campaigns, etc.)
-    el('div', { class: 'detail-section' },
-      el('div', { class: 'detail-section__header' },
-        el('h3', { class: 'detail-section__title' }, 'Joint Events'),
-        el('button', {
-          class: 'btn btn--primary btn--sm',
-          onClick: () => {
-            openEventModal(null, container, () => reRender(partner.partner_id));
-            setTimeout(() => {
-              const sel = document.querySelector('#field-partner_id');
-              if (sel) sel.value = partner.partner_id;
-            }, 50);
-          },
-        },
-          el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-          'New Event'
-        )
-      ),
-      sortedEvents.length > 0
-        ? el('div', { class: 'card-grid stagger' },
-            ...sortedEvents.map(evt => eventCard(evt))
-          )
-        : el('div', { class: 'empty-state', style: { padding: 'var(--space-8) var(--space-4)' } },
-            el('div', { class: 'empty-state__title' }, 'No events yet'),
-            el('div', { class: 'empty-state__description' }, 'Click "New Event" to create a joint event with this partner.')
-          )
-    ),
+    // Section 1: Upcoming Joint Events — compact consolidated view
+    buildUpcomingEventsSection(sortedEvents, partner, container),
 
     // Section 2: Opportunities
     el('div', { class: 'detail-section' },
@@ -506,57 +481,99 @@ function downloadAllTranscriptsPDF(partner, transcripts) {
 }
 
 // ============================================
-// Event Card (unchanged from original)
+// Upcoming Events — Compact Consolidated View
 // ============================================
 
-function eventCard(evt) {
-  const typeBadge = { webinar: 'registered', workshop: 'won', conference: 'admin', campaign: 'in-progress' }[evt.event_type?.toLowerCase()] || 'silver';
-  const statusBadge = { 'Upcoming': 'registered', 'In Progress': 'in-progress', 'Completed': 'won', 'Cancelled': 'lost' }[evt.status] || 'registered';
+const EVENT_TYPE_COLORS = {
+  'Webinar': '#0e8ab5', 'Workshop': '#1a8a5a',
+  'Conference': '#002244', 'Campaign': '#b88a0e', 'Other': '#9B9A9B',
+};
 
-  return el('div', { class: 'card', style: { cursor: 'pointer' }, onClick: () => showEventDetail(evt) },
-    el('div', { class: 'card__header' },
+function buildUpcomingEventsSection(allEvents, partner, container) {
+  const upcomingEvents = allEvents
+    .filter(e => e.status === 'Upcoming' || e.status === 'In Progress')
+    .sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
+
+  const completedCount = allEvents.filter(e => e.status === 'Completed').length;
+
+  return el('div', { class: 'detail-section' },
+    el('div', { class: 'detail-section__header' },
       el('div', {},
-        el('div', { class: 'card__title' }, evt.title),
-        el('div', { class: 'card__subtitle' },
-          formatDate(evt.event_date) + (evt.end_date && evt.end_date !== evt.event_date ? ` — ${formatDate(evt.end_date)}` : '')
+        el('h3', { class: 'detail-section__title' }, 'Upcoming Joint Events'),
+        el('p', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0' } },
+          `${upcomingEvents.length} upcoming \u00B7 ${completedCount} completed \u00B7 ${allEvents.length} total`
         )
       ),
-      el('span', { class: `badge badge--${typeBadge}` }, evt.event_type)
-    ),
-    el('div', { class: 'card__body' },
-      el('p', { style: { fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' } },
-        evt.description?.length > 100 ? evt.description.slice(0, 100) + '...' : evt.description
+      el('div', { style: { display: 'flex', gap: 'var(--space-2)' } },
+        el('button', {
+          class: 'btn btn--secondary btn--sm',
+          onClick: () => navigate('/admin/events'),
+        }, 'View All Events'),
+        el('button', {
+          class: 'btn btn--primary btn--sm',
+          onClick: () => {
+            openEventModal(null, container, () => reRender(partner.partner_id));
+            setTimeout(() => {
+              const sel = document.querySelector('#field-partner_id');
+              if (sel) sel.value = partner.partner_id;
+            }, 50);
+          },
+        },
+          el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
+          'New Event'
+        ),
       )
     ),
-    el('div', { class: 'card__footer' },
-      el('div', { class: 'card__meta' },
-        evt.location ? el('span', { class: 'card__meta-item' }, evt.location) : null
-      ),
-      el('span', { class: `badge badge--${statusBadge}` }, evt.status || 'Upcoming')
-    )
+    upcomingEvents.length > 0
+      ? el('div', { class: 'upcoming-events-list' },
+          ...upcomingEvents.map(evt => upcomingEventRow(evt, container))
+        )
+      : el('div', { class: 'empty-state', style: { padding: 'var(--space-6) var(--space-4)' } },
+          el('div', { class: 'empty-state__title' }, 'No upcoming events'),
+          el('div', { class: 'empty-state__description' }, 'All clear! Create a new event or check the Events tab for past events.')
+        )
   );
 }
 
-function showEventDetail(evt) {
-  const typeBadge = { webinar: 'registered', workshop: 'won', conference: 'admin', campaign: 'in-progress' }[evt.event_type?.toLowerCase()] || 'silver';
+function upcomingEventRow(evt, container) {
+  const typeColor = EVENT_TYPE_COLORS[evt.event_type] || '#9B9A9B';
+  const startDate = new Date(evt.event_date);
+  const month = startDate.toLocaleDateString('en-US', { month: 'short' });
+  const day = startDate.getDate();
 
-  const content = el('div', { class: 'event-detail' },
-    el('div', { style: { display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' } },
-      el('span', { class: `badge badge--${typeBadge}` }, evt.event_type),
-      evt.status ? el('span', { class: `badge badge--${({ 'Upcoming': 'registered', 'In Progress': 'in-progress', 'Completed': 'won', 'Cancelled': 'lost' }[evt.status] || 'registered')}` }, evt.status) : null,
+  const dateRange = formatDate(evt.event_date) +
+    (evt.end_date && evt.end_date !== evt.event_date ? ` — ${formatDate(evt.end_date)}` : '');
+
+  return el('div', {
+    class: 'upcoming-event-row',
+    onClick: () => openEventModal(evt, container),
+  },
+    // Date badge
+    el('div', { class: 'upcoming-event-row__date' },
+      el('div', { class: 'upcoming-event-row__month' }, month),
+      el('div', { class: 'upcoming-event-row__day' }, String(day))
     ),
-    el('div', { class: 'event-detail__meta' },
-      el('div', { class: 'event-detail__row' },
-        el('strong', {}, 'Date: '),
-        formatDate(evt.event_date) + (evt.end_date && evt.end_date !== evt.event_date ? ` — ${formatDate(evt.end_date)}` : '')
-      ),
-      evt.location ? el('div', { class: 'event-detail__row' }, el('strong', {}, 'Location: '), evt.location) : null,
+    // Type indicator
+    el('div', { class: 'upcoming-event-row__type-bar', style: { background: typeColor } }),
+    // Content
+    el('div', { class: 'upcoming-event-row__content' },
+      el('div', { class: 'upcoming-event-row__title' }, evt.title),
+      el('div', { class: 'upcoming-event-row__meta' },
+        el('span', {
+          class: 'upcoming-event-row__type-badge',
+          style: { color: typeColor },
+        }, evt.event_type),
+        el('span', { class: 'upcoming-event-row__date-text' }, dateRange),
+        evt.location ? el('span', { class: 'upcoming-event-row__location' }, evt.location) : null,
+      )
     ),
-    evt.description ? el('div', { class: 'event-detail__description' }, evt.description) : null,
-    evt.url ? el('a', { class: 'event-detail__link', href: evt.url, target: '_blank', rel: 'noopener' }, 'Event Link ↗') : null
+    // Status
+    el('div', { class: 'upcoming-event-row__status' },
+      el('span', {
+        class: `badge badge--xs badge--${evt.status === 'In Progress' ? 'in-progress' : 'registered'}`,
+      }, evt.status || 'Upcoming')
+    )
   );
-
-  openModal({ title: evt.title, content });
 }
 
 export function cleanup() {}

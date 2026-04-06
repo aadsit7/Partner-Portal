@@ -2760,3 +2760,104 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ============================================
+   Upcoming Events — Compact List (Partner Detail)
+   ============================================ */
+
+.upcoming-events-list {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.upcoming-event-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.upcoming-event-row:last-child {
+  border-bottom: none;
+}
+
+.upcoming-event-row:hover {
+  background: rgba(0, 34, 68, 0.02);
+}
+
+.upcoming-event-row__date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+
+.upcoming-event-row__month {
+  font-size: 9px;
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  letter-spacing: 0.5px;
+  line-height: 1;
+}
+
+.upcoming-event-row__day {
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
+  color: var(--color-text-primary);
+  line-height: 1.1;
+}
+
+.upcoming-event-row__type-bar {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.upcoming-event-row__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.upcoming-event-row__title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.upcoming-event-row__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.upcoming-event-row__type-badge {
+  font-weight: var(--font-semibold);
+}
+
+.upcoming-event-row__location::before {
+  content: '\00B7 ';
+}
+
+.upcoming-event-row__status {
+  flex-shrink: 0;
+}
