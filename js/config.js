@@ -40,21 +40,18 @@ export function setRuntimeConfig(key, value) {
 
 export const CONFIG = {
   // Google Sheets API
-  API_KEY: 'YOUR_GOOGLE_API_KEY_HERE',
+  API_KEY: 'AIzaSyDp93FQBEQjWsyLkGrQ0YFusnY94DVzDWw',
   SPREADSHEET_ID: '18Yhe3Yiq9_eI7kBxtFOzdu6Pb0_VUx730TYjq1xPjzI',
   SHEETS_BASE_URL: 'https://sheets.googleapis.com/v4/spreadsheets',
 
   // Google OAuth (for Admin SSO login)
-  // Setup: Google Cloud Console > APIs & Services > Credentials > Create OAuth Client ID
-  // Application type: Web application
-  // Authorized JavaScript origins: your GitHub Pages URL (e.g., https://yourusername.github.io)
-  GOOGLE_CLIENT_ID: 'YOUR_GOOGLE_CLIENT_ID_HERE',
+  GOOGLE_CLIENT_ID: '206815760499-ip5cgia4j8fk9nb5qq83fdv3cfd95lvp.apps.googleusercontent.com',
 
   // OAuth scope for Google Sheets read/write access
   OAUTH_SCOPES: 'https://www.googleapis.com/auth/spreadsheets',
 
   // Allowed admin email(s) — only these Google accounts can log in as admin
-  ADMIN_EMAILS: ['your-email@gmail.com'],
+  ADMIN_EMAILS: ['aadsit7@gmail.com', 'adsitvideo@gmail.com'],
 
   // Sheet names (must match your Google Spreadsheet tab names)
   SHEET_PARTNERS: 'Partners',
