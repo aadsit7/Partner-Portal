@@ -118,10 +118,10 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
       )
     ),
 
-    // Section 1: Joint Lead Generation Events
+    // Section 1: Joint Events (webinars, workshops, conferences, campaigns, etc.)
     el('div', { class: 'detail-section' },
       el('div', { class: 'detail-section__header' },
-        el('h3', { class: 'detail-section__title' }, 'Joint Lead Generation Events'),
+        el('h3', { class: 'detail-section__title' }, 'Joint Events'),
         el('button', {
           class: 'btn btn--primary btn--sm',
           onClick: () => {
@@ -142,7 +142,7 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
           )
         : el('div', { class: 'empty-state', style: { padding: 'var(--space-8) var(--space-4)' } },
             el('div', { class: 'empty-state__title' }, 'No events yet'),
-            el('div', { class: 'empty-state__description' }, 'Click "New Event" to create a joint lead generation event for this partner.')
+            el('div', { class: 'empty-state__description' }, 'Click "New Event" to create a joint event with this partner.')
           )
     ),
 

@@ -2470,6 +2470,19 @@
   flex-shrink: 0;
 }
 
+.activity-card__event-type-badge {
+  font-size: 9px;
+  font-weight: var(--font-semibold);
+  color: #fff;
+  padding: 1px 5px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  line-height: 1.4;
+}
+
 .activity-card__event-name {
   flex: 1;
   color: var(--color-text-primary);

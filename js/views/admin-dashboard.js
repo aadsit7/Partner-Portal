@@ -156,7 +156,7 @@ function buildActivityView(container, partnerStats, upcomingEvents, allEvents, o
   const partnerHubTitle = el('div', { class: 'section-header', style: { marginBottom: 'var(--space-4)' } },
     el('div', {},
       el('h3', { class: 'section-header__title' }, 'Partner Activity'),
-      el('p', { class: 'section-header__subtitle' }, 'Events and opportunities by partner')
+      el('p', { class: 'section-header__subtitle' }, 'Joint events and opportunities by partner')
     )
   );
 
@@ -179,6 +179,10 @@ function buildActivityView(container, partnerStats, upcomingEvents, allEvents, o
             class: 'activity-card__event-dot',
             style: { background: EVENT_TYPE_COLORS[evt.event_type] || '#9B9A9B' },
           }),
+          el('span', {
+            class: 'activity-card__event-type-badge',
+            style: { background: EVENT_TYPE_COLORS[evt.event_type] || '#9B9A9B' },
+          }, evt.event_type),
           el('span', { class: 'activity-card__event-name' }, evt.title),
           el('span', { class: 'activity-card__event-date' }, formatDate(evt.event_date))
         )
@@ -223,7 +227,7 @@ function buildActivityView(container, partnerStats, upcomingEvents, allEvents, o
         ),
         partnerUpcoming.length > 0
           ? el('div', { class: 'activity-card__events' },
-              el('div', { class: 'activity-card__events-title' }, 'Upcoming Events'),
+              el('div', { class: 'activity-card__events-title' }, 'Joint Events'),
               ...eventChips
             )
           : null
@@ -233,7 +237,7 @@ function buildActivityView(container, partnerStats, upcomingEvents, allEvents, o
   // Upcoming Events Timeline
   const timelineTitle = el('div', { class: 'section-header', style: { marginBottom: 'var(--space-4)', marginTop: 'var(--space-8)' } },
     el('div', {},
-      el('h3', { class: 'section-header__title' }, 'Upcoming Demand Gen Events'),
+      el('h3', { class: 'section-header__title' }, 'Upcoming Joint Events'),
       el('p', { class: 'section-header__subtitle' }, 'Next 60 days')
     )
   );
