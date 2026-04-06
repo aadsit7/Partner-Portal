@@ -150,6 +150,9 @@ function updateTable(partners) {
 function openPartnerModal(partner, container) {
   const isEdit = !!partner;
 
+  // Track the logo data URL
+  let logoDataUrl = isEdit ? (partner.logo_url || '') : '';
+
   const fields = [
     { name: 'username', label: 'Username', required: true, placeholder: 'e.g., nerdio' },
     { name: 'display_name', label: 'Company Name', required: true, placeholder: 'e.g., Nerdio' },
@@ -198,6 +201,7 @@ function openPartnerModal(partner, container) {
           partner.is_admin || 'FALSE',
           partner.password_hash || '',
           data.status,
+          logoDataUrl,
         ];
 
         if (isConfigured()) {
@@ -220,6 +224,7 @@ function openPartnerModal(partner, container) {
           'FALSE',
           passwordHash,
           data.status || 'active',
+          logoDataUrl,
         ];
 
         if (isConfigured()) {
@@ -232,13 +237,82 @@ function openPartnerModal(partner, container) {
       }
 
       closeModal();
-      // Re-render
       const viewContainer = document.getElementById('view-container');
       await render(viewContainer);
     } catch (err) {
       showToast(err.message || 'Failed to save partner', 'error');
     }
   }, initialValues);
+
+  // Add logo upload area after the form fields
+  const fileInput = el('input', {
+    type: 'file',
+    accept: 'image/*',
+    style: { display: 'none' },
+    id: 'logo-file-input',
+  });
+
+  const previewEl = logoDataUrl
+    ? el('img', { src: logoDataUrl, class: 'logo-preview__img' })
+    : el('div', { class: 'logo-preview__placeholder' },
+        el('span', { html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
+        'Upload Logo'
+      );
+
+  const previewContainer = el('div', { class: 'logo-preview', id: 'logo-preview' }, previewEl);
+
+  const removeBtn = logoDataUrl
+    ? el('button', {
+        class: 'btn btn--ghost btn--sm',
+        type: 'button',
+        style: { color: 'var(--color-danger)' },
+        onClick: () => {
+          logoDataUrl = '';
+          updateLogoPreview('');
+        },
+      }, 'Remove')
+    : null;
+
+  const logoUpload = el('div', { class: 'form-group' },
+    el('label', { class: 'form-label' }, 'Partner Logo'),
+    el('div', { class: 'logo-upload', onClick: () => fileInput.click() },
+      previewContainer,
+    ),
+    el('div', { style: { display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)' } },
+      el('button', {
+        class: 'btn btn--ghost btn--sm',
+        type: 'button',
+        onClick: () => fileInput.click(),
+      }, 'Choose File'),
+      removeBtn,
+    ),
+    fileInput,
+  );
+
+  fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    logoDataUrl = await resizeImage(file, 128);
+    updateLogoPreview(logoDataUrl);
+  });
+
+  function updateLogoPreview(url) {
+    const container = document.getElementById('logo-preview');
+    if (!container) return;
+    container.innerHTML = '';
+    if (url) {
+      container.appendChild(el('img', { src: url, class: 'logo-preview__img' }));
+    } else {
+      container.appendChild(
+        el('div', { class: 'logo-preview__placeholder' },
+          el('span', { html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
+          'Upload Logo'
+        )
+      );
+    }
+  }
+
+  form.appendChild(logoUpload);
 
   openModal({
     title: isEdit ? 'Edit Partner' : 'Add New Partner',
@@ -250,6 +324,31 @@ function openPartnerModal(partner, container) {
         onClick: () => form.dispatchEvent(new Event('submit', { cancelable: true })),
       }, isEdit ? 'Save Changes' : 'Add Partner'),
     ],
+  });
+}
+
+/**
+ * Resize an image file to a square thumbnail and return as base64 data URL.
+ */
+function resizeImage(file, maxSize = 128) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = maxSize;
+        canvas.height = maxSize;
+        const ctx = canvas.getContext('2d');
+        const min = Math.min(img.width, img.height);
+        const sx = (img.width - min) / 2;
+        const sy = (img.height - min) / 2;
+        ctx.drawImage(img, sx, sy, min, min, 0, 0, maxSize, maxSize);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
   });
 }
 
