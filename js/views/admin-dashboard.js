@@ -209,7 +209,7 @@ function renderDashboard(container, partners, opportunities) {
       mapBtn.className = 'btn btn--primary btn--sm';
 
       if (!mapInstance) {
-        setTimeout(() => initMap(partnerList), 50);
+        setTimeout(() => { initMap(partnerList); updateMapMarkers(); }, 50);
       } else {
         mapInstance.invalidateSize();
         updateMapMarkers();
