@@ -3,22 +3,22 @@
    ============================================ */
 
 :root {
-  /* Primary palette (Slack-inspired) */
-  --color-primary: #4A154B;
-  --color-primary-light: #611f69;
-  --color-primary-lighter: #8b5cf6;
-  --color-accent: #36C5F0;
-  --color-success: #2EB67D;
+  /* Primary palette (Seahawks-inspired) */
+  --color-primary: #002244;
+  --color-primary-light: #003366;
+  --color-primary-lighter: #1a73e8;
+  --color-accent: #69BE28;
+  --color-success: #69BE28;
   --color-warning: #ECB22E;
   --color-danger: #E01E5A;
 
   /* Neutrals */
   --color-bg: #F4F4F5;
   --color-surface: #FFFFFF;
-  --color-sidebar-bg: #3F0E40;
-  --color-sidebar-hover: rgba(255, 255, 255, 0.08);
-  --color-sidebar-active: rgba(255, 255, 255, 0.15);
-  --color-sidebar-text: #CFB3CF;
+  --color-sidebar-bg: #001a33;
+  --color-sidebar-hover: rgba(105, 190, 40, 0.12);
+  --color-sidebar-active: rgba(105, 190, 40, 0.20);
+  --color-sidebar-text: #A5ACAF;
   --color-sidebar-text-active: #FFFFFF;
   --color-text-primary: #1D1C1D;
   --color-text-secondary: #616061;
