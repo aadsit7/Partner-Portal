@@ -246,10 +246,26 @@ function renderBoard(opportunities) {
 }
 
 function createOppCard(opp) {
+  const actions = el('div', { class: 'kanban__card-actions' },
+    el('button', {
+      class: 'kanban__card-action-btn',
+      title: 'Edit',
+      onClick: (e) => { e.stopPropagation(); openOppModal(opp, document.getElementById('view-container')); },
+      html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M10.5 1.5l2 2-8 8H2.5v-2l8-8z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    }),
+    el('button', {
+      class: 'kanban__card-action-btn kanban__card-action-btn--danger',
+      title: 'Delete',
+      onClick: (e) => { e.stopPropagation(); handleDelete(opp); },
+      html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M5 4V2.5h4V4M5.5 6v4M8.5 6v4M3 4l.5 8h7l.5-8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    }),
+  );
+
   const card = el('div', {
     class: 'kanban__card',
     draggable: 'true',
   },
+    actions,
     el('div', { class: 'kanban__card-title' }, opp.deal_name),
     el('div', { class: 'kanban__card-subtitle' }, opp.customer_name),
     el('div', { class: 'kanban__card-meta' },
@@ -266,11 +282,13 @@ function createOppCard(opp) {
 
   card.addEventListener('dragstart', (e) => {
     e.dataTransfer.setData('text/plain', opp.opportunity_id);
+    e.dataTransfer.effectAllowed = 'move';
     card.classList.add('dragging');
   });
 
   card.addEventListener('dragend', () => {
     card.classList.remove('dragging');
+    document.querySelectorAll('.kanban__column--dragover').forEach(col => col.classList.remove('kanban__column--dragover'));
   });
 
   card.addEventListener('click', () => {
