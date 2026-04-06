@@ -17,6 +17,7 @@ export const title = 'Opportunities';
 
 let cachedPartners = null;
 let cachedOpps = null;
+let cachedEvents = null;
 
 const OPP_STAGES = ['Prospect', 'Qualified', 'Proposal', 'Negotiation', 'Closed'];
 const OPP_STATUSES = ['Registered', 'In Progress', 'Won', 'Lost'];
@@ -26,12 +27,14 @@ export async function render(container) {
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
 
   try {
-    const [opportunities, partners] = await Promise.all([
+    const [opportunities, partners, events] = await Promise.all([
       readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES),
       readSheetAsObjects(CONFIG.SHEET_PARTNERS),
+      readSheetAsObjects(CONFIG.SHEET_EVENTS),
     ]);
     cachedPartners = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
     cachedOpps = opportunities;
+    cachedEvents = events;
     renderView(container, opportunities);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },
@@ -224,7 +227,7 @@ function renderBoard(opportunities) {
           opp.opportunity_id, opp.partner_id, opp.deal_name, opp.customer_name,
           opp.deal_value, opp.status, stage, opp.expected_close,
           opp.description, opp.created_at, nowISO(),
-          opp.notes || '',
+          opp.notes || '', opp.lead_source || 'salesperson',
         ];
 
         if (isConfigured()) {
@@ -278,7 +281,8 @@ function createOppCard(opp) {
       opp.expected_close
         ? el('div', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' } }, formatDate(opp.expected_close))
         : null
-    )
+    ),
+    getLeadSourceLabel(opp.lead_source)
   );
 
   card.addEventListener('dragstart', (e) => {
@@ -360,6 +364,16 @@ function getStatusBadge(status) {
   return map[status] || 'silver';
 }
 
+function getLeadSourceLabel(leadSource) {
+  if (!leadSource || leadSource === 'salesperson') return null;
+  const evt = (cachedEvents || []).find(e => e.event_id === leadSource);
+  if (!evt) return null;
+  return el('div', { class: 'kanban__card-lead-source', title: `Lead Source: ${evt.title}` },
+    el('svg', { width: '10', height: '10', viewBox: '0 0 10 10', html: '<path d="M5 1v8M1 5l4 4 4-4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' }),
+    el('span', {}, evt.title)
+  );
+}
+
 // ============================================
 // Opportunity Modal (Create/Edit)
 // ============================================
@@ -378,6 +392,43 @@ export function openOppModal(opp, container, onSaved) {
     value: p.partner_id,
     label: p.display_name,
   }));
+
+  // Build lead source options based on selected partner
+  function getLeadSourceOptions(partnerId) {
+    const options = [{ value: 'salesperson', label: 'Salesperson Created' }];
+    if (!cachedEvents || !partnerId) return options;
+
+    const today = new Date().toISOString().split('T')[0];
+    const relevantEvents = cachedEvents.filter(evt => {
+      // Include events for this partner or shared events (no partner_id)
+      if (evt.partner_id && evt.partner_id !== partnerId) return false;
+      // Only past/completed events: status is Completed, or end_date has passed and not Cancelled
+      if (evt.status === 'Completed') return true;
+      if (evt.status === 'Cancelled') return false;
+      const endDate = evt.end_date || evt.event_date;
+      if (endDate && endDate < today) return true;
+      // Also include In Progress events (campaigns can source leads while running)
+      if (evt.status === 'In Progress') return true;
+      return false;
+    });
+
+    relevantEvents
+      .sort((a, b) => (b.event_date || '').localeCompare(a.event_date || ''))
+      .forEach(evt => {
+        const typeLabel = evt.event_type ? `[${evt.event_type}]` : '';
+        const dateLabel = evt.event_date ? ` - ${formatDate(evt.event_date)}` : '';
+        options.push({
+          value: evt.event_id,
+          label: `${typeLabel} ${evt.title}${dateLabel}`,
+        });
+      });
+
+    return options;
+  }
+
+  // Initial lead source options
+  const initialPartnerId = isEdit ? opp.partner_id : '';
+  const leadSourceOptions = getLeadSourceOptions(initialPartnerId);
 
   const fields = [
     { name: 'deal_name', label: 'Deal Name', required: true, placeholder: 'e.g., Enterprise Cloud Migration' },
@@ -403,6 +454,10 @@ export function openOppModal(opp, container, onSaved) {
       options: OPP_STATUSES,
     },
     { type: 'row-end' },
+    {
+      name: 'lead_source', label: 'Lead Source', type: 'select',
+      options: leadSourceOptions,
+    },
     { name: 'description', label: 'Description', type: 'textarea', placeholder: 'Brief description of the opportunity...' },
   ];
 
@@ -414,19 +469,21 @@ export function openOppModal(opp, container, onSaved) {
     expected_close: opp.expected_close,
     stage: opp.stage,
     status: opp.status,
+    lead_source: opp.lead_source || 'salesperson',
     description: opp.description,
-  } : {};
+  } : { lead_source: 'salesperson' };
 
   const form = buildForm(fields, async (data) => {
     try {
       const notesJson = JSON.stringify(notes);
+      const leadSource = data.lead_source || 'salesperson';
 
       if (isEdit) {
         const values = [
           opp.opportunity_id, data.partner_id, data.deal_name, data.customer_name,
           data.deal_value, data.status || 'Registered', data.stage,
           data.expected_close, data.description, opp.created_at, nowISO(),
-          notesJson,
+          notesJson, leadSource,
         ];
 
         if (isConfigured()) {
@@ -440,7 +497,7 @@ export function openOppModal(opp, container, onSaved) {
           uuid('opp'), data.partner_id, data.deal_name, data.customer_name,
           data.deal_value, data.status || 'Registered', data.stage,
           data.expected_close, data.description, nowISO(), nowISO(),
-          notesJson,
+          notesJson, leadSource,
         ];
 
         if (isConfigured()) {
@@ -457,6 +514,45 @@ export function openOppModal(opp, container, onSaved) {
       showToast(err.message || 'Failed to save opportunity', 'error');
     }
   }, initialValues);
+
+  // When partner changes, rebuild lead source options
+  const partnerSelect = form.querySelector('[name="partner_id"]');
+  const leadSourceSelect = form.querySelector('[name="lead_source"]');
+  if (partnerSelect && leadSourceSelect) {
+    partnerSelect.addEventListener('change', () => {
+      const newPartnerId = partnerSelect.value;
+      const currentLeadSource = leadSourceSelect.value;
+      const newOptions = getLeadSourceOptions(newPartnerId);
+
+      // Rebuild lead source dropdown
+      leadSourceSelect.innerHTML = '';
+      newOptions.forEach(opt => {
+        const optionEl = document.createElement('option');
+        optionEl.value = opt.value;
+        optionEl.textContent = opt.label;
+        leadSourceSelect.appendChild(optionEl);
+      });
+
+      // Try to preserve current selection, fallback to salesperson
+      const stillValid = newOptions.some(o => o.value === currentLeadSource);
+      leadSourceSelect.value = stillValid ? currentLeadSource : 'salesperson';
+    });
+  }
+
+  // If editing, show the linked event name even if it's not in the current dropdown
+  if (isEdit && opp.lead_source && opp.lead_source !== 'salesperson' && leadSourceSelect) {
+    const existsInOptions = leadSourceOptions.some(o => o.value === opp.lead_source);
+    if (!existsInOptions) {
+      const linkedEvent = (cachedEvents || []).find(e => e.event_id === opp.lead_source);
+      if (linkedEvent) {
+        const optionEl = document.createElement('option');
+        optionEl.value = linkedEvent.event_id;
+        optionEl.textContent = `[${linkedEvent.event_type}] ${linkedEvent.title} - ${formatDate(linkedEvent.event_date)}`;
+        leadSourceSelect.appendChild(optionEl);
+        leadSourceSelect.value = linkedEvent.event_id;
+      }
+    }
+  }
 
   // Build notes history section
   const notesSection = buildNotesSection(notes);
@@ -581,4 +677,5 @@ async function handleDelete(opp) {
 export function cleanup() {
   cachedPartners = null;
   cachedOpps = null;
+  cachedEvents = null;
 }
