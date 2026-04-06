@@ -6,7 +6,7 @@ import { getCurrentUser } from '../auth.js';
 import { readSheetAsObjects, appendRow, updateRow, deleteRow, isConfigured, addDemoRow, updateDemoRow, deleteDemoRow } from '../sheets.js';
 import { CONFIG } from '../config.js';
 import { el, mount, uuid, $, debounce } from '../utils/dom.js';
-import { nowISO, formatDate } from '../utils/date.js';
+import { nowISO, formatDate, parseDate, isDateInRange } from '../utils/date.js';
 import { openModal, closeModal, confirmDialog } from '../components/modal.js';
 import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
@@ -545,18 +545,18 @@ function buildDayCells(year, month, events, today) {
 
   // Current month days
   for (let d = 1; d <= daysInMonth; d++) {
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
+    const isCurrentToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
+    const dayDate = new Date(year, month, d);
 
-    // Find events on this day (with null guard)
+    // Find events on this day using proper date parsing
     const dayEvents = events.filter(evt => {
-      const start = evt.event_date;
+      const start = parseDate(evt.event_date);
       if (!start) return false;
-      const end = evt.end_date || start;
-      return start <= dateStr && dateStr <= end;
+      const end = evt.end_date ? parseDate(evt.end_date) : start;
+      return isDateInRange(dayDate, start, end);
     });
 
-    const cell = createDayCell(d, false, dayEvents, isToday);
+    const cell = createDayCell(d, false, dayEvents, isCurrentToday);
     cell.dataset.eventCount = String(dayEvents.length);
     cells.push(cell);
   }
