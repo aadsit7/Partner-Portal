@@ -2,13 +2,13 @@
 // Admin Partner Management View
 // ============================================
 
-import { readSheetAsObjects, appendRow, updateRow, isConfigured, addDemoRow, updateDemoRow } from '../sheets.js';
+import { readSheetAsObjects, appendRow, updateRow, deleteRow, isConfigured, addDemoRow, updateDemoRow, deleteDemoRow } from '../sheets.js';
 import { CONFIG } from '../config.js';
 import { sha256 } from '../utils/hash.js';
 import { el, mount, uuid, $, debounce } from '../utils/dom.js';
 import { navigate } from '../router.js';
 import { nowISO, formatDate } from '../utils/date.js';
-import { openModal, closeModal } from '../components/modal.js';
+import { openModal, closeModal, confirmDialog } from '../components/modal.js';
 import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
 import { setTopbarTitle } from '../components/sidebar.js';
@@ -32,6 +32,15 @@ export async function render(container) {
       el('div', { class: 'empty-state__description' }, err.message)
     ));
   }
+}
+
+function reRender() {
+  const viewContainer = document.getElementById('view-container');
+  render(viewContainer);
+}
+
+function partnerInitials(name) {
+  return (name || '').split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || '?';
 }
 
 function renderView(container, partners) {
@@ -58,13 +67,13 @@ function renderView(container, partners) {
                 p.partner_type?.toLowerCase().includes(q) ||
                 p.region?.toLowerCase().includes(q)
               );
-              updateTable(filtered);
+              renderCards(filtered);
             }, 200),
           })
         ),
         el('button', {
           class: 'btn btn--primary',
-          onClick: () => openPartnerModal(null, container),
+          onClick: () => openPartnerModal(null),
         },
           el('span', { html: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
           'Add Partner'
@@ -72,24 +81,20 @@ function renderView(container, partners) {
       )
     ),
 
-    el('div', { id: 'partners-table-wrapper' })
+    el('div', { id: 'partners-grid' })
   );
 
   mount(container, content);
-  updateTable(filtered);
+  renderCards(filtered);
 }
 
-function partnerInitials(name) {
-  return (name || '').split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || '?';
-}
-
-function updateTable(partners) {
-  const wrapper = $('#partners-table-wrapper');
-  if (!wrapper) return;
+function renderCards(partners) {
+  const grid = $('#partners-grid');
+  if (!grid) return;
 
   if (partners.length === 0) {
-    wrapper.innerHTML = '';
-    wrapper.appendChild(
+    grid.innerHTML = '';
+    grid.appendChild(
       el('div', { class: 'empty-state' },
         el('div', { class: 'empty-state__title' }, 'No partners found'),
         el('div', { class: 'empty-state__description' }, 'Try adjusting your search or add a new partner.')
@@ -98,63 +103,86 @@ function updateTable(partners) {
     return;
   }
 
-  const table = el('div', { class: 'table-wrapper' },
-    el('table', { class: 'table' },
-      el('thead', {},
-        el('tr', {},
-          el('th', {}, 'Partner'),
-          el('th', {}, 'Type'),
-          el('th', {}, 'Tier'),
-          el('th', {}, 'Region'),
-          el('th', {}, 'Status'),
-          el('th', {}, 'Joined'),
-          el('th', {}, 'Actions')
-        )
-      ),
-      el('tbody', {},
-        ...partners.map(p => {
-          const tierClass = p.tier?.toLowerCase() || 'bronze';
-          return el('tr', {},
-            el('td', {},
-              el('div', { style: { display: 'flex', alignItems: 'center', gap: 'var(--space-3)' } },
-                el('div', { class: `partner-avatar partner-avatar--sm partner-avatar--${tierClass}` }, partnerInitials(p.display_name)),
-                el('div', {},
-                  el('div', { style: { fontWeight: 'var(--font-semibold)' } }, p.display_name),
-                  el('div', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' } }, p.username)
-                )
-              )
-            ),
-            el('td', {},
-              el('span', { class: `badge badge--${p.partner_type === 'Technology' ? 'admin' : 'in-progress'}` }, p.partner_type || '—')
-            ),
-            el('td', {}, el('span', { class: `badge badge--${tierClass}` }, p.tier || 'Bronze')),
-            el('td', {}, p.region),
-            el('td', {}, el('span', { class: `badge badge--${p.status?.toLowerCase() || 'active'}` }, p.status || 'active')),
-            el('td', {}, formatDate(p.created_at)),
-            el('td', {},
-              el('div', { class: 'table__actions' },
-                el('button', {
-                  class: 'btn btn--ghost btn--sm',
-                  style: { color: 'var(--color-primary)' },
-                  onClick: () => navigate(`/admin/partner-detail?id=${p.partner_id}`),
-                }, 'View'),
-                el('button', {
-                  class: 'btn btn--ghost btn--sm',
-                  onClick: () => openPartnerModal(p),
-                }, 'Edit')
-              )
-            )
-          );
-        })
-      )
-    )
-  );
+  grid.innerHTML = '';
+  grid.className = 'partner-card-grid stagger';
 
-  wrapper.innerHTML = '';
-  wrapper.appendChild(table);
+  partners.forEach(p => {
+    const tierClass = p.tier?.toLowerCase() || 'bronze';
+    const initials = partnerInitials(p.display_name);
+
+    const card = el('div', { class: 'partner-mgmt-card' },
+      // Card header with avatar and info
+      el('div', { class: 'partner-mgmt-card__header' },
+        el('div', { class: `partner-avatar partner-avatar--${tierClass}` }, initials),
+        el('div', { class: 'partner-mgmt-card__info' },
+          el('div', { class: 'partner-mgmt-card__name' }, p.display_name),
+          el('div', { class: 'partner-mgmt-card__username' }, p.username),
+        ),
+        el('span', { class: `badge badge--${tierClass}` }, p.tier || 'Bronze')
+      ),
+
+      // Card details
+      el('div', { class: 'partner-mgmt-card__details' },
+        detailRow('Type', p.partner_type || '—'),
+        detailRow('Region', p.region || '—'),
+        detailRow('Status', null, el('span', { class: `badge badge--xs badge--${p.status?.toLowerCase() || 'active'}` }, p.status || 'active')),
+        detailRow('Joined', formatDate(p.created_at)),
+      ),
+
+      // Card actions
+      el('div', { class: 'partner-mgmt-card__actions' },
+        el('button', {
+          class: 'btn btn--primary btn--sm',
+          style: { flex: '1' },
+          onClick: () => navigate(`/admin/partner-detail?id=${p.partner_id}`),
+        }, 'View'),
+        el('button', {
+          class: 'btn btn--secondary btn--sm',
+          style: { flex: '1' },
+          onClick: () => openPartnerModal(p),
+        }, 'Edit'),
+        el('button', {
+          class: 'btn btn--ghost btn--sm btn--icon',
+          style: { color: 'var(--color-danger)' },
+          title: 'Delete partner',
+          onClick: () => handleDelete(p),
+          html: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M12.67 4v9.33a1.33 1.33 0 01-1.34 1.34H4.67a1.33 1.33 0 01-1.34-1.34V4h9.34z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        }),
+      )
+    );
+
+    grid.appendChild(card);
+  });
 }
 
-function openPartnerModal(partner, container) {
+function detailRow(label, textValue, element) {
+  return el('div', { class: 'partner-mgmt-card__row' },
+    el('span', { class: 'partner-mgmt-card__label' }, label),
+    element || el('span', { class: 'partner-mgmt-card__value' }, textValue || '—'),
+  );
+}
+
+async function handleDelete(partner) {
+  const confirmed = await confirmDialog(
+    'Delete Partner',
+    `Are you sure you want to delete "${partner.display_name}"? This cannot be undone.`
+  );
+  if (!confirmed) return;
+
+  try {
+    if (isConfigured()) {
+      await deleteRow(CONFIG.SHEET_PARTNERS, partner._rowIndex);
+    } else {
+      deleteDemoRow(CONFIG.SHEET_PARTNERS, partner._rowIndex);
+    }
+    showToast('Partner deleted', 'success');
+    reRender();
+  } catch (err) {
+    showToast(err.message || 'Failed to delete partner', 'error');
+  }
+}
+
+function openPartnerModal(partner) {
   const isEdit = !!partner;
 
   const fields = [
@@ -239,8 +267,7 @@ function openPartnerModal(partner, container) {
       }
 
       closeModal();
-      const viewContainer = document.getElementById('view-container');
-      await render(viewContainer);
+      reRender();
     } catch (err) {
       showToast(err.message || 'Failed to save partner', 'error');
     }
