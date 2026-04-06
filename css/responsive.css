@@ -20,6 +20,24 @@
     -webkit-overflow-scrolling: touch;
     padding-bottom: var(--space-2);
   }
+
+  .kanban {
+    flex-direction: column;
+  }
+
+  .kanban__column {
+    max-width: none;
+    min-width: auto;
+  }
+
+  .calendar__day {
+    min-height: 50px;
+  }
+
+  .calendar__event-chip {
+    font-size: 8px;
+    padding: 1px 4px;
+  }
 }
 
 /* Tablet (640px - 1024px) */
