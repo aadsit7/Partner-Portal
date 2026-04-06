@@ -80,8 +80,7 @@ function renderDetail(container, partner, opportunities, events) {
           el('span', { class: `badge badge--${tierClass}` }, partner.tier)
         ),
         el('div', { class: 'detail-header__meta' },
-          partner.contact_email ? el('span', { class: 'detail-header__meta-item' }, partner.contact_email) : null,
-          partner.contact_phone ? el('span', { class: 'detail-header__meta-item' }, partner.contact_phone) : null,
+          partner.partner_type ? el('span', { class: 'detail-header__meta-item' }, partner.partner_type) : null,
           partner.region ? el('span', { class: 'detail-header__meta-item' }, partner.region) : null
         )
       ),

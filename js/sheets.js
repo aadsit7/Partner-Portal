@@ -158,24 +158,29 @@ export async function deleteRow(sheetName, rowIndex) {
 // ============================================
 
 let demoPartners = [
-  ['partner_id', 'username', 'display_name', 'contact_email', 'contact_phone', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status'],
-  ['p_admin001', 'admin', 'Portal Admin', 'admin@company.com', '', 'Gold', 'Global', '2026-01-01', 'TRUE', '', 'active'],
-  ['p_acme001', 'acme', 'Acme Technologies', 'john@acmetech.com', '(555) 123-4567', 'Gold', 'North America', '2026-01-15', 'FALSE', '', 'active'],
-  ['p_globex01', 'globex', 'Globex Corp', 'sarah@globex.com', '(555) 987-6543', 'Silver', 'EMEA', '2026-02-01', 'FALSE', '', 'active'],
-  ['p_initec1', 'initech', 'Initech Solutions', 'mike@initech.com', '(555) 456-7890', 'Bronze', 'APAC', '2026-02-20', 'FALSE', '', 'active'],
-  ['p_wayne01', 'wayne', 'Wayne Enterprises', 'bruce@wayne.com', '(555) 222-3333', 'Gold', 'North America', '2026-03-01', 'FALSE', '', 'active'],
+  ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status'],
+  ['p_admin001', 'admin', 'Portal Admin', '', 'Gold', 'Global', '2026-01-01', 'TRUE', '', 'active'],
+  ['p_nerdio1', 'nerdio', 'Nerdio', 'Technology', 'Gold', 'North America', '2026-01-15', 'FALSE', '', 'active'],
+  ['p_ridgep1', 'ridgepoint', 'RidgePoint', 'MSP/SI', 'Silver', 'North America', '2026-02-01', 'FALSE', '', 'active'],
+  ['p_insigh1', 'insight', 'Insight', 'MSP/SI', 'Gold', 'North America', '2026-02-10', 'FALSE', '', 'active'],
+  ['p_syscd01', 'systemcenterdudes', 'System Center Dudes', 'Technology', 'Bronze', 'EMEA', '2026-02-20', 'FALSE', '', 'active'],
+  ['p_gitrub1', 'gitrubix', 'GitRubix', 'Technology', 'Silver', 'APAC', '2026-03-01', 'FALSE', '', 'active'],
+  ['p_qualc01', 'qualcomm', 'Qualcomm', 'Technology', 'Gold', 'North America', '2026-03-10', 'FALSE', '', 'active'],
 ];
 
 let demoOpportunities = [
   ['opportunity_id', 'partner_id', 'deal_name', 'customer_name', 'deal_value', 'status', 'stage', 'expected_close', 'description', 'created_at', 'updated_at'],
-  ['opp_001', 'p_acme001', 'Enterprise Cloud Migration', 'TechCorp Industries', '150000', 'In Progress', 'Proposal', '2026-06-15', 'Full cloud migration for 500-seat enterprise', '2026-03-01', '2026-04-01'],
-  ['opp_002', 'p_acme001', 'Security Suite Deployment', 'Metro Health Systems', '85000', 'Registered', 'Qualified', '2026-07-30', 'Security suite for healthcare provider', '2026-03-15', '2026-03-15'],
-  ['opp_003', 'p_globex01', 'Data Analytics Platform', 'Global Retail Co', '200000', 'In Progress', 'Negotiation', '2026-05-20', 'Analytics platform for 200 retail locations', '2026-02-10', '2026-03-28'],
-  ['opp_004', 'p_globex01', 'Network Refresh', 'EuroBank AG', '120000', 'Won', 'Closed', '2026-03-15', 'Complete network infrastructure refresh', '2026-01-20', '2026-03-15'],
-  ['opp_005', 'p_initec1', 'SaaS Implementation', 'StartupXYZ', '45000', 'Registered', 'Prospect', '2026-08-01', 'SaaS platform deployment for startup', '2026-04-01', '2026-04-01'],
-  ['opp_006', 'p_wayne01', 'Digital Transformation', 'City of Gotham', '350000', 'In Progress', 'Proposal', '2026-09-30', 'Full digital transformation initiative', '2026-02-15', '2026-03-20'],
-  ['opp_007', 'p_wayne01', 'Cybersecurity Audit', 'Gotham PD', '75000', 'Won', 'Closed', '2026-03-01', 'Comprehensive cybersecurity assessment', '2026-01-10', '2026-03-01'],
-  ['opp_008', 'p_acme001', 'Collaboration Platform', 'Sunrise Media', '60000', 'Lost', 'Closed', '2026-02-28', 'Unified communications platform', '2025-12-01', '2026-02-28'],
+  ['opp_001', 'p_nerdio1', 'Azure Virtual Desktop Rollout', 'TechCorp Industries', '150000', 'In Progress', 'Proposal', '2026-06-15', 'AVD deployment for 500-seat enterprise', '2026-03-01', '2026-04-01'],
+  ['opp_002', 'p_nerdio1', 'Cloud Desktop Optimization', 'Metro Health Systems', '85000', 'Registered', 'Qualified', '2026-07-30', 'Cloud desktop optimization for healthcare provider', '2026-03-15', '2026-03-15'],
+  ['opp_003', 'p_ridgep1', 'Managed Services Engagement', 'Global Retail Co', '200000', 'In Progress', 'Negotiation', '2026-05-20', 'Full managed services for 200 retail locations', '2026-02-10', '2026-03-28'],
+  ['opp_004', 'p_ridgep1', 'Network Infrastructure Refresh', 'EuroBank AG', '120000', 'Won', 'Closed', '2026-03-15', 'Complete network infrastructure refresh', '2026-01-20', '2026-03-15'],
+  ['opp_005', 'p_insigh1', 'Digital Workspace Transformation', 'Contoso Ltd', '275000', 'In Progress', 'Proposal', '2026-08-01', 'End-to-end digital workspace transformation', '2026-03-01', '2026-04-01'],
+  ['opp_006', 'p_insigh1', 'Hybrid Cloud Migration', 'Woodgrove Bank', '180000', 'Registered', 'Qualified', '2026-09-15', 'Hybrid cloud migration for financial services', '2026-03-20', '2026-03-20'],
+  ['opp_007', 'p_syscd01', 'SCCM to Intune Migration', 'Fabrikam Inc', '95000', 'In Progress', 'Negotiation', '2026-07-01', 'Migrate 10K endpoints from SCCM to Intune', '2026-02-15', '2026-03-28'],
+  ['opp_008', 'p_gitrub1', 'DevOps Pipeline Modernization', 'Northwind Traders', '110000', 'Registered', 'Prospect', '2026-08-15', 'CI/CD pipeline modernization with GitHub Actions', '2026-04-01', '2026-04-01'],
+  ['opp_009', 'p_qualc01', 'Edge Computing Platform', 'Adventure Works', '320000', 'In Progress', 'Proposal', '2026-09-30', 'Edge computing solution for manufacturing IoT', '2026-02-15', '2026-03-20'],
+  ['opp_010', 'p_qualc01', 'AI Accelerator Deployment', 'Tailspin Toys', '75000', 'Won', 'Closed', '2026-03-01', 'AI inference accelerator deployment', '2026-01-10', '2026-03-01'],
+  ['opp_011', 'p_nerdio1', 'Cost Optimization Assessment', 'Sunrise Media', '60000', 'Lost', 'Closed', '2026-02-28', 'Cloud cost optimization assessment', '2025-12-01', '2026-02-28'],
 ];
 
 let demoEvents = [

@@ -82,7 +82,7 @@ export async function loginWithGoogle(credentialResponse) {
     partner_id: 'p_admin001',
     username: 'admin',
     display_name: payload.name || 'Admin',
-    contact_email: payload.email,
+    partner_type: '',
     is_admin: true,
     google_picture: payload.picture || null,
     tier: 'Admin',
