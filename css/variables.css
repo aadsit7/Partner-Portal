@@ -32,6 +32,11 @@
   --color-status-won: #2EB67D;
   --color-status-lost: #E01E5A;
 
+  /* Tier colors */
+  --color-tier-premier: #1a73e8;
+  --color-tier-value: #69BE28;
+  --color-tier-registered: #9B9A9B;
+
   /* Typography */
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;

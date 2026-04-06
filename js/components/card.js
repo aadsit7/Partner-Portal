@@ -3,6 +3,7 @@
 // ============================================
 
 import { el } from '../utils/dom.js';
+import { tierSlug } from '../utils/tiers.js';
 import { formatCurrency } from '../utils/dom.js';
 import { formatDate } from '../utils/date.js';
 
@@ -53,7 +54,7 @@ export function dealCard(opp, { onEdit, onView } = {}) {
  * Create a partner summary card (for admin view).
  */
 export function partnerCard(partner, stats, { onClick } = {}) {
-  const tierClass = partner.tier?.toLowerCase() || 'bronze';
+  const tierClass = tierSlug(partner.tier);
 
   return el('div', {
     class: `card${onClick ? ' card--clickable' : ''}`,
