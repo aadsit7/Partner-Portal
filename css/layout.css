@@ -8,7 +8,7 @@
   align-items: center;
   justify-content: center;
   height: 100vh;
-  background: linear-gradient(135deg, var(--color-primary) 0%, #001122 50%, var(--color-primary-light) 100%);
+  background: var(--color-primary);
 }
 
 .app-shell--login .sidebar,
@@ -52,7 +52,7 @@
 .sidebar__logo-icon {
   width: 36px;
   height: 36px;
-  background: linear-gradient(135deg, var(--color-accent), var(--color-success));
+  background: var(--color-primary);
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
@@ -136,7 +136,7 @@
   width: 32px;
   height: 32px;
   border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--color-accent), var(--color-primary-lighter));
+  background: var(--color-accent);
   display: flex;
   align-items: center;
   justify-content: center;

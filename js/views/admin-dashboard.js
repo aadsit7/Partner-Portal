@@ -27,11 +27,11 @@ const TYPE_COLORS = {
 };
 
 const EVENT_TYPE_COLORS = {
-  'Webinar': '#0e8ab5',
-  'Workshop': '#1a8a5a',
-  'Conference': '#002244',
-  'Campaign': '#b88a0e',
-  'Other': '#9B9A9B',
+  'Webinar': '#0000CC',
+  'Workshop': '#00BFFF',
+  'Conference': '#1A1A2E',
+  'Campaign': '#CC8800',
+  'Other': '#4A4A5A',
 };
 
 const HQ_COORDINATES = {
@@ -511,7 +511,7 @@ function buildPartnersView(container, partnerList, partnerStats, typeData, uniqu
     onClick: () => applyFilter('all'),
   },
     el('div', { class: 'type-card__header' },
-      el('div', { class: 'type-card__color', style: { background: '#002244' } }),
+      el('div', { class: 'type-card__color', style: { background: '#0000CC' } }),
       el('div', { class: 'type-card__name' }, 'All Types')
     ),
     el('div', { class: 'type-card__count' }, String(partnerList.length)),
@@ -695,7 +695,7 @@ function initMap(partners) {
     if (!coords) return;
 
     const tc = tierSlug(partner.tier);
-    const color = TIER_COLORS[tc] || '#002244';
+    const color = TIER_COLORS[tc] || '#0000CC';
 
     const icon = L.divIcon({
       className: 'map-marker',
