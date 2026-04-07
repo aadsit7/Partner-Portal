@@ -53,7 +53,7 @@ export function renderSidebar() {
   const header = el('div', { class: 'sidebar__header' },
     el('div', { class: 'sidebar__logo' },
       el('img', {
-        src: 'assets/logo.svg',
+        src: 'assets/Logo Image.jpg',
         alt: 'DIY AI Portal',
         style: { width: '36px', height: '36px', borderRadius: 'var(--radius-sm)', marginRight: 'var(--space-2)' },
       }),
