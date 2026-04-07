@@ -36,17 +36,6 @@ export async function render(container) {
         marginBottom: 'var(--space-8)',
       }
     },
-      el('img', {
-        src: 'assets/Logo Image.jpg',
-        alt: 'DIY AI Portal',
-        style: {
-          width: '140px',
-          height: '140px',
-          borderRadius: 'var(--radius-lg)',
-          marginBottom: 'var(--space-4)',
-          objectFit: 'cover',
-        }
-      }),
       el('h1', {
         style: {
           fontSize: 'var(--text-2xl)',
@@ -54,7 +43,7 @@ export async function render(container) {
           color: 'var(--color-text-primary)',
           marginBottom: 'var(--space-2)',
         }
-      }, 'DIY AI Portal'),
+      }, 'Partner Portal'),
       el('p', {
         style: {
           fontSize: 'var(--text-sm)',

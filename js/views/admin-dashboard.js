@@ -51,24 +51,21 @@ const HQ_COORDINATES = {
 // Demand Gen Dashboard Helpers
 // ============================================
 
+const PARTNER_COLORS = ['#0000CC', '#0F7A3F', '#CC8800', '#8B5CF6', '#0891B2', '#CC2222'];
+
 function computePartnerSourceData(opportunities, partners) {
   const byPartner = {};
   for (const opp of opportunities) {
     const pid = opp.partner_id;
-    if (!byPartner[pid]) byPartner[pid] = { salesperson: 0, event: 0, total: 0 };
+    if (!byPartner[pid]) byPartner[pid] = { total: 0 };
     const val = parseFloat(opp.deal_value) || 0;
     byPartner[pid].total += val;
-    if (opp.lead_source === 'salesperson') {
-      byPartner[pid].salesperson += val;
-    } else {
-      byPartner[pid].event += val;
-    }
   }
 
   return Object.entries(byPartner)
     .map(([pid, d]) => {
       const p = partners.find(p => p.partner_id === pid);
-      return { name: p ? p.display_name : pid, salesperson: d.salesperson, event: d.event, total: d.total };
+      return { name: p ? p.display_name : pid, total: d.total };
     })
     .sort((a, b) => b.total - a.total)
     .slice(0, 6);
@@ -86,9 +83,9 @@ function buildPartnerSourceChart(opportunities, partners, onBarClick) {
 
   const maxVal = Math.max(...data.map(d => d.total));
 
-  const rows = data.map(d => {
-    const spPct = maxVal > 0 ? (d.salesperson / maxVal) * 100 : 0;
-    const evPct = maxVal > 0 ? (d.event / maxVal) * 100 : 0;
+  const rows = data.map((d, i) => {
+    const pct = maxVal > 0 ? (d.total / maxVal) * 100 : 0;
+    const color = PARTNER_COLORS[i % PARTNER_COLORS.length];
 
     return el('div', {
       class: 'demandgen-bar-row' + (onBarClick ? ' demandgen-bar-row--clickable' : ''),
@@ -97,15 +94,10 @@ function buildPartnerSourceChart(opportunities, partners, onBarClick) {
     },
       el('div', { class: 'demandgen-bar-row__label', title: d.name }, d.name),
       el('div', { class: 'demandgen-bar-row__bar' },
-        spPct > 0 ? el('div', {
-          class: 'demandgen-bar-row__segment demandgen-bar-row__segment--salesperson',
-          style: { width: spPct + '%' },
-          title: 'Salesperson: ' + formatCurrency(d.salesperson),
-        }) : null,
-        evPct > 0 ? el('div', {
-          class: 'demandgen-bar-row__segment demandgen-bar-row__segment--event',
-          style: { width: evPct + '%' },
-          title: 'Event: ' + formatCurrency(d.event),
+        pct > 0 ? el('div', {
+          class: 'demandgen-bar-row__segment',
+          style: { width: pct + '%', background: color, borderRadius: 'var(--radius-sm)' },
+          title: formatCurrency(d.total),
         }) : null,
       ),
       el('div', { class: 'demandgen-bar-row__value' }, formatCurrency(d.total)),
@@ -113,19 +105,17 @@ function buildPartnerSourceChart(opportunities, partners, onBarClick) {
   });
 
   const legend = el('div', { class: 'demandgen-legend', style: { marginTop: 'var(--space-4)' } },
-    el('div', { class: 'demandgen-legend__item' },
-      el('span', { class: 'demandgen-legend__dot', style: { background: 'var(--color-primary-lighter)' } }),
-      'Salesperson'
-    ),
-    el('div', { class: 'demandgen-legend__item' },
-      el('span', { class: 'demandgen-legend__dot', style: { background: 'var(--color-accent)' } }),
-      'Event-sourced'
-    ),
+    ...data.map((d, i) =>
+      el('div', { class: 'demandgen-legend__item' },
+        el('span', { class: 'demandgen-legend__dot', style: { background: PARTNER_COLORS[i % PARTNER_COLORS.length] } }),
+        d.name
+      )
+    )
   );
 
   return el('div', { class: 'demandgen-chart' },
     el('div', { class: 'demandgen-chart__title' }, 'Opportunity Source by Partner'),
-    el('div', { class: 'demandgen-chart__subtitle' }, 'Top partners by deal value and lead source'),
+    el('div', { class: 'demandgen-chart__subtitle' }, 'Top partners by deal value'),
     el('div', { class: 'demandgen-bar-list' }, ...rows),
     legend,
   );

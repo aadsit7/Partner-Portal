@@ -52,13 +52,8 @@ export function renderSidebar() {
   // Header
   const header = el('div', { class: 'sidebar__header' },
     el('div', { class: 'sidebar__logo' },
-      el('img', {
-        src: 'assets/Logo Image.jpg',
-        alt: 'DIY AI Portal',
-        style: { width: '36px', height: '36px', borderRadius: 'var(--radius-sm)', marginRight: 'var(--space-2)' },
-      }),
       el('div', { class: 'sidebar__logo-text' },
-        el('span', { style: { fontWeight: 'var(--font-bold)', color: '#fff' } }, 'DIY AI'),
+        el('span', { style: { fontWeight: 'var(--font-bold)', color: '#fff' } }, 'Partner'),
         el('span', { style: { fontWeight: 'var(--font-normal)', color: '#00BFFF', marginLeft: 'var(--space-1)' } }, 'Portal'),
       )
     )
