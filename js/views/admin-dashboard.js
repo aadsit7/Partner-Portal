@@ -260,39 +260,35 @@ function renderDashboard(container, partners, opportunities, events) {
   }
 
   const content = el('div', {},
-    // Summary stats (interactive)
-    el('div', { class: 'stats-grid stagger' },
-      statCard('Total Partners', partnerList.length, {
-        accentColor: 'var(--color-primary-lighter)',
-        onClick: () => toggleStat('partners'),
-      }),
-      statCard('Total Pipeline', formatCurrency(totalPipeline), {
-        accentColor: 'var(--color-accent)',
-        onClick: () => toggleStat('pipeline'),
-      }),
-      statCard('Revenue Won', formatCurrency(wonValue), {
-        accentColor: 'var(--color-status-won)',
-        onClick: () => toggleStat('won'),
-      }),
-      statCard('Upcoming Events', upcomingEvents.length, {
-        accentColor: 'var(--color-status-registered)',
-        onClick: () => toggleStat('events'),
-      })
-    ),
-
-    // Main layout: Activity/Partners on left, Partner Source chart on right sidebar
-    el('div', { class: 'dashboard-main-layout' },
-      // Left: main content area
-      el('div', { class: 'dashboard-main-layout__content' },
-        el('div', { class: 'view-toggle' }, activityTabBtn, partnersTabBtn),
-        activityView,
-        partnersView,
+    // Top zone: 2×2 stat cards on left, Opportunity Source chart on right
+    el('div', { class: 'dashboard-top' },
+      el('div', { class: 'dashboard-top__stats stagger' },
+        statCard('Total Partners', partnerList.length, {
+          accentColor: 'var(--color-primary-lighter)',
+          onClick: () => toggleStat('partners'),
+        }),
+        statCard('Total Pipeline', formatCurrency(totalPipeline), {
+          accentColor: 'var(--color-accent)',
+          onClick: () => toggleStat('pipeline'),
+        }),
+        statCard('Revenue Won', formatCurrency(wonValue), {
+          accentColor: 'var(--color-status-won)',
+          onClick: () => toggleStat('won'),
+        }),
+        statCard('Upcoming Events', upcomingEvents.length, {
+          accentColor: 'var(--color-status-registered)',
+          onClick: () => toggleStat('events'),
+        }),
       ),
-      // Right: sidebar chart
-      el('div', { class: 'dashboard-main-layout__sidebar' },
+      el('div', { class: 'dashboard-top__chart' },
         buildPartnerSourceChart(filteredOpps, partnerList, onBarClick),
       ),
     ),
+
+    // Tabs + views (full width below)
+    el('div', { class: 'view-toggle' }, activityTabBtn, partnersTabBtn),
+    activityView,
+    partnersView,
   );
 
   mount(container, content);
