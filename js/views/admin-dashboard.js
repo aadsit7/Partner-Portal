@@ -4,7 +4,7 @@
 
 import { readSheetAsObjects } from '../sheets.js';
 import { CONFIG } from '../config.js';
-import { el, mount, formatCurrency, debounce } from '../utils/dom.js';
+import { el, mount, formatCurrency, debounce, collapsibleSection } from '../utils/dom.js';
 import { navigate } from '../router.js';
 import { statCard } from '../components/card.js';
 import { setTopbarTitle } from '../components/sidebar.js';
@@ -20,10 +20,10 @@ let mapInstance = null;
 let mapMarkers = [];
 
 const TYPE_COLORS = {
-  'Technology':                '#1a73e8',
-  'OEM':                       '#ECB22E',
-  'MSP/SI':                    '#69BE28',
-  'MENA Regional Distributor': '#E01E5A',
+  'Technology':                'var(--color-primary-lighter)',
+  'OEM':                       'var(--color-warning)',
+  'MSP/SI':                    'var(--color-accent)',
+  'MENA Regional Distributor': 'var(--color-danger)',
 };
 
 const EVENT_TYPE_COLORS = {
@@ -48,11 +48,11 @@ const HQ_COORDINATES = {
 };
 
 const STAGE_COLORS = {
-  'Prospect':    '#36C5F0',
-  'Qualified':   '#1a73e8',
-  'Proposal':    '#ECB22E',
-  'Negotiation': '#69BE28',
-  'Closed':      '#002244',
+  'Prospect':    'var(--color-status-registered)',
+  'Qualified':   'var(--color-primary-lighter)',
+  'Proposal':    'var(--color-warning)',
+  'Negotiation': 'var(--color-accent)',
+  'Closed':      'var(--color-primary)',
 };
 
 // ============================================
@@ -101,7 +101,7 @@ function buildStageDonut(opportunities) {
       el('div', { class: 'demandgen-chart__title' }, 'Pipeline by Stage'),
       el('div', { class: 'demandgen-chart__subtitle' }, 'Deal value distribution across stages'),
       el('div', { class: 'demandgen-donut-wrapper' },
-        el('div', { class: 'type-donut', style: { background: '#f0f0f0' } },
+        el('div', { class: 'type-donut', style: { background: 'var(--color-border-light)' } },
           el('div', { class: 'type-donut__hole' },
             el('div', { class: 'type-donut__total' }, '$0'),
             el('div', { class: 'type-donut__label' }, 'Pipeline')
@@ -120,7 +120,7 @@ function buildStageDonut(opportunities) {
     if (val === 0) continue;
     const start = cumulative;
     cumulative += (val / total) * 360;
-    const color = STAGE_COLORS[stage] || '#9B9A9B';
+    const color = STAGE_COLORS[stage] || 'var(--color-text-muted)';
     stops.push(`${color} ${start}deg ${cumulative}deg`);
   }
 
@@ -186,11 +186,11 @@ function buildPartnerSourceChart(opportunities, partners) {
 
   const legend = el('div', { class: 'demandgen-legend', style: { marginTop: 'var(--space-4)' } },
     el('div', { class: 'demandgen-legend__item' },
-      el('span', { class: 'demandgen-legend__dot', style: { background: '#1a73e8' } }),
+      el('span', { class: 'demandgen-legend__dot', style: { background: 'var(--color-primary-lighter)' } }),
       'Salesperson'
     ),
     el('div', { class: 'demandgen-legend__item' },
-      el('span', { class: 'demandgen-legend__dot', style: { background: '#69BE28' } }),
+      el('span', { class: 'demandgen-legend__dot', style: { background: 'var(--color-accent)' } }),
       'Event-sourced'
     ),
   );
@@ -295,17 +295,20 @@ function renderDashboard(container, partners, opportunities, events) {
       statCard('Upcoming Events', upcomingEvents.length)
     ),
 
-    // Demand Gen Dashboard
-    el('div', { class: 'section-header', style: { marginBottom: 'var(--space-4)' } },
-      el('div', {},
-        el('h3', { class: 'section-header__title' }, 'Demand Gen Dashboard'),
-        el('p', { class: 'section-header__subtitle' }, 'Opportunity pipeline breakdown and lead source analysis')
-      )
-    ),
-    el('div', { class: 'demandgen-grid stagger' },
-      buildStageDonut(filteredOpps),
-      buildPartnerSourceChart(filteredOpps, partnerList),
-    ),
+    // Demand Gen Dashboard (collapsible)
+    collapsibleSection({
+      id: 'admin-demandgen',
+      title: 'Demand Gen Dashboard',
+      summaryItems: [
+        { value: formatCurrency(totalPipeline), label: 'Pipeline' },
+        { value: String(partnerList.length), label: 'Partners' },
+        { value: String(new Set(filteredOpps.map(o => o.lead_source).filter(Boolean)).size), label: 'Sources' },
+      ],
+      content: el('div', { class: 'demandgen-grid stagger' },
+        buildStageDonut(filteredOpps),
+        buildPartnerSourceChart(filteredOpps, partnerList),
+      ),
+    }),
 
     // Tab toggle
     el('div', { class: 'view-toggle' }, activityTabBtn, partnersTabBtn),
@@ -348,11 +351,11 @@ function buildActivityView(container, partnerStats, upcomingEvents, allEvents, o
         },
           el('span', {
             class: 'activity-card__event-dot',
-            style: { background: EVENT_TYPE_COLORS[evt.event_type] || '#9B9A9B' },
+            style: { background: EVENT_TYPE_COLORS[evt.event_type] || 'var(--color-text-muted)' },
           }),
           el('span', {
             class: 'activity-card__event-type-badge',
-            style: { background: EVENT_TYPE_COLORS[evt.event_type] || '#9B9A9B' },
+            style: { background: EVENT_TYPE_COLORS[evt.event_type] || 'var(--color-text-muted)' },
           }, evt.event_type),
           el('span', { class: 'activity-card__event-name' }, evt.title),
           el('span', { class: 'activity-card__event-date' }, formatDate(evt.event_date))
@@ -453,7 +456,7 @@ function buildActivityView(container, partnerStats, upcomingEvents, allEvents, o
         el('div', { class: 'timeline-card__details' },
           el('span', {
             class: 'badge badge--xs',
-            style: { background: EVENT_TYPE_COLORS[evt.event_type] || '#9B9A9B', color: '#fff' }
+            style: { background: EVENT_TYPE_COLORS[evt.event_type] || 'var(--color-text-muted)', color: '#fff' }
           }, evt.event_type),
           el('span', { class: 'timeline-card__partner' }, getPartnerName(evt.partner_id)),
           evt.location
@@ -551,7 +554,7 @@ function buildPartnersView(container, partnerList, partnerStats, typeData, uniqu
       onClick: () => applyFilter(type),
     },
       el('div', { class: 'type-card__header' },
-        el('div', { class: 'type-card__color', style: { background: TYPE_COLORS[type] || '#9B9A9B' } }),
+        el('div', { class: 'type-card__color', style: { background: TYPE_COLORS[type] || 'var(--color-text-muted)' } }),
         el('div', { class: 'type-card__name' }, type)
       ),
       el('div', { class: 'type-card__count' }, String(d.count)),
@@ -671,7 +674,7 @@ function computeTypeData(partnerList, opportunities) {
 function buildDonut(partnerList, typeData) {
   const total = partnerList.length;
   if (total === 0) {
-    return el('div', { class: 'type-donut', style: { background: '#f0f0f0' } },
+    return el('div', { class: 'type-donut', style: { background: 'var(--color-border-light)' } },
       el('div', { class: 'type-donut__hole' },
         el('div', { class: 'type-donut__total' }, '0'),
         el('div', { class: 'type-donut__label' }, 'Partners')
@@ -684,7 +687,7 @@ function buildDonut(partnerList, typeData) {
   for (const [type, d] of Object.entries(typeData)) {
     const start = cumulative;
     cumulative += (d.count / total) * 360;
-    const color = TYPE_COLORS[type] || '#9B9A9B';
+    const color = TYPE_COLORS[type] || 'var(--color-text-muted)';
     stops.push(`${color} ${start}deg ${cumulative}deg`);
   }
 

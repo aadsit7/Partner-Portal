@@ -92,3 +92,59 @@ export function debounce(fn, ms = 300) {
     timer = setTimeout(() => fn(...args), ms);
   };
 }
+
+/**
+ * Create a collapsible dashboard section with summary bar.
+ * @param {Object} opts
+ * @param {string} opts.id - Unique ID for localStorage persistence
+ * @param {string} opts.title - Section title
+ * @param {Array<{label:string, value:string}>} opts.summaryItems - Compressed metrics
+ * @param {HTMLElement} opts.content - The inner content (bento grid, charts, etc.)
+ * @param {boolean} [opts.defaultOpen=true] - Default expanded state
+ * @returns {HTMLElement}
+ */
+export function collapsibleSection({ id, title, summaryItems, content, defaultOpen = true }) {
+  const STORAGE_KEY = `dashboard-collapsed-${id}`;
+  const stored = localStorage.getItem(STORAGE_KEY);
+  const isOpen = stored !== null ? stored === 'open' : defaultOpen;
+
+  const chevronSvg = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 8l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  const summaryChildren = [];
+  summaryItems.forEach((item, i) => {
+    if (i > 0) {
+      summaryChildren.push(el('div', { class: 'dashboard-section__summary-divider' }));
+    }
+    summaryChildren.push(
+      el('div', { class: 'dashboard-section__summary-item' },
+        el('span', { class: 'dashboard-section__summary-value' }, item.value),
+        item.label
+      )
+    );
+  });
+
+  const section = el('div', {
+    class: `dashboard-section ${isOpen ? 'dashboard-section--open' : ''}`,
+  },
+    el('div', {
+      class: 'dashboard-section__header',
+      onClick: () => {
+        const nowOpen = section.classList.toggle('dashboard-section--open');
+        localStorage.setItem(STORAGE_KEY, nowOpen ? 'open' : 'collapsed');
+      },
+    },
+      el('div', { class: 'dashboard-section__title-group' },
+        el('span', { class: 'dashboard-section__title' }, title),
+      ),
+      el('div', { class: 'dashboard-section__summary' }, ...summaryChildren),
+      el('span', { class: 'dashboard-section__chevron', html: chevronSvg }),
+    ),
+    el('div', { class: 'dashboard-section__body-outer' },
+      el('div', { class: 'dashboard-section__body-inner' },
+        el('div', { class: 'dashboard-section__body' }, content)
+      )
+    )
+  );
+
+  return section;
+}

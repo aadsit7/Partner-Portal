@@ -4,7 +4,7 @@
 
 import { readSheetAsObjects } from '../sheets.js';
 import { CONFIG } from '../config.js';
-import { el, mount } from '../utils/dom.js';
+import { el, mount, collapsibleSection } from '../utils/dom.js';
 import { formatDate } from '../utils/date.js';
 import { renderCalendar } from '../components/calendar.js';
 import { openModal, closeModal } from '../components/modal.js';
@@ -21,7 +21,7 @@ const EVENT_TYPE_COLORS = {
   'Workshop':   '#1a8a5a',
   'Conference': '#002244',
   'Campaign':   '#b88a0e',
-  'Other':      '#9B9A9B',
+  'Other':      'var(--color-text-muted)',
 };
 
 export async function render(container) {
@@ -56,7 +56,7 @@ function renderBentoDashboard(events) {
 
 function buildEventHeroStat(events) {
   const typeCount = new Set(events.map(e => e.event_type)).size;
-  return el('div', { class: 'bento-cell bento-cell--accent-green' },
+  return el('div', { class: 'bento-cell bento-cell--accent-success' },
     el('div', { class: 'bento-cell__title' }, 'Total Events'),
     el('div', { class: 'bento-cell__value' }, String(events.length)),
     el('div', { class: 'bento-cell__subtitle' }, `${typeCount} event types`),
@@ -134,7 +134,7 @@ function buildTypeDonut(events) {
     if (count === 0) continue;
     const start = cumulative;
     cumulative += (count / total) * 360;
-    const color = EVENT_TYPE_COLORS[type] || '#9B9A9B';
+    const color = EVENT_TYPE_COLORS[type] || 'var(--color-text-muted)';
     stops.push(`${color} ${start}deg ${cumulative}deg`);
   }
 
@@ -145,7 +145,7 @@ function buildTypeDonut(events) {
           el('div', { class: 'bento-donut__label' }, 'Events')
         )
       )
-    : el('div', { class: 'bento-donut', style: { background: '#f0f0f0' } },
+    : el('div', { class: 'bento-donut', style: { background: 'var(--color-border-light)' } },
         el('div', { class: 'bento-donut__hole' },
           el('div', { class: 'bento-donut__total' }, '0'),
           el('div', { class: 'bento-donut__label' }, 'Events')
@@ -155,7 +155,7 @@ function buildTypeDonut(events) {
   const legend = el('div', { class: 'demandgen-legend' },
     ...types.map(type =>
       el('div', { class: 'demandgen-legend__item' },
-        el('span', { class: 'demandgen-legend__dot', style: { background: EVENT_TYPE_COLORS[type] || '#9B9A9B' } }),
+        el('span', { class: 'demandgen-legend__dot', style: { background: EVENT_TYPE_COLORS[type] || 'var(--color-text-muted)' } }),
         type,
         el('span', { class: 'demandgen-legend__value' }, String(typeCounts[type] || 0)),
       )
@@ -211,8 +211,27 @@ function renderView(container, events) {
       )
     ),
 
-    // Bento dashboard
-    renderBentoDashboard(events),
+    // Bento dashboard (collapsible)
+    (() => {
+      const upcoming = events.filter(e => e.status === 'Upcoming').length;
+      let totalItems = 0, doneItems = 0;
+      events.forEach(e => {
+        const items = parseChecklist(e.checklist, e.event_type);
+        totalItems += items.length;
+        doneItems += items.filter(i => i.done).length;
+      });
+      const pct = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
+      return collapsibleSection({
+        id: 'partner-events-bento',
+        title: 'Events Dashboard',
+        summaryItems: [
+          { value: String(events.length), label: 'Events' },
+          { value: String(upcoming), label: 'Upcoming' },
+          { value: pct + '%', label: 'Tasks Done' },
+        ],
+        content: renderBentoDashboard(events),
+      });
+    })(),
 
     // Upcoming events summary
     renderUpcomingEvents(events),
