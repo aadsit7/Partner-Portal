@@ -32,6 +32,14 @@
   .bento-bar-row__label {
     width: 80px;
   }
+
+  .dashboard-section__summary {
+    display: none;
+  }
+
+  .dashboard-section__body {
+    padding: var(--space-3);
+  }
 }
 
 @media (min-width: 769px) and (max-width: 1024px) {
@@ -42,6 +50,10 @@
   .bento-grid--events .bento-cell:nth-child(3) {
     grid-column: 1 / -1;
     grid-row: auto;
+  }
+
+  .demandgen-grid {
+    grid-template-columns: 1fr;
   }
 }
 

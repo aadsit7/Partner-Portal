@@ -5,7 +5,7 @@
 import { readSheetAsObjects, appendRow, updateRow, deleteRow, isConfigured, addDemoRow, updateDemoRow, deleteDemoRow } from '../sheets.js';
 import { CONFIG } from '../config.js';
 import { sha256 } from '../utils/hash.js';
-import { el, mount, uuid, $, debounce, formatCurrency } from '../utils/dom.js';
+import { el, mount, uuid, $, debounce, formatCurrency, collapsibleSection } from '../utils/dom.js';
 import { navigate } from '../router.js';
 import { nowISO, formatDate } from '../utils/date.js';
 import { tierSlug, TIER_OPTIONS, TIER_COLORS } from '../utils/tiers.js';
@@ -50,10 +50,10 @@ function partnerInitials(name) {
 // ============================================
 
 const TYPE_COLORS = {
-  'Technology':                '#1a73e8',
-  'OEM':                       '#ECB22E',
-  'MSP/SI':                    '#69BE28',
-  'MENA Regional Distributor': '#E01E5A',
+  'Technology':                'var(--color-primary-lighter)',
+  'OEM':                       'var(--color-warning)',
+  'MSP/SI':                    'var(--color-accent)',
+  'MENA Regional Distributor': 'var(--color-danger)',
 };
 
 function renderBentoDashboard(partners) {
@@ -78,7 +78,7 @@ function renderBentoDashboard(partners) {
 
 function buildHeroStat(partners) {
   const activeCount = partners.filter(p => (p.status || 'active').toLowerCase() === 'active').length;
-  return el('div', { class: 'bento-cell bento-cell--accent-left' },
+  return el('div', { class: 'bento-cell bento-cell--accent-primary' },
     el('div', { class: 'bento-cell__title' }, 'Total Partners'),
     el('div', { class: 'bento-cell__value' }, String(partners.length)),
     el('div', { class: 'bento-cell__subtitle' }, `${activeCount} active`),
@@ -102,7 +102,7 @@ function buildTierDonut(partners) {
     if (count === 0) continue;
     const start = cumulative;
     cumulative += (count / total) * 360;
-    const color = TIER_COLORS[tierSlug(tier)] || '#9B9A9B';
+    const color = TIER_COLORS[tierSlug(tier)] || 'var(--color-text-muted)';
     stops.push(`${color} ${start}deg ${cumulative}deg`);
   }
 
@@ -113,7 +113,7 @@ function buildTierDonut(partners) {
           el('div', { class: 'bento-donut__label' }, 'Partners')
         )
       )
-    : el('div', { class: 'bento-donut', style: { background: '#f0f0f0' } },
+    : el('div', { class: 'bento-donut', style: { background: 'var(--color-border-light)' } },
         el('div', { class: 'bento-donut__hole' },
           el('div', { class: 'bento-donut__total' }, '0'),
           el('div', { class: 'bento-donut__label' }, 'Partners')
@@ -123,7 +123,7 @@ function buildTierDonut(partners) {
   const legend = el('div', { class: 'demandgen-legend' },
     ...TIER_OPTIONS.map(tier =>
       el('div', { class: 'demandgen-legend__item' },
-        el('span', { class: 'demandgen-legend__dot', style: { background: TIER_COLORS[tierSlug(tier)] || '#9B9A9B' } }),
+        el('span', { class: 'demandgen-legend__dot', style: { background: TIER_COLORS[tierSlug(tier)] || 'var(--color-text-muted)' } }),
         tier,
         el('span', { class: 'demandgen-legend__value' }, String(tierCounts[tier] || 0)),
       )
@@ -148,7 +148,7 @@ function buildTypeBars(partners) {
 
   const rows = sorted.map(([type, count]) => {
     const pct = (count / maxCount) * 100;
-    const color = TYPE_COLORS[type] || '#9B9A9B';
+    const color = TYPE_COLORS[type] || 'var(--color-text-muted)';
 
     return el('div', { class: 'bento-bar-row' },
       el('div', { class: 'bento-bar-row__label' }, type),
@@ -200,7 +200,7 @@ function buildActiveRatio(activeCount, inactiveCount, activePct) {
     el('div', { class: 'bento-cell__title' }, 'Active Rate'),
     el('div', { class: 'bento-cell__value' }, activePct + '%'),
     el('div', { style: { marginTop: 'var(--space-3)' } },
-      el('div', { class: 'bento-bar-row__track', style: { height: '10px' } },
+      el('div', { class: 'bento-bar-row__track' },
         el('div', { class: 'bento-bar-row__fill', style: { width: barPct + '%', background: 'var(--color-accent)', height: '100%' } })
       ),
     ),
@@ -217,6 +217,13 @@ function buildActiveRatio(activeCount, inactiveCount, activePct) {
 
 function renderView(container, partners) {
   let filtered = [...partners];
+
+  // Compute active/inactive for summary and dashboard
+  const activeCount = allPartners.filter(p => (p.status || 'active').toLowerCase() === 'active' && p.is_admin !== 'TRUE').length;
+  const inactiveCount = allPartners.filter(p => (p.status || 'active').toLowerCase() === 'inactive' && p.is_admin !== 'TRUE').length;
+  const totalAll = activeCount + inactiveCount;
+  const activePct = totalAll > 0 ? Math.round((activeCount / totalAll) * 100) : 100;
+  const premierCount = partners.filter(p => (p.tier || '').toLowerCase().includes('premier')).length;
 
   const content = el('div', {},
     el('div', { class: 'section-header' },
@@ -254,8 +261,17 @@ function renderView(container, partners) {
       )
     ),
 
-    // Bento dashboard
-    renderBentoDashboard(partners),
+    // Bento dashboard (collapsible)
+    collapsibleSection({
+      id: 'admin-partners-bento',
+      title: 'Partner Overview',
+      summaryItems: [
+        { value: String(partners.length), label: 'Partners' },
+        { value: String(premierCount), label: 'Premier' },
+        { value: activePct + '%', label: 'Active' },
+      ],
+      content: renderBentoDashboard(partners),
+    }),
 
     el('div', { id: 'partners-grid' })
   );
