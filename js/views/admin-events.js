@@ -5,7 +5,7 @@
 import { getCurrentUser } from '../auth.js';
 import { readSheetAsObjects, appendRow, updateRow, deleteRow, isConfigured, addDemoRow, updateDemoRow, deleteDemoRow } from '../sheets.js';
 import { CONFIG } from '../config.js';
-import { el, mount, uuid, $, debounce } from '../utils/dom.js';
+import { el, mount, uuid, $, debounce, formatCurrency } from '../utils/dom.js';
 import { nowISO, formatDate, parseDate, isDateInRange } from '../utils/date.js';
 import { openModal, closeModal, confirmDialog } from '../components/modal.js';
 import { buildForm } from '../components/form.js';
@@ -19,6 +19,7 @@ export const title = 'Events';
 
 let cachedPartners = null;
 let cachedEvents = null;
+let cachedOpps = null;
 
 const EVENT_STATUSES = ['Upcoming', 'In Progress', 'Completed', 'Cancelled'];
 const EVENT_TYPES = ['Webinar', 'Workshop', 'Conference', 'Campaign', 'Other'];
@@ -51,13 +52,15 @@ export async function render(container) {
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
 
   try {
-    const [events, partners] = await Promise.all([
+    const [events, partners, opportunities] = await Promise.all([
       readSheetAsObjects(CONFIG.SHEET_EVENTS),
       readSheetAsObjects(CONFIG.SHEET_PARTNERS),
+      readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES),
     ]);
     cachedPartners = filterPartners(partners);
     cachedEvents = filterEvents(events);
-    renderView(container, cachedEvents);
+    cachedOpps = opportunities || [];
+    renderView(container, cachedEvents, cachedOpps);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },
       el('div', { class: 'empty-state__title' }, 'Error loading events'),
@@ -78,10 +81,71 @@ function getPartnerName(partnerId) {
 }
 
 // ============================================
+// Revenue by Event Chart
+// ============================================
+
+function buildEventRevenueChart(events, opportunities) {
+  // Join opportunities to events via lead_source
+  const eventRevenue = {};
+  for (const opp of opportunities) {
+    const src = opp.lead_source;
+    if (!src || src === 'salesperson') continue;
+    const val = parseFloat(opp.deal_value) || 0;
+    if (!eventRevenue[src]) eventRevenue[src] = { total: 0, partnerId: opp.partner_id };
+    eventRevenue[src].total += val;
+  }
+
+  // Build display data: match event titles
+  const data = [];
+  for (const [eventId, rev] of Object.entries(eventRevenue)) {
+    const evt = events.find(e => e.event_id === eventId);
+    const title = evt ? evt.title : eventId;
+    const type = evt ? evt.event_type : 'Other';
+    const partnerName = getPartnerName(rev.partnerId) || 'Unknown';
+    data.push({ title, type, partnerName, total: rev.total });
+  }
+  data.sort((a, b) => b.total - a.total);
+
+  if (data.length === 0) {
+    return el('div', { class: 'demandgen-chart' },
+      el('div', { class: 'demandgen-chart__title' }, 'Revenue by Event & Partner'),
+      el('div', { class: 'demandgen-chart__subtitle' }, 'No event-sourced revenue yet')
+    );
+  }
+
+  const maxVal = Math.max(...data.map(d => d.total));
+
+  const rows = data.map(d => {
+    const pct = maxVal > 0 ? (d.total / maxVal) * 100 : 0;
+    const color = TYPE_CHIP_COLORS[d.type] || 'var(--color-primary-lighter)';
+
+    return el('div', { class: 'demandgen-bar-row' },
+      el('div', { class: 'demandgen-bar-row__label', title: d.title },
+        el('div', { style: { lineHeight: 'var(--leading-tight)' } }, d.title),
+        el('div', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontWeight: 'var(--font-normal)' } }, d.partnerName),
+      ),
+      el('div', { class: 'demandgen-bar-row__bar' },
+        el('div', {
+          class: 'demandgen-bar-row__segment',
+          style: { width: pct + '%', background: color },
+        })
+      ),
+      el('div', { class: 'demandgen-bar-row__value' }, formatCurrency(d.total)),
+    );
+  });
+
+  return el('div', { class: 'demandgen-chart' },
+    el('div', { class: 'demandgen-chart__title' }, 'Revenue by Event & Partner'),
+    el('div', { class: 'demandgen-chart__subtitle' }, 'Pipeline generated from demand gen events'),
+    el('div', { class: 'demandgen-bar-list' }, ...rows),
+  );
+}
+
+// ============================================
 // Main View
 // ============================================
 
-function renderView(container, events) {
+function renderView(container, events, opportunities) {
   let activeView = 'board';
   let filters = { search: '', partners: new Set(), type: '', status: '' };
 
@@ -134,7 +198,7 @@ function renderView(container, events) {
   }
 
   function updateStatCardStates() {
-    const cards = container.querySelectorAll ? document.querySelectorAll('.stats-grid .stat-card') : [];
+    const cards = document.querySelectorAll('.dashboard-top__stats .stat-card');
     const filterMap = ['', 'Upcoming', 'In Progress', 'Completed'];
     cards.forEach((card, i) => {
       card.classList.toggle('stat-card--active', filterMap[i] === activeStatFilter && activeStatFilter !== '');
@@ -274,24 +338,29 @@ function renderView(container, events) {
       ),
     ),
 
-    // Stats (interactive — click to filter by status)
-    el('div', { class: 'stats-grid stagger' },
-      statCard('Total Events', events.length, {
-        accentColor: 'var(--color-primary-lighter)',
-        onClick: () => toggleStatFilter(''),
-      }),
-      statCard('Upcoming', upcoming, {
-        accentColor: 'var(--color-status-registered)',
-        onClick: () => toggleStatFilter('Upcoming'),
-      }),
-      statCard('In Progress', inProgress, {
-        accentColor: 'var(--color-status-in-progress)',
-        onClick: () => toggleStatFilter('In Progress'),
-      }),
-      statCard('Completed', completed, {
-        accentColor: 'var(--color-status-won)',
-        onClick: () => toggleStatFilter('Completed'),
-      })
+    // Dashboard top: 2×2 stat cards left, Revenue by Event chart right
+    el('div', { class: 'dashboard-top' },
+      el('div', { class: 'dashboard-top__stats stagger' },
+        statCard('Total Events', events.length, {
+          accentColor: 'var(--color-primary-lighter)',
+          onClick: () => toggleStatFilter(''),
+        }),
+        statCard('Upcoming', upcoming, {
+          accentColor: 'var(--color-status-registered)',
+          onClick: () => toggleStatFilter('Upcoming'),
+        }),
+        statCard('In Progress', inProgress, {
+          accentColor: 'var(--color-status-in-progress)',
+          onClick: () => toggleStatFilter('In Progress'),
+        }),
+        statCard('Completed', completed, {
+          accentColor: 'var(--color-status-won)',
+          onClick: () => toggleStatFilter('Completed'),
+        }),
+      ),
+      el('div', { class: 'dashboard-top__chart' },
+        buildEventRevenueChart(events, opportunities),
+      ),
     ),
 
     // Partner chip filters
