@@ -5,10 +5,10 @@
 import { readSheetAsObjects, appendRow, updateRow, deleteRow, isConfigured, addDemoRow, updateDemoRow, deleteDemoRow } from '../sheets.js';
 import { CONFIG } from '../config.js';
 import { sha256 } from '../utils/hash.js';
-import { el, mount, uuid, $, debounce } from '../utils/dom.js';
+import { el, mount, uuid, $, debounce, formatCurrency } from '../utils/dom.js';
 import { navigate } from '../router.js';
 import { nowISO, formatDate } from '../utils/date.js';
-import { tierSlug, TIER_OPTIONS } from '../utils/tiers.js';
+import { tierSlug, TIER_OPTIONS, TIER_COLORS } from '../utils/tiers.js';
 import { openModal, closeModal, confirmDialog } from '../components/modal.js';
 import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
@@ -44,6 +44,176 @@ function reRender() {
 function partnerInitials(name) {
   return (name || '').split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || '?';
 }
+
+// ============================================
+// Bento Dashboard
+// ============================================
+
+const TYPE_COLORS = {
+  'Technology':                '#1a73e8',
+  'OEM':                       '#ECB22E',
+  'MSP/SI':                    '#69BE28',
+  'MENA Regional Distributor': '#E01E5A',
+};
+
+function renderBentoDashboard(partners) {
+  const activeCount = allPartners.filter(p => (p.status || 'active').toLowerCase() === 'active' && p.is_admin !== 'TRUE').length;
+  const inactiveCount = allPartners.filter(p => (p.status || 'active').toLowerCase() === 'inactive' && p.is_admin !== 'TRUE').length;
+  const totalAll = activeCount + inactiveCount;
+  const activePct = totalAll > 0 ? Math.round((activeCount / totalAll) * 100) : 100;
+
+  return el('div', { class: 'bento-grid--partners stagger' },
+    // Cell 1: Total Partners hero stat
+    buildHeroStat(partners),
+    // Cell 2: By Tier donut (spans 2 rows)
+    buildTierDonut(partners),
+    // Cell 3: By Type bars
+    buildTypeBars(partners),
+    // Cell 4: By Region
+    buildRegionList(partners),
+    // Cell 5: Active ratio
+    buildActiveRatio(activeCount, inactiveCount, activePct),
+  );
+}
+
+function buildHeroStat(partners) {
+  const activeCount = partners.filter(p => (p.status || 'active').toLowerCase() === 'active').length;
+  return el('div', { class: 'bento-cell bento-cell--accent-left' },
+    el('div', { class: 'bento-cell__title' }, 'Total Partners'),
+    el('div', { class: 'bento-cell__value' }, String(partners.length)),
+    el('div', { class: 'bento-cell__subtitle' }, `${activeCount} active`),
+  );
+}
+
+function buildTierDonut(partners) {
+  const tierCounts = {};
+  TIER_OPTIONS.forEach(t => tierCounts[t] = 0);
+  partners.forEach(p => {
+    const t = p.tier || 'Registered';
+    tierCounts[t] = (tierCounts[t] || 0) + 1;
+  });
+
+  const total = partners.length;
+  let cumulative = 0;
+  const stops = [];
+
+  for (const tier of TIER_OPTIONS) {
+    const count = tierCounts[tier] || 0;
+    if (count === 0) continue;
+    const start = cumulative;
+    cumulative += (count / total) * 360;
+    const color = TIER_COLORS[tierSlug(tier)] || '#9B9A9B';
+    stops.push(`${color} ${start}deg ${cumulative}deg`);
+  }
+
+  const donut = total > 0
+    ? el('div', { class: 'bento-donut', style: { background: `conic-gradient(${stops.join(', ')})` } },
+        el('div', { class: 'bento-donut__hole' },
+          el('div', { class: 'bento-donut__total' }, String(total)),
+          el('div', { class: 'bento-donut__label' }, 'Partners')
+        )
+      )
+    : el('div', { class: 'bento-donut', style: { background: '#f0f0f0' } },
+        el('div', { class: 'bento-donut__hole' },
+          el('div', { class: 'bento-donut__total' }, '0'),
+          el('div', { class: 'bento-donut__label' }, 'Partners')
+        )
+      );
+
+  const legend = el('div', { class: 'demandgen-legend' },
+    ...TIER_OPTIONS.map(tier =>
+      el('div', { class: 'demandgen-legend__item' },
+        el('span', { class: 'demandgen-legend__dot', style: { background: TIER_COLORS[tierSlug(tier)] || '#9B9A9B' } }),
+        tier,
+        el('span', { class: 'demandgen-legend__value' }, String(tierCounts[tier] || 0)),
+      )
+    )
+  );
+
+  return el('div', { class: 'bento-cell' },
+    el('div', { class: 'bento-cell__title' }, 'By Tier'),
+    el('div', { class: 'bento-donut-wrapper' }, donut, legend),
+  );
+}
+
+function buildTypeBars(partners) {
+  const typeCounts = {};
+  partners.forEach(p => {
+    const t = p.partner_type || 'Other';
+    typeCounts[t] = (typeCounts[t] || 0) + 1;
+  });
+
+  const sorted = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+  const maxCount = sorted.length > 0 ? sorted[0][1] : 1;
+
+  const rows = sorted.map(([type, count]) => {
+    const pct = (count / maxCount) * 100;
+    const color = TYPE_COLORS[type] || '#9B9A9B';
+
+    return el('div', { class: 'bento-bar-row' },
+      el('div', { class: 'bento-bar-row__label' }, type),
+      el('div', { class: 'bento-bar-row__track' },
+        el('div', { class: 'bento-bar-row__fill', style: { width: pct + '%', background: color } })
+      ),
+      el('div', { class: 'bento-bar-row__count' }, String(count)),
+    );
+  });
+
+  return el('div', { class: 'bento-cell' },
+    el('div', { class: 'bento-cell__title' }, 'By Type'),
+    ...rows,
+  );
+}
+
+function buildRegionList(partners) {
+  const regionCounts = {};
+  partners.forEach(p => {
+    const r = p.region || 'Unknown';
+    regionCounts[r] = (regionCounts[r] || 0) + 1;
+  });
+
+  const sorted = Object.entries(regionCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const maxCount = sorted.length > 0 ? sorted[0][1] : 1;
+
+  const rows = sorted.map(([region, count]) => {
+    const pct = (count / maxCount) * 100;
+    return el('div', { class: 'bento-bar-row' },
+      el('div', { class: 'bento-bar-row__label' }, region),
+      el('div', { class: 'bento-bar-row__track' },
+        el('div', { class: 'bento-bar-row__fill', style: { width: pct + '%', background: 'var(--color-primary-lighter)' } })
+      ),
+      el('div', { class: 'bento-bar-row__count' }, String(count)),
+    );
+  });
+
+  return el('div', { class: 'bento-cell' },
+    el('div', { class: 'bento-cell__title' }, 'By Region'),
+    ...rows,
+  );
+}
+
+function buildActiveRatio(activeCount, inactiveCount, activePct) {
+  const total = activeCount + inactiveCount;
+  const barPct = total > 0 ? (activeCount / total) * 100 : 100;
+
+  return el('div', { class: 'bento-cell' },
+    el('div', { class: 'bento-cell__title' }, 'Active Rate'),
+    el('div', { class: 'bento-cell__value' }, activePct + '%'),
+    el('div', { style: { marginTop: 'var(--space-3)' } },
+      el('div', { class: 'bento-bar-row__track', style: { height: '10px' } },
+        el('div', { class: 'bento-bar-row__fill', style: { width: barPct + '%', background: 'var(--color-accent)', height: '100%' } })
+      ),
+    ),
+    el('div', { style: { display: 'flex', justifyContent: 'space-between', marginTop: 'var(--space-2)' } },
+      el('span', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' } }, `${activeCount} active`),
+      el('span', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' } }, `${inactiveCount} inactive`),
+    ),
+  );
+}
+
+// ============================================
+// Main View
+// ============================================
 
 function renderView(container, partners) {
   let filtered = [...partners];
@@ -83,6 +253,9 @@ function renderView(container, partners) {
         ),
       )
     ),
+
+    // Bento dashboard
+    renderBentoDashboard(partners),
 
     el('div', { id: 'partners-grid' })
   );

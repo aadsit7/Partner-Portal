@@ -2,6 +2,49 @@
    Responsive Breakpoints
    ============================================ */
 
+/* Demand Gen Dashboard responsive */
+@media (max-width: 768px) {
+  .demandgen-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .demandgen-bar-row__label {
+    width: 80px;
+    font-size: var(--text-xs);
+  }
+
+  .date-range-slider__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+  }
+
+  .bento-grid--partners,
+  .bento-grid--events {
+    grid-template-columns: 1fr;
+  }
+
+  .bento-grid--partners .bento-cell:nth-child(2),
+  .bento-grid--events .bento-cell:nth-child(3) {
+    grid-row: auto;
+  }
+
+  .bento-bar-row__label {
+    width: 80px;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .bento-grid--events {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .bento-grid--events .bento-cell:nth-child(3) {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+}
+
 /* Type distribution responsive */
 @media (max-width: 768px) {
   .type-distribution {

@@ -57,12 +57,93 @@ function getPartnerName(partnerId) {
 }
 
 // ============================================
+// Date Range Slider Component
+// ============================================
+
+function buildDateRangeSlider(minTs, maxTs, onChange) {
+  const DAY = 86400000;
+  const formatSliderDate = (ts) =>
+    new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  const valuesLabel = el('span', { class: 'date-range-slider__values' },
+    `${formatSliderDate(minTs)} — ${formatSliderDate(maxTs)}`
+  );
+
+  const fill = el('div', { class: 'date-range-slider__fill' });
+
+  const updateFill = (lo, hi) => {
+    const range = maxTs - minTs || 1;
+    const leftPct = ((lo - minTs) / range) * 100;
+    const rightPct = ((maxTs - hi) / range) * 100;
+    fill.style.left = leftPct + '%';
+    fill.style.right = rightPct + '%';
+  };
+
+  const inputMin = el('input', {
+    class: 'date-range-slider__input',
+    type: 'range',
+    min: String(minTs),
+    max: String(maxTs),
+    value: String(minTs),
+    step: String(DAY),
+    style: { zIndex: '3' },
+    onInput: () => {
+      let lo = Number(inputMin.value);
+      const hi = Number(inputMax.value);
+      if (lo > hi) { lo = hi; inputMin.value = String(lo); }
+      updateFill(lo, hi);
+      valuesLabel.textContent = `${formatSliderDate(lo)} — ${formatSliderDate(hi)}`;
+      onChange(lo, hi);
+    },
+  });
+
+  const inputMax = el('input', {
+    class: 'date-range-slider__input',
+    type: 'range',
+    min: String(minTs),
+    max: String(maxTs),
+    value: String(maxTs),
+    step: String(DAY),
+    style: { zIndex: '4' },
+    onInput: () => {
+      const lo = Number(inputMin.value);
+      let hi = Number(inputMax.value);
+      if (hi < lo) { hi = lo; inputMax.value = String(hi); }
+      updateFill(lo, hi);
+      valuesLabel.textContent = `${formatSliderDate(lo)} — ${formatSliderDate(hi)}`;
+      onChange(lo, hi);
+    },
+  });
+
+  updateFill(minTs, maxTs);
+
+  return el('div', { class: 'date-range-slider' },
+    el('div', { class: 'date-range-slider__header' },
+      el('span', { class: 'date-range-slider__label' }, 'Close Date'),
+      valuesLabel,
+    ),
+    el('div', { class: 'date-range-slider__track' },
+      fill,
+      inputMin,
+      inputMax,
+    ),
+  );
+}
+
+// ============================================
 // Main View
 // ============================================
 
 function renderView(container, opportunities) {
   let activeView = 'board';
-  let filters = { search: '', partner: '', status: '' };
+  // Compute close-date range for slider
+  const closeDates = opportunities
+    .map(o => o.expected_close ? new Date(o.expected_close).getTime() : null)
+    .filter(Boolean);
+  const dateMin = closeDates.length ? Math.min(...closeDates) : Date.now();
+  const dateMax = closeDates.length ? Math.max(...closeDates) : Date.now();
+
+  let filters = { search: '', partner: '', status: '', dateMin, dateMax };
 
   function getFiltered() {
     return opportunities.filter(opp => {
@@ -73,6 +154,10 @@ function renderView(container, opportunities) {
         if (!(opp.deal_name?.toLowerCase().includes(q) ||
               opp.customer_name?.toLowerCase().includes(q) ||
               getPartnerName(opp.partner_id)?.toLowerCase().includes(q))) return false;
+      }
+      if (filters.dateMin != null && filters.dateMax != null && opp.expected_close) {
+        const closeTime = new Date(opp.expected_close).getTime();
+        if (closeTime < filters.dateMin || closeTime > filters.dateMax) return false;
       }
       return true;
     });
@@ -112,6 +197,13 @@ function renderView(container, opportunities) {
   const boardBtn = el('button', { class: 'btn btn--primary btn--sm', onClick: () => switchView('board') }, 'Board');
   const listBtn = el('button', { class: 'btn btn--secondary btn--sm', onClick: () => switchView('list') }, 'List');
 
+  // Date range slider
+  const dateSlider = buildDateRangeSlider(dateMin, dateMax, (min, max) => {
+    filters.dateMin = min;
+    filters.dateMax = max;
+    refreshContent();
+  });
+
   const viewContainer = el('div', { id: 'opps-view-container' });
 
   const content = el('div', {},
@@ -138,14 +230,17 @@ function renderView(container, opportunities) {
     ),
 
     // Filter + view toggle
-    el('div', { class: 'filter-bar' },
-      el('div', { class: 'filter-bar__search' },
-        el('span', { class: 'search-bar__icon', html: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M12.5 12.5L16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-        searchInput
+    el('div', { class: 'filter-section' },
+      el('div', { class: 'filter-bar' },
+        el('div', { class: 'filter-bar__search' },
+          el('span', { class: 'search-bar__icon', html: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M12.5 12.5L16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
+          searchInput
+        ),
+        partnerSelect,
+        statusSelect,
+        el('div', { class: 'view-toggle', style: { marginBottom: '0' } }, boardBtn, listBtn),
       ),
-      partnerSelect,
-      statusSelect,
-      el('div', { class: 'view-toggle', style: { marginBottom: '0' } }, boardBtn, listBtn),
+      closeDates.length > 1 ? dateSlider : null,
     ),
 
     viewContainer,
