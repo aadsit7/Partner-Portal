@@ -47,27 +47,9 @@ const HQ_COORDINATES = {
   'Austin, Texas, USA': [30.2672, -97.7431],
 };
 
-const STAGE_COLORS = {
-  'Prospect':    'var(--color-status-registered)',
-  'Qualified':   'var(--color-primary-lighter)',
-  'Proposal':    'var(--color-warning)',
-  'Negotiation': 'var(--color-accent)',
-  'Closed':      'var(--color-primary)',
-};
-
 // ============================================
 // Demand Gen Dashboard Helpers
 // ============================================
-
-function computeStageValueData(opportunities) {
-  const data = {};
-  for (const opp of opportunities) {
-    const stage = opp.stage || 'Unknown';
-    const val = parseFloat(opp.deal_value) || 0;
-    data[stage] = (data[stage] || 0) + val;
-  }
-  return data;
-}
 
 function computePartnerSourceData(opportunities, partners) {
   const byPartner = {};
@@ -92,65 +74,7 @@ function computePartnerSourceData(opportunities, partners) {
     .slice(0, 6);
 }
 
-function buildStageDonut(opportunities) {
-  const stageData = computeStageValueData(opportunities);
-  const total = Object.values(stageData).reduce((s, v) => s + v, 0);
-
-  if (total === 0) {
-    return el('div', { class: 'demandgen-chart' },
-      el('div', { class: 'demandgen-chart__title' }, 'Pipeline by Stage'),
-      el('div', { class: 'demandgen-chart__subtitle' }, 'Deal value distribution across stages'),
-      el('div', { class: 'demandgen-donut-wrapper' },
-        el('div', { class: 'type-donut', style: { background: 'var(--color-border-light)' } },
-          el('div', { class: 'type-donut__hole' },
-            el('div', { class: 'type-donut__total' }, '$0'),
-            el('div', { class: 'type-donut__label' }, 'Pipeline')
-          )
-        )
-      )
-    );
-  }
-
-  let cumulative = 0;
-  const stops = [];
-  const stages = ['Prospect', 'Qualified', 'Proposal', 'Negotiation', 'Closed'];
-
-  for (const stage of stages) {
-    const val = stageData[stage] || 0;
-    if (val === 0) continue;
-    const start = cumulative;
-    cumulative += (val / total) * 360;
-    const color = STAGE_COLORS[stage] || 'var(--color-text-muted)';
-    stops.push(`${color} ${start}deg ${cumulative}deg`);
-  }
-
-  const donut = el('div', { class: 'type-donut', style: {
-    background: `conic-gradient(${stops.join(', ')})`
-  }},
-    el('div', { class: 'type-donut__hole' },
-      el('div', { class: 'type-donut__total' }, formatCurrency(total)),
-      el('div', { class: 'type-donut__label' }, 'Pipeline')
-    )
-  );
-
-  const legend = el('div', { class: 'demandgen-legend' },
-    ...stages.map(stage =>
-      el('div', { class: 'demandgen-legend__item' },
-        el('span', { class: 'demandgen-legend__dot', style: { background: STAGE_COLORS[stage] } }),
-        stage,
-        el('span', { class: 'demandgen-legend__value' }, formatCurrency(stageData[stage] || 0))
-      )
-    )
-  );
-
-  return el('div', { class: 'demandgen-chart' },
-    el('div', { class: 'demandgen-chart__title' }, 'Pipeline by Stage'),
-    el('div', { class: 'demandgen-chart__subtitle' }, 'Deal value distribution across stages'),
-    el('div', { class: 'demandgen-donut-wrapper' }, donut, legend)
-  );
-}
-
-function buildPartnerSourceChart(opportunities, partners) {
+function buildPartnerSourceChart(opportunities, partners, onBarClick) {
   const data = computePartnerSourceData(opportunities, partners);
 
   if (data.length === 0) {
@@ -166,7 +90,11 @@ function buildPartnerSourceChart(opportunities, partners) {
     const spPct = maxVal > 0 ? (d.salesperson / maxVal) * 100 : 0;
     const evPct = maxVal > 0 ? (d.event / maxVal) * 100 : 0;
 
-    return el('div', { class: 'demandgen-bar-row' },
+    return el('div', {
+      class: 'demandgen-bar-row' + (onBarClick ? ' demandgen-bar-row--clickable' : ''),
+      dataset: { partnerName: d.name },
+      onClick: onBarClick ? () => onBarClick(d.name) : undefined,
+    },
       el('div', { class: 'demandgen-bar-row__label', title: d.name }, d.name),
       el('div', { class: 'demandgen-bar-row__bar' },
         spPct > 0 ? el('div', {
@@ -286,28 +214,82 @@ function renderDashboard(container, partners, opportunities, events) {
   // Build activity view content
   buildActivityView(activityView, partnerStats, upcomingEvents, filteredEvents, filteredOpps, container);
 
+  // Interactive stat card handlers
+  let activeStatKey = '';
+  function toggleStat(key) {
+    if (activeStatKey === key) { activeStatKey = ''; } else { activeStatKey = key; }
+    document.querySelectorAll('.stats-grid .stat-card').forEach(card => {
+      card.classList.remove('stat-card--active');
+    });
+    if (activeStatKey === 'partners') { switchTab('partners'); }
+    else if (activeStatKey === 'pipeline') { switchTab('activity'); }
+    else if (activeStatKey === 'events') {
+      switchTab('activity');
+      setTimeout(() => {
+        const timeline = document.querySelector('.section-header__title');
+        const headers = document.querySelectorAll('.section-header__title');
+        for (const h of headers) { if (h.textContent.includes('Joint Events')) { h.scrollIntoView({ behavior: 'smooth', block: 'start' }); break; } }
+      }, 100);
+    }
+    if (activeStatKey) {
+      const keyMap = { partners: 0, pipeline: 1, won: 2, events: 3 };
+      const cards = document.querySelectorAll('.stats-grid .stat-card');
+      if (cards[keyMap[activeStatKey]]) cards[keyMap[activeStatKey]].classList.add('stat-card--active');
+    }
+  }
+
+  // Partner bar click handler — filters Activity Hub to that partner
+  let activeBarPartner = null;
+  function onBarClick(partnerName) {
+    if (activeBarPartner === partnerName) { activeBarPartner = null; } else { activeBarPartner = partnerName; }
+    // Toggle active class on bar rows
+    document.querySelectorAll('.demandgen-bar-row--clickable').forEach(row => {
+      row.classList.toggle('demandgen-bar-row--active', row.dataset.partnerName === activeBarPartner);
+    });
+    // Filter activity cards
+    switchTab('activity');
+    const activityCards = activityView.querySelectorAll('.activity-card');
+    activityCards.forEach(card => {
+      const name = card.querySelector('.activity-card__name');
+      if (!activeBarPartner || (name && name.textContent === activeBarPartner)) {
+        card.style.display = '';
+      } else {
+        card.style.display = 'none';
+      }
+    });
+  }
+
   const content = el('div', {},
-    // Summary stats
+    // Summary stats (interactive)
     el('div', { class: 'stats-grid stagger' },
-      statCard('Total Partners', partnerList.length),
-      statCard('Total Pipeline', formatCurrency(totalPipeline)),
-      statCard('Revenue Won', formatCurrency(wonValue)),
-      statCard('Upcoming Events', upcomingEvents.length)
+      statCard('Total Partners', partnerList.length, {
+        accentColor: 'var(--color-primary-lighter)',
+        onClick: () => toggleStat('partners'),
+      }),
+      statCard('Total Pipeline', formatCurrency(totalPipeline), {
+        accentColor: 'var(--color-accent)',
+        onClick: () => toggleStat('pipeline'),
+      }),
+      statCard('Revenue Won', formatCurrency(wonValue), {
+        accentColor: 'var(--color-status-won)',
+        onClick: () => toggleStat('won'),
+      }),
+      statCard('Upcoming Events', upcomingEvents.length, {
+        accentColor: 'var(--color-status-registered)',
+        onClick: () => toggleStat('events'),
+      })
     ),
 
-    // Demand Gen Dashboard (collapsible)
+    // Partner Pipeline (collapsible, single chart)
     collapsibleSection({
       id: 'admin-demandgen',
-      title: 'Demand Gen Dashboard',
+      title: 'Partner Pipeline',
       summaryItems: [
         { value: formatCurrency(totalPipeline), label: 'Pipeline' },
         { value: String(partnerList.length), label: 'Partners' },
         { value: String(new Set(filteredOpps.map(o => o.lead_source).filter(Boolean)).size), label: 'Sources' },
       ],
-      content: el('div', { class: 'demandgen-grid stagger' },
-        buildStageDonut(filteredOpps),
-        buildPartnerSourceChart(filteredOpps, partnerList),
-      ),
+      content: buildPartnerSourceChart(filteredOpps, partnerList, onBarClick),
     }),
 
     // Tab toggle
