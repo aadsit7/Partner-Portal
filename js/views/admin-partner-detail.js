@@ -84,38 +84,43 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
       'Dashboard'
     ),
 
-    // Partner header
-    el('div', { class: 'detail-header' },
-      el('div', { class: `partner-avatar partner-avatar--${tierClass}` },
-        (partner.display_name || '').split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || '?'
-      ),
-      el('div', { class: 'detail-header__info' },
-        el('div', { style: { display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-2)' } },
-          el('h2', { class: 'detail-header__name' }, partner.display_name),
-          el('span', { class: `badge badge--${tierClass}` },
-            el('span', { class: 'badge__icon', html: TIER_ICONS[tierClass] || '' }),
-            partner.tier
+    // Partner header — split screen layout
+    el('div', { class: 'detail-header-wrapper' },
+      el('div', { class: 'detail-header' },
+        el('div', { class: `partner-avatar partner-avatar--${tierClass}` },
+          (partner.display_name || '').split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || '?'
+        ),
+        el('div', { class: 'detail-header__info' },
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-2)' } },
+            el('h2', { class: 'detail-header__name' }, partner.display_name),
+            el('span', { class: `badge badge--${tierClass}` },
+              el('span', { class: 'badge__icon', html: TIER_ICONS[tierClass] || '' }),
+              partner.tier
+            )
+          ),
+          el('div', { class: 'detail-header__meta' },
+            partner.partner_type ? el('span', { class: 'detail-header__meta-item' }, partner.partner_type) : null,
+            partner.region ? el('span', { class: 'detail-header__meta-item' }, partner.region) : null,
+            partner.hq_location ? el('span', { class: 'detail-header__meta-item' }, partner.hq_location) : null
           )
         ),
-        el('div', { class: 'detail-header__meta' },
-          partner.partner_type ? el('span', { class: 'detail-header__meta-item' }, partner.partner_type) : null,
-          partner.region ? el('span', { class: 'detail-header__meta-item' }, partner.region) : null,
-          partner.hq_location ? el('span', { class: 'detail-header__meta-item' }, partner.hq_location) : null
+        el('div', { class: 'detail-header__stats' },
+          el('div', { class: 'detail-header__stat' },
+            el('div', { class: 'detail-header__stat-value' }, String(opportunities.length)),
+            el('div', { class: 'detail-header__stat-label' }, 'Deals')
+          ),
+          el('div', { class: 'detail-header__stat' },
+            el('div', { class: 'detail-header__stat-value' }, formatCurrency(totalValue)),
+            el('div', { class: 'detail-header__stat-label' }, 'Pipeline')
+          ),
+          el('div', { class: 'detail-header__stat' },
+            el('div', { class: 'detail-header__stat-value' }, formatCurrency(wonValue)),
+            el('div', { class: 'detail-header__stat-label' }, 'Won')
+          ),
         )
       ),
-      el('div', { class: 'detail-header__stats' },
-        el('div', { class: 'detail-header__stat' },
-          el('div', { class: 'detail-header__stat-value' }, String(opportunities.length)),
-          el('div', { class: 'detail-header__stat-label' }, 'Deals')
-        ),
-        el('div', { class: 'detail-header__stat' },
-          el('div', { class: 'detail-header__stat-value' }, formatCurrency(totalValue)),
-          el('div', { class: 'detail-header__stat-label' }, 'Pipeline')
-        ),
-        el('div', { class: 'detail-header__stat' },
-          el('div', { class: 'detail-header__stat-value' }, formatCurrency(wonValue)),
-          el('div', { class: 'detail-header__stat-label' }, 'Won')
-        ),
+      el('div', { class: 'detail-header-chart' },
+        buildPartnerRevenueByEvent(partnerEvents, opportunities)
       )
     ),
 
@@ -489,6 +494,72 @@ const EVENT_TYPE_COLORS = {
   'Webinar': '#0000CC', 'Workshop': '#00BFFF',
   'Conference': '#1A1A2E', 'Campaign': '#CC8800', 'Other': '#4A4A5A',
 };
+
+// ============================================
+// Revenue by Event Chart (Partner-scoped)
+// ============================================
+
+function buildPartnerRevenueByEvent(partnerEvents, opportunities) {
+  const eventRevenue = {};
+  for (const opp of opportunities) {
+    const src = opp.lead_source;
+    if (!src || src === 'salesperson') continue;
+    const val = parseFloat(opp.deal_value) || 0;
+    if (!eventRevenue[src]) eventRevenue[src] = { total: 0 };
+    eventRevenue[src].total += val;
+  }
+
+  const data = [];
+  for (const [eventId, rev] of Object.entries(eventRevenue)) {
+    const evt = partnerEvents.find(e => e.event_id === eventId);
+    const title = evt ? evt.title : eventId;
+    const type = evt ? evt.event_type : 'Other';
+    data.push({ title, type, total: rev.total });
+  }
+  data.sort((a, b) => b.total - a.total);
+
+  if (data.length === 0) {
+    return el('div', { class: 'demandgen-chart' },
+      el('div', { class: 'demandgen-chart__title' }, 'Revenue by Event'),
+      el('div', { class: 'demandgen-chart__subtitle', style: { color: 'var(--color-text-muted)' } }, 'No event-sourced revenue yet')
+    );
+  }
+
+  const maxVal = Math.max(...data.map(d => d.total));
+
+  const rows = data.map(d => {
+    const pct = maxVal > 0 ? (d.total / maxVal) * 100 : 0;
+    const color = EVENT_TYPE_COLORS[d.type] || EVENT_TYPE_COLORS['Other'];
+
+    return el('div', { class: 'demandgen-bar-row' },
+      el('div', { class: 'demandgen-bar-row__label', title: d.title }, d.title),
+      el('div', { class: 'demandgen-bar-row__bar' },
+        el('div', {
+          class: 'demandgen-bar-row__segment',
+          style: { width: pct + '%', background: color, borderRadius: 'var(--radius-sm)' },
+        })
+      ),
+      el('div', { class: 'demandgen-bar-row__value' }, formatCurrency(d.total)),
+    );
+  });
+
+  const usedTypes = [...new Set(data.map(d => d.type))];
+  const legend = el('div', { class: 'demandgen-legend', style: { marginTop: 'var(--space-3)' } },
+    ...usedTypes.map(type =>
+      el('div', { class: 'demandgen-legend__item' },
+        el('span', { class: 'demandgen-legend__dot', style: { background: EVENT_TYPE_COLORS[type] || EVENT_TYPE_COLORS['Other'] } }),
+        type
+      )
+    )
+  );
+
+  return el('div', { class: 'demandgen-chart' },
+    el('div', { class: 'demandgen-chart__title' }, 'Revenue by Event'),
+    el('div', { class: 'demandgen-chart__subtitle' }, 'Pipeline from demand gen events'),
+    el('div', { class: 'demandgen-bar-list' }, ...rows),
+    legend,
+  );
+}
 
 function buildUpcomingEventsSection(allEvents, partner, container) {
   const upcomingEvents = allEvents

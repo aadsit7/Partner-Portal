@@ -843,6 +843,48 @@
   margin-top: var(--space-1);
 }
 
+/* ---------- Detail Header Split Layout ---------- */
+.detail-header-wrapper {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.detail-header-wrapper .detail-header {
+  margin-bottom: 0;
+}
+
+.detail-header-chart {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-light);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-xs);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.detail-header-chart .demandgen-chart {
+  padding: 0;
+}
+
+.detail-header-chart .demandgen-chart__title {
+  font-size: var(--text-base);
+}
+
+.detail-header-chart .demandgen-bar-row__label {
+  max-width: 140px;
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 1024px) {
+  .detail-header-wrapper {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- Tab Bar ---------- */
 .tab-bar {
   display: flex;
