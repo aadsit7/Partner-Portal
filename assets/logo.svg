@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <rect width="400" height="400" rx="24" fill="#E91E8C"/>
+  <!-- Character silhouette (navy suit, from behind) -->
+  <g transform="translate(80, 60)">
+    <!-- Suit body -->
+    <path d="M60 120 C60 120 30 140 20 200 L20 340 L180 340 L180 200 C170 140 140 120 140 120 Z" fill="#1a2744"/>
+    <!-- Suit collar -->
+    <path d="M80 120 L100 145 L120 120" fill="#2a3a5c" stroke="#1a2744" stroke-width="2"/>
+    <!-- Shirt collar -->
+    <path d="M85 118 L100 135 L115 118" fill="#dce4f0" stroke="none"/>
+    <!-- Head -->
+    <ellipse cx="100" cy="85" rx="38" ry="42" fill="#d4a574"/>
+    <!-- Hair -->
+    <path d="M62 75 C62 45 80 30 100 28 C120 30 142 45 142 75 C142 60 135 48 120 45 C105 42 80 50 70 55 C63 60 62 68 62 75Z" fill="#c8923a"/>
+    <!-- Hair top swoosh -->
+    <path d="M70 65 C72 35 90 22 105 20 C120 22 140 35 138 55 C135 40 120 32 105 30 C88 32 75 42 70 65Z" fill="#d4a040"/>
+    <!-- Sunglasses -->
+    <rect x="68" y="75" width="28" height="18" rx="4" fill="#1a2744"/>
+    <rect x="104" y="75" width="28" height="18" rx="4" fill="#1a2744"/>
+    <line x1="96" y1="84" x2="104" y2="84" stroke="#1a2744" stroke-width="2"/>
+    <line x1="68" y1="82" x2="58" y2="78" stroke="#1a2744" stroke-width="2"/>
+    <!-- Ear -->
+    <ellipse cx="140" cy="88" rx="6" ry="8" fill="#c89a6a"/>
+    <!-- Sunglasses arm -->
+    <line x1="132" y1="82" x2="146" y2="84" stroke="#1a2744" stroke-width="2.5"/>
+  </g>
+  <!-- Text -->
+  <text x="310" y="190" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="52" fill="white" text-anchor="middle" letter-spacing="2">DIY</text>
+  <text x="310" y="250" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="52" fill="white" text-anchor="middle" letter-spacing="2">AI</text>
+  <text x="310" y="310" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="44" fill="white" text-anchor="middle" letter-spacing="2">PORTAL</text>
+</svg>
