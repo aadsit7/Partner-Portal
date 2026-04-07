@@ -14,6 +14,7 @@ import { openEventModal } from './admin-events.js';
 import { openOppModal } from './admin-opportunities.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { showToast } from '../components/toast.js';
+import { filterOpportunities, filterEvents } from '../utils/filters.js';
 
 export const title = 'Partner Detail';
 
@@ -45,8 +46,8 @@ export async function render(container, params) {
       return;
     }
 
-    const partnerOpps = opportunities.filter(o => o.partner_id === partnerId);
-    const partnerEvents = events.filter(e => !e.partner_id || e.partner_id === partnerId);
+    const partnerOpps = filterOpportunities(opportunities).filter(o => o.partner_id === partnerId);
+    const partnerEvents = filterEvents(events).filter(e => !e.partner_id || e.partner_id === partnerId);
     const partnerTranscripts = transcripts
       .filter(t => t.partner_id === partnerId)
       .sort((a, b) => new Date(b.conversation_date || b.created_at) - new Date(a.conversation_date || a.created_at));

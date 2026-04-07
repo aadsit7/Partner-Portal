@@ -13,6 +13,7 @@ import { openModal, closeModal, confirmDialog } from '../components/modal.js';
 import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
 import { setTopbarTitle } from '../components/sidebar.js';
+import { filterPartners } from '../utils/filters.js';
 
 export const title = 'Partners';
 
@@ -25,7 +26,7 @@ export async function render(container) {
 
   try {
     allPartners = await readSheetAsObjects(CONFIG.SHEET_PARTNERS);
-    const partnerList = allPartners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
+    const partnerList = filterPartners(allPartners);
     renderView(container, partnerList);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },

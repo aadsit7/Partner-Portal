@@ -12,6 +12,7 @@ import { tierSlug, TIER_COLORS, TIER_ICONS } from '../utils/tiers.js';
 import { formatDate } from '../utils/date.js';
 import { openEventModal } from './admin-events.js';
 import { parseChecklist } from '../components/checklist.js';
+import { filterPartners, filterOpportunities, filterEvents } from '../utils/filters.js';
 
 export const title = 'Admin Dashboard';
 
@@ -66,18 +67,20 @@ export async function render(container) {
 }
 
 function renderDashboard(container, partners, opportunities, events) {
-  const partnerList = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
-  const upcomingEvents = events.filter(e => e.status === 'Upcoming' || e.status === 'In Progress');
+  const partnerList = filterPartners(partners);
+  const filteredOpps = filterOpportunities(opportunities);
+  const filteredEvents = filterEvents(events);
+  const upcomingEvents = filteredEvents.filter(e => e.status === 'Upcoming' || e.status === 'In Progress');
 
-  const totalPipeline = opportunities.reduce((sum, o) => sum + (parseFloat(o.deal_value) || 0), 0);
-  const wonValue = opportunities
+  const totalPipeline = filteredOpps.reduce((sum, o) => sum + (parseFloat(o.deal_value) || 0), 0);
+  const wonValue = filteredOpps
     .filter(o => o.status === 'Won')
     .reduce((sum, o) => sum + (parseFloat(o.deal_value) || 0), 0);
 
   // Per-partner stats
   const partnerStats = partnerList.map(partner => {
-    const partnerOpps = opportunities.filter(o => o.partner_id === partner.partner_id);
-    const partnerEvents = events.filter(e => e.partner_id === partner.partner_id);
+    const partnerOpps = filteredOpps.filter(o => o.partner_id === partner.partner_id);
+    const partnerEvents = filteredEvents.filter(e => e.partner_id === partner.partner_id);
     const upcomingPartnerEvents = partnerEvents.filter(e => e.status === 'Upcoming' || e.status === 'In Progress');
     const total = partnerOpps.length;
     const totalVal = partnerOpps.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
@@ -91,7 +94,7 @@ function renderDashboard(container, partners, opportunities, events) {
   }).sort((a, b) => b.stats.totalValue - a.stats.totalValue);
 
   // Type distribution data
-  const typeData = computeTypeData(partnerList, opportunities);
+  const typeData = computeTypeData(partnerList, filteredOpps);
   const uniqueTypes = Object.keys(typeData);
 
   // Tab state
@@ -120,12 +123,12 @@ function renderDashboard(container, partners, opportunities, events) {
     partnersView.style.display = tab === 'partners' ? '' : 'none';
 
     if (tab === 'partners' && !partnersView.hasChildNodes()) {
-      buildPartnersView(partnersView, partnerList, partnerStats, typeData, uniqueTypes, totalPipeline, opportunities);
+      buildPartnersView(partnersView, partnerList, partnerStats, typeData, uniqueTypes, totalPipeline, filteredOpps);
     }
   }
 
   // Build activity view content
-  buildActivityView(activityView, partnerStats, upcomingEvents, events, opportunities, container);
+  buildActivityView(activityView, partnerStats, upcomingEvents, filteredEvents, filteredOpps, container);
 
   const content = el('div', {},
     // Summary stats

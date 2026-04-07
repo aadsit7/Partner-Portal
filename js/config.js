@@ -22,7 +22,7 @@ const RUNTIME_CONFIG_KEY = 'pp_runtime_config';
 export function getRuntimeConfig(key) {
   try {
     const stored = JSON.parse(localStorage.getItem(RUNTIME_CONFIG_KEY) || '{}');
-    if (stored[key]) return stored[key];
+    if (key in stored) return stored[key];
   } catch { /* ignore */ }
   return CONFIG[key] || '';
 }
@@ -71,4 +71,10 @@ export const CONFIG = {
 
   // Default password for new partners (SHA-256 hash of "Portal2026")
   DEFAULT_PASSWORD: 'Portal2026',
+
+  // Content visibility defaults (false = hidden, true = shown)
+  SHOW_INACTIVE_PARTNERS: false,
+  SHOW_PAST_EVENTS: false,
+  SHOW_CANCELLED_EVENTS: false,
+  SHOW_CLOSED_LOST_OPPS: false,
 };
