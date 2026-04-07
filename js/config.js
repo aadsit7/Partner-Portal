@@ -74,7 +74,7 @@ export const CONFIG = {
 
   // Content visibility defaults (false = hidden, true = shown)
   SHOW_INACTIVE_PARTNERS: false,
-  SHOW_PAST_EVENTS: false,
+  SHOW_PAST_EVENTS: true,
   SHOW_CANCELLED_EVENTS: false,
   SHOW_CLOSED_LOST_OPPS: false,
 };
