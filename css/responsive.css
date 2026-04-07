@@ -24,9 +24,12 @@
     grid-template-columns: 1fr;
   }
 
-  .bento-grid--partners .bento-cell:nth-child(2),
   .bento-grid--events .bento-cell:nth-child(3) {
     grid-row: auto;
+  }
+
+  .stat-card__value {
+    font-size: var(--text-xl);
   }
 
   .bento-bar-row__label {
