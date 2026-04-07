@@ -45,6 +45,12 @@
   }
 }
 
+@media (max-width: 1024px) {
+  .dashboard-main-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (min-width: 769px) and (max-width: 1024px) {
   .bento-grid--events {
     grid-template-columns: 1fr 1fr;

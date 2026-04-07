@@ -4,7 +4,7 @@
 
 import { readSheetAsObjects } from '../sheets.js';
 import { CONFIG } from '../config.js';
-import { el, mount, formatCurrency, debounce, collapsibleSection } from '../utils/dom.js';
+import { el, mount, formatCurrency, debounce } from '../utils/dom.js';
 import { navigate } from '../router.js';
 import { statCard } from '../components/card.js';
 import { setTopbarTitle } from '../components/sidebar.js';
@@ -280,24 +280,19 @@ function renderDashboard(container, partners, opportunities, events) {
       })
     ),
 
-    // Partner Pipeline (collapsible, single chart)
-    collapsibleSection({
-      id: 'admin-demandgen',
-      title: 'Partner Pipeline',
-      summaryItems: [
-        { value: formatCurrency(totalPipeline), label: 'Pipeline' },
-        { value: String(partnerList.length), label: 'Partners' },
-        { value: String(new Set(filteredOpps.map(o => o.lead_source).filter(Boolean)).size), label: 'Sources' },
-      ],
-      content: buildPartnerSourceChart(filteredOpps, partnerList, onBarClick),
-    }),
-
-    // Tab toggle
-    el('div', { class: 'view-toggle' }, activityTabBtn, partnersTabBtn),
-
-    // Views
-    activityView,
-    partnersView,
+    // Main layout: Activity/Partners on left, Partner Source chart on right sidebar
+    el('div', { class: 'dashboard-main-layout' },
+      // Left: main content area
+      el('div', { class: 'dashboard-main-layout__content' },
+        el('div', { class: 'view-toggle' }, activityTabBtn, partnersTabBtn),
+        activityView,
+        partnersView,
+      ),
+      // Right: sidebar chart
+      el('div', { class: 'dashboard-main-layout__sidebar' },
+        buildPartnerSourceChart(filteredOpps, partnerList, onBarClick),
+      ),
+    ),
   );
 
   mount(container, content);
