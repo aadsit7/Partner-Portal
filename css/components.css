@@ -2988,6 +2988,19 @@
    Demand Gen Dashboard
    ============================================ */
 
+/* Dashboard main layout: Activity/Partners left, chart sidebar right */
+.dashboard-main-layout {
+  display: grid;
+  grid-template-columns: 1.8fr 1fr;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.dashboard-main-layout__sidebar .demandgen-chart {
+  position: sticky;
+  top: var(--space-4);
+}
+
 .demandgen-grid {
   display: grid;
   grid-template-columns: 1fr 1.5fr;
