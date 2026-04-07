@@ -47,6 +47,162 @@ const HQ_COORDINATES = {
   'Austin, Texas, USA': [30.2672, -97.7431],
 };
 
+const STAGE_COLORS = {
+  'Prospect':    '#36C5F0',
+  'Qualified':   '#1a73e8',
+  'Proposal':    '#ECB22E',
+  'Negotiation': '#69BE28',
+  'Closed':      '#002244',
+};
+
+// ============================================
+// Demand Gen Dashboard Helpers
+// ============================================
+
+function computeStageValueData(opportunities) {
+  const data = {};
+  for (const opp of opportunities) {
+    const stage = opp.stage || 'Unknown';
+    const val = parseFloat(opp.deal_value) || 0;
+    data[stage] = (data[stage] || 0) + val;
+  }
+  return data;
+}
+
+function computePartnerSourceData(opportunities, partners) {
+  const byPartner = {};
+  for (const opp of opportunities) {
+    const pid = opp.partner_id;
+    if (!byPartner[pid]) byPartner[pid] = { salesperson: 0, event: 0, total: 0 };
+    const val = parseFloat(opp.deal_value) || 0;
+    byPartner[pid].total += val;
+    if (opp.lead_source === 'salesperson') {
+      byPartner[pid].salesperson += val;
+    } else {
+      byPartner[pid].event += val;
+    }
+  }
+
+  return Object.entries(byPartner)
+    .map(([pid, d]) => {
+      const p = partners.find(p => p.partner_id === pid);
+      return { name: p ? p.display_name : pid, salesperson: d.salesperson, event: d.event, total: d.total };
+    })
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 6);
+}
+
+function buildStageDonut(opportunities) {
+  const stageData = computeStageValueData(opportunities);
+  const total = Object.values(stageData).reduce((s, v) => s + v, 0);
+
+  if (total === 0) {
+    return el('div', { class: 'demandgen-chart' },
+      el('div', { class: 'demandgen-chart__title' }, 'Pipeline by Stage'),
+      el('div', { class: 'demandgen-chart__subtitle' }, 'Deal value distribution across stages'),
+      el('div', { class: 'demandgen-donut-wrapper' },
+        el('div', { class: 'type-donut', style: { background: '#f0f0f0' } },
+          el('div', { class: 'type-donut__hole' },
+            el('div', { class: 'type-donut__total' }, '$0'),
+            el('div', { class: 'type-donut__label' }, 'Pipeline')
+          )
+        )
+      )
+    );
+  }
+
+  let cumulative = 0;
+  const stops = [];
+  const stages = ['Prospect', 'Qualified', 'Proposal', 'Negotiation', 'Closed'];
+
+  for (const stage of stages) {
+    const val = stageData[stage] || 0;
+    if (val === 0) continue;
+    const start = cumulative;
+    cumulative += (val / total) * 360;
+    const color = STAGE_COLORS[stage] || '#9B9A9B';
+    stops.push(`${color} ${start}deg ${cumulative}deg`);
+  }
+
+  const donut = el('div', { class: 'type-donut', style: {
+    background: `conic-gradient(${stops.join(', ')})`
+  }},
+    el('div', { class: 'type-donut__hole' },
+      el('div', { class: 'type-donut__total' }, formatCurrency(total)),
+      el('div', { class: 'type-donut__label' }, 'Pipeline')
+    )
+  );
+
+  const legend = el('div', { class: 'demandgen-legend' },
+    ...stages.map(stage =>
+      el('div', { class: 'demandgen-legend__item' },
+        el('span', { class: 'demandgen-legend__dot', style: { background: STAGE_COLORS[stage] } }),
+        stage,
+        el('span', { class: 'demandgen-legend__value' }, formatCurrency(stageData[stage] || 0))
+      )
+    )
+  );
+
+  return el('div', { class: 'demandgen-chart' },
+    el('div', { class: 'demandgen-chart__title' }, 'Pipeline by Stage'),
+    el('div', { class: 'demandgen-chart__subtitle' }, 'Deal value distribution across stages'),
+    el('div', { class: 'demandgen-donut-wrapper' }, donut, legend)
+  );
+}
+
+function buildPartnerSourceChart(opportunities, partners) {
+  const data = computePartnerSourceData(opportunities, partners);
+
+  if (data.length === 0) {
+    return el('div', { class: 'demandgen-chart' },
+      el('div', { class: 'demandgen-chart__title' }, 'Opportunity Source by Partner'),
+      el('div', { class: 'demandgen-chart__subtitle' }, 'No opportunity data available')
+    );
+  }
+
+  const maxVal = Math.max(...data.map(d => d.total));
+
+  const rows = data.map(d => {
+    const spPct = maxVal > 0 ? (d.salesperson / maxVal) * 100 : 0;
+    const evPct = maxVal > 0 ? (d.event / maxVal) * 100 : 0;
+
+    return el('div', { class: 'demandgen-bar-row' },
+      el('div', { class: 'demandgen-bar-row__label', title: d.name }, d.name),
+      el('div', { class: 'demandgen-bar-row__bar' },
+        spPct > 0 ? el('div', {
+          class: 'demandgen-bar-row__segment demandgen-bar-row__segment--salesperson',
+          style: { width: spPct + '%' },
+          title: 'Salesperson: ' + formatCurrency(d.salesperson),
+        }) : null,
+        evPct > 0 ? el('div', {
+          class: 'demandgen-bar-row__segment demandgen-bar-row__segment--event',
+          style: { width: evPct + '%' },
+          title: 'Event: ' + formatCurrency(d.event),
+        }) : null,
+      ),
+      el('div', { class: 'demandgen-bar-row__value' }, formatCurrency(d.total)),
+    );
+  });
+
+  const legend = el('div', { class: 'demandgen-legend', style: { marginTop: 'var(--space-4)' } },
+    el('div', { class: 'demandgen-legend__item' },
+      el('span', { class: 'demandgen-legend__dot', style: { background: '#1a73e8' } }),
+      'Salesperson'
+    ),
+    el('div', { class: 'demandgen-legend__item' },
+      el('span', { class: 'demandgen-legend__dot', style: { background: '#69BE28' } }),
+      'Event-sourced'
+    ),
+  );
+
+  return el('div', { class: 'demandgen-chart' },
+    el('div', { class: 'demandgen-chart__title' }, 'Opportunity Source by Partner'),
+    el('div', { class: 'demandgen-chart__subtitle' }, 'Top partners by deal value and lead source'),
+    el('div', { class: 'demandgen-bar-list' }, ...rows),
+    legend,
+  );
+}
+
 export async function render(container) {
   setTopbarTitle('Dashboard');
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
@@ -137,6 +293,18 @@ function renderDashboard(container, partners, opportunities, events) {
       statCard('Total Pipeline', formatCurrency(totalPipeline)),
       statCard('Revenue Won', formatCurrency(wonValue)),
       statCard('Upcoming Events', upcomingEvents.length)
+    ),
+
+    // Demand Gen Dashboard
+    el('div', { class: 'section-header', style: { marginBottom: 'var(--space-4)' } },
+      el('div', {},
+        el('h3', { class: 'section-header__title' }, 'Demand Gen Dashboard'),
+        el('p', { class: 'section-header__subtitle' }, 'Opportunity pipeline breakdown and lead source analysis')
+      )
+    ),
+    el('div', { class: 'demandgen-grid stagger' },
+      buildStageDonut(filteredOpps),
+      buildPartnerSourceChart(filteredOpps, partnerList),
     ),
 
     // Tab toggle
