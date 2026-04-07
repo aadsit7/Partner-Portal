@@ -56,22 +56,16 @@ const TYPE_COLORS = {
   'MENA Regional Distributor': 'var(--color-danger)',
 };
 
-function renderBentoDashboard(partners) {
+function renderBentoDashboard(partners, onFilter) {
   const activeCount = allPartners.filter(p => (p.status || 'active').toLowerCase() === 'active' && p.is_admin !== 'TRUE').length;
   const inactiveCount = allPartners.filter(p => (p.status || 'active').toLowerCase() === 'inactive' && p.is_admin !== 'TRUE').length;
   const totalAll = activeCount + inactiveCount;
   const activePct = totalAll > 0 ? Math.round((activeCount / totalAll) * 100) : 100;
 
   return el('div', { class: 'bento-grid--partners stagger' },
-    // Cell 1: Total Partners hero stat
     buildHeroStat(partners),
-    // Cell 2: By Tier donut (spans 2 rows)
-    buildTierDonut(partners),
-    // Cell 3: By Type bars
-    buildTypeBars(partners),
-    // Cell 4: By Region
-    buildRegionList(partners),
-    // Cell 5: Active ratio
+    buildTypeBars(partners, onFilter),
+    buildRegionList(partners, onFilter),
     buildActiveRatio(activeCount, inactiveCount, activePct),
   );
 }
@@ -85,58 +79,7 @@ function buildHeroStat(partners) {
   );
 }
 
-function buildTierDonut(partners) {
-  const tierCounts = {};
-  TIER_OPTIONS.forEach(t => tierCounts[t] = 0);
-  partners.forEach(p => {
-    const t = p.tier || 'Registered';
-    tierCounts[t] = (tierCounts[t] || 0) + 1;
-  });
-
-  const total = partners.length;
-  let cumulative = 0;
-  const stops = [];
-
-  for (const tier of TIER_OPTIONS) {
-    const count = tierCounts[tier] || 0;
-    if (count === 0) continue;
-    const start = cumulative;
-    cumulative += (count / total) * 360;
-    const color = TIER_COLORS[tierSlug(tier)] || 'var(--color-text-muted)';
-    stops.push(`${color} ${start}deg ${cumulative}deg`);
-  }
-
-  const donut = total > 0
-    ? el('div', { class: 'bento-donut', style: { background: `conic-gradient(${stops.join(', ')})` } },
-        el('div', { class: 'bento-donut__hole' },
-          el('div', { class: 'bento-donut__total' }, String(total)),
-          el('div', { class: 'bento-donut__label' }, 'Partners')
-        )
-      )
-    : el('div', { class: 'bento-donut', style: { background: 'var(--color-border-light)' } },
-        el('div', { class: 'bento-donut__hole' },
-          el('div', { class: 'bento-donut__total' }, '0'),
-          el('div', { class: 'bento-donut__label' }, 'Partners')
-        )
-      );
-
-  const legend = el('div', { class: 'demandgen-legend' },
-    ...TIER_OPTIONS.map(tier =>
-      el('div', { class: 'demandgen-legend__item' },
-        el('span', { class: 'demandgen-legend__dot', style: { background: TIER_COLORS[tierSlug(tier)] || 'var(--color-text-muted)' } }),
-        tier,
-        el('span', { class: 'demandgen-legend__value' }, String(tierCounts[tier] || 0)),
-      )
-    )
-  );
-
-  return el('div', { class: 'bento-cell' },
-    el('div', { class: 'bento-cell__title' }, 'By Tier'),
-    el('div', { class: 'bento-donut-wrapper' }, donut, legend),
-  );
-}
-
-function buildTypeBars(partners) {
+function buildTypeBars(partners, onFilter) {
   const typeCounts = {};
   partners.forEach(p => {
     const t = p.partner_type || 'Other';
@@ -150,7 +93,11 @@ function buildTypeBars(partners) {
     const pct = (count / maxCount) * 100;
     const color = TYPE_COLORS[type] || 'var(--color-text-muted)';
 
-    return el('div', { class: 'bento-bar-row' },
+    return el('div', {
+      class: 'bento-bar-row bento-bar-row--clickable',
+      dataset: { filterKey: 'type', filterValue: type },
+      onClick: () => onFilter && onFilter('type', type),
+    },
       el('div', { class: 'bento-bar-row__label' }, type),
       el('div', { class: 'bento-bar-row__track' },
         el('div', { class: 'bento-bar-row__fill', style: { width: pct + '%', background: color } })
@@ -165,7 +112,7 @@ function buildTypeBars(partners) {
   );
 }
 
-function buildRegionList(partners) {
+function buildRegionList(partners, onFilter) {
   const regionCounts = {};
   partners.forEach(p => {
     const r = p.region || 'Unknown';
@@ -177,7 +124,11 @@ function buildRegionList(partners) {
 
   const rows = sorted.map(([region, count]) => {
     const pct = (count / maxCount) * 100;
-    return el('div', { class: 'bento-bar-row' },
+    return el('div', {
+      class: 'bento-bar-row bento-bar-row--clickable',
+      dataset: { filterKey: 'region', filterValue: region },
+      onClick: () => onFilter && onFilter('region', region),
+    },
       el('div', { class: 'bento-bar-row__label' }, region),
       el('div', { class: 'bento-bar-row__track' },
         el('div', { class: 'bento-bar-row__fill', style: { width: pct + '%', background: 'var(--color-primary-lighter)' } })
@@ -216,7 +167,8 @@ function buildActiveRatio(activeCount, inactiveCount, activePct) {
 // ============================================
 
 function renderView(container, partners) {
-  let filtered = [...partners];
+  let searchQuery = '';
+  let bentoFilter = { key: null, value: null };
 
   // Compute active/inactive for summary and dashboard
   const activeCount = allPartners.filter(p => (p.status || 'active').toLowerCase() === 'active' && p.is_admin !== 'TRUE').length;
@@ -224,6 +176,38 @@ function renderView(container, partners) {
   const totalAll = activeCount + inactiveCount;
   const activePct = totalAll > 0 ? Math.round((activeCount / totalAll) * 100) : 100;
   const premierCount = partners.filter(p => (p.tier || '').toLowerCase().includes('premier')).length;
+
+  function applyFilters() {
+    let result = [...partners];
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(p =>
+        p.display_name?.toLowerCase().includes(q) ||
+        p.username?.toLowerCase().includes(q) ||
+        p.partner_type?.toLowerCase().includes(q) ||
+        p.region?.toLowerCase().includes(q) ||
+        p.hq_location?.toLowerCase().includes(q)
+      );
+    }
+    if (bentoFilter.key === 'type') result = result.filter(p => p.partner_type === bentoFilter.value);
+    if (bentoFilter.key === 'region') result = result.filter(p => p.region === bentoFilter.value);
+    return result;
+  }
+
+  function onBentoFilter(key, value) {
+    // Toggle: clicking same bar again clears the filter
+    if (bentoFilter.key === key && bentoFilter.value === value) {
+      bentoFilter = { key: null, value: null };
+    } else {
+      bentoFilter = { key, value };
+    }
+    // Update active states on all bar rows
+    document.querySelectorAll('.bento-bar-row--clickable').forEach(row => {
+      const isActive = bentoFilter.key === row.dataset.filterKey && bentoFilter.value === row.dataset.filterValue;
+      row.classList.toggle('bento-bar-row--active', isActive);
+    });
+    renderCards(applyFilters());
+  }
 
   const content = el('div', {},
     el('div', { class: 'section-header' },
@@ -239,15 +223,8 @@ function renderView(container, partners) {
             type: 'text',
             placeholder: 'Search partners...',
             onInput: debounce((e) => {
-              const q = e.target.value.toLowerCase();
-              filtered = partners.filter(p =>
-                p.display_name?.toLowerCase().includes(q) ||
-                p.username?.toLowerCase().includes(q) ||
-                p.partner_type?.toLowerCase().includes(q) ||
-                p.region?.toLowerCase().includes(q) ||
-                p.hq_location?.toLowerCase().includes(q)
-              );
-              renderCards(filtered);
+              searchQuery = e.target.value;
+              renderCards(applyFilters());
             }, 200),
           })
         ),
@@ -270,14 +247,14 @@ function renderView(container, partners) {
         { value: String(premierCount), label: 'Premier' },
         { value: activePct + '%', label: 'Active' },
       ],
-      content: renderBentoDashboard(partners),
+      content: renderBentoDashboard(partners, onBentoFilter),
     }),
 
     el('div', { id: 'partners-grid' })
   );
 
   mount(container, content);
-  renderCards(filtered);
+  renderCards(applyFilters());
 }
 
 function renderCards(partners) {

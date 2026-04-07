@@ -143,12 +143,13 @@ function renderView(container, opportunities) {
   const dateMin = closeDates.length ? Math.min(...closeDates) : Date.now();
   const dateMax = closeDates.length ? Math.max(...closeDates) : Date.now();
 
-  let filters = { search: '', partner: '', status: '', dateMin, dateMax };
+  let filters = { search: '', partner: '', status: '', statusExclude: null, dateMin, dateMax };
 
   function getFiltered() {
     return opportunities.filter(opp => {
       if (filters.partner && opp.partner_id !== filters.partner) return false;
       if (filters.status && opp.status !== filters.status) return false;
+      if (filters.statusExclude && filters.statusExclude.includes(opp.status)) return false;
       if (filters.search) {
         const q = filters.search.toLowerCase();
         if (!(opp.deal_name?.toLowerCase().includes(q) ||
@@ -169,6 +170,32 @@ function renderView(container, opportunities) {
   const wonValue = wonDeals.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
   const activeDeals = opportunities.filter(o => o.status !== 'Won' && o.status !== 'Lost');
 
+  // Stat card filter toggle
+  let activeStatKey = '';
+  function toggleStatFilter(key) {
+    if (activeStatKey === key) {
+      activeStatKey = '';
+      filters.status = '';
+      filters.statusExclude = null;
+    } else {
+      activeStatKey = key;
+      if (key === 'won') { filters.status = 'Won'; filters.statusExclude = null; }
+      else if (key === 'active') { filters.status = ''; filters.statusExclude = ['Won', 'Lost']; }
+      else { filters.status = ''; filters.statusExclude = null; }
+    }
+    statusSelect.value = filters.status;
+    updateStatCardStates();
+    refreshContent();
+  }
+
+  function updateStatCardStates() {
+    const cards = document.querySelectorAll('.stats-grid .stat-card');
+    const keyMap = ['', 'active', 'won', 'active'];
+    cards.forEach((card, i) => {
+      card.classList.toggle('stat-card--active', keyMap[i] === activeStatKey && activeStatKey !== '');
+    });
+  }
+
   // Filter controls
   const searchInput = el('input', {
     class: 'search-bar__input',
@@ -187,7 +214,7 @@ function renderView(container, opportunities) {
 
   const statusSelect = el('select', {
     class: 'form-select filter-bar__select',
-    onChange: (e) => { filters.status = e.target.value; refreshContent(); },
+    onChange: (e) => { filters.status = e.target.value; filters.statusExclude = null; activeStatKey = ''; updateStatCardStates(); refreshContent(); },
   },
     el('option', { value: '' }, 'All Statuses'),
     ...OPP_STATUSES.map(s => el('option', { value: s }, s))
@@ -221,12 +248,24 @@ function renderView(container, opportunities) {
       ),
     ),
 
-    // Stats
+    // Stats (interactive — click to filter)
     el('div', { class: 'stats-grid stagger' },
-      statCard('Total Deals', opportunities.length),
-      statCard('Active Pipeline', formatCurrency(totalValue - wonValue)),
-      statCard('Won Revenue', formatCurrency(wonValue)),
-      statCard('Active Deals', activeDeals.length)
+      statCard('Total Deals', opportunities.length, {
+        accentColor: 'var(--color-primary-lighter)',
+        onClick: () => toggleStatFilter(''),
+      }),
+      statCard('Active Pipeline', formatCurrency(totalValue - wonValue), {
+        accentColor: 'var(--color-status-in-progress)',
+        onClick: () => toggleStatFilter('active'),
+      }),
+      statCard('Won Revenue', formatCurrency(wonValue), {
+        accentColor: 'var(--color-status-won)',
+        onClick: () => toggleStatFilter('won'),
+      }),
+      statCard('Active Deals', activeDeals.length, {
+        accentColor: 'var(--color-status-registered)',
+        onClick: () => toggleStatFilter('active'),
+      })
     ),
 
     // Filter + view toggle

@@ -99,10 +99,33 @@ export function partnerCard(partner, stats, { onClick } = {}) {
 }
 
 /**
- * Create a stat card.
+ * Create a stat card. Supports interactive mode with accent colors and click filtering.
+ * @param {string} label
+ * @param {string|number} value
+ * @param {string|Object} [options] - String for backward compat (change text), or options object
+ * @param {string} [options.change] - Change indicator text
+ * @param {string} [options.accentColor] - CSS color for top border accent
+ * @param {Function} [options.onClick] - Click handler for interactive filtering
+ * @param {boolean} [options.active] - Whether this card is the active filter
  */
-export function statCard(label, value, change) {
-  return el('div', { class: 'stat-card' },
+export function statCard(label, value, options) {
+  if (typeof options === 'string') options = { change: options };
+  const { change, accentColor, onClick, active } = options || {};
+
+  const classes = ['stat-card'];
+  if (onClick) classes.push('stat-card--clickable');
+  if (active) classes.push('stat-card--active');
+
+  const style = {};
+  if (accentColor) {
+    style.borderTop = `3px solid ${accentColor}`;
+  }
+
+  return el('div', {
+    class: classes.join(' '),
+    style: Object.keys(style).length ? style : undefined,
+    onClick: onClick || undefined,
+  },
     el('div', { class: 'stat-card__label' }, label),
     el('div', { class: 'stat-card__value' }, String(value)),
     change ? el('div', { class: 'stat-card__change' }, change) : null

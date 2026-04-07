@@ -115,6 +115,32 @@ function renderView(container, events) {
   const inProgress = events.filter(e => e.status === 'In Progress').length;
   const completed = events.filter(e => e.status === 'Completed').length;
 
+  // Stat card filter toggle
+  let activeStatFilter = '';
+  function toggleStatFilter(status) {
+    if (activeStatFilter === status || (status === '' && activeStatFilter === '')) {
+      activeStatFilter = '';
+      filters.status = '';
+    } else if (status === '') {
+      activeStatFilter = '';
+      filters.status = '';
+    } else {
+      activeStatFilter = status;
+      filters.status = status;
+    }
+    statusSelect.value = filters.status;
+    updateStatCardStates();
+    refreshContent();
+  }
+
+  function updateStatCardStates() {
+    const cards = container.querySelectorAll ? document.querySelectorAll('.stats-grid .stat-card') : [];
+    const filterMap = ['', 'Upcoming', 'In Progress', 'Completed'];
+    cards.forEach((card, i) => {
+      card.classList.toggle('stat-card--active', filterMap[i] === activeStatFilter && activeStatFilter !== '');
+    });
+  }
+
   // Compute event counts per partner for chips
   const partnerEventCounts = {};
   events.forEach(evt => {
@@ -220,7 +246,7 @@ function renderView(container, events) {
 
   const statusSelect = el('select', {
     class: 'form-select filter-bar__select',
-    onChange: (e) => { filters.status = e.target.value; refreshContent(); },
+    onChange: (e) => { filters.status = e.target.value; activeStatFilter = e.target.value; updateStatCardStates(); refreshContent(); },
   },
     el('option', { value: '' }, 'All Statuses'),
     ...EVENT_STATUSES.map(s => el('option', { value: s }, s))
@@ -248,12 +274,24 @@ function renderView(container, events) {
       ),
     ),
 
-    // Stats
+    // Stats (interactive — click to filter by status)
     el('div', { class: 'stats-grid stagger' },
-      statCard('Total Events', events.length),
-      statCard('Upcoming', upcoming),
-      statCard('In Progress', inProgress),
-      statCard('Completed', completed)
+      statCard('Total Events', events.length, {
+        accentColor: 'var(--color-primary-lighter)',
+        onClick: () => toggleStatFilter(''),
+      }),
+      statCard('Upcoming', upcoming, {
+        accentColor: 'var(--color-status-registered)',
+        onClick: () => toggleStatFilter('Upcoming'),
+      }),
+      statCard('In Progress', inProgress, {
+        accentColor: 'var(--color-status-in-progress)',
+        onClick: () => toggleStatFilter('In Progress'),
+      }),
+      statCard('Completed', completed, {
+        accentColor: 'var(--color-status-won)',
+        onClick: () => toggleStatFilter('Completed'),
+      })
     ),
 
     // Partner chip filters
