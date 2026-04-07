@@ -52,8 +52,10 @@ export function renderSidebar() {
   // Header
   const header = el('div', { class: 'sidebar__header' },
     el('div', { class: 'sidebar__logo' },
-      el('div', { class: 'sidebar__logo-icon' }, 'P'),
-      el('div', { class: 'sidebar__logo-text' }, 'Partner Portal')
+      el('div', { class: 'sidebar__logo-text' },
+        el('span', { style: { fontWeight: 'var(--font-bold)', color: '#fff' } }, 'Recast'),
+        el('span', { style: { fontWeight: 'var(--font-normal)', color: '#00BFFF', marginLeft: 'var(--space-1)' } }, 'Software'),
+      )
     )
   );
 

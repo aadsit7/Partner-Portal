@@ -16,8 +16,8 @@ export function tierSlug(tierName) {
 export const TIER_OPTIONS = ['Premier/Strategic', 'Value/Preferred', 'Registered'];
 
 export const TIER_COLORS = {
-  'premier-strategic': '#1a73e8',
-  'value-preferred':   '#4a8c14',
+  'premier-strategic': '#0000CC',
+  'value-preferred':   '#00BFFF',
   'tier-registered':   '#9B9A9B',
 };
 

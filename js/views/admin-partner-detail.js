@@ -486,8 +486,8 @@ function downloadAllTranscriptsPDF(partner, transcripts) {
 // ============================================
 
 const EVENT_TYPE_COLORS = {
-  'Webinar': '#0e8ab5', 'Workshop': '#1a8a5a',
-  'Conference': '#002244', 'Campaign': '#b88a0e', 'Other': '#9B9A9B',
+  'Webinar': '#0000CC', 'Workshop': '#00BFFF',
+  'Conference': '#1A1A2E', 'Campaign': '#CC8800', 'Other': '#4A4A5A',
 };
 
 function buildUpcomingEventsSection(allEvents, partner, container) {

@@ -17,10 +17,10 @@ let calendarInstance = null;
 export const title = 'Demand Gen';
 
 const EVENT_TYPE_COLORS = {
-  'Webinar':    '#0e8ab5',
-  'Workshop':   '#1a8a5a',
-  'Conference': '#002244',
-  'Campaign':   '#b88a0e',
+  'Webinar':    '#0000CC',
+  'Workshop':   '#00BFFF',
+  'Conference': '#1A1A2E',
+  'Campaign':   '#CC8800',
   'Other':      'var(--color-text-muted)',
 };
 

@@ -25,10 +25,10 @@ const EVENT_STATUSES = ['Upcoming', 'In Progress', 'Completed', 'Cancelled'];
 const EVENT_TYPES = ['Webinar', 'Workshop', 'Conference', 'Campaign', 'Other'];
 
 const STATUS_COLORS = {
-  'Upcoming': '#0e8ab5',
-  'In Progress': '#b88a0e',
-  'Completed': '#1a8a5a',
-  'Cancelled': '#c41650',
+  'Upcoming': '#0000CC',
+  'In Progress': '#00BFFF',
+  'Completed': '#0F7A3F',
+  'Cancelled': '#CC2222',
 };
 
 const TYPE_CHIP_CLASS = {
@@ -40,11 +40,11 @@ const TYPE_CHIP_CLASS = {
 };
 
 const TYPE_CHIP_COLORS = {
-  'Webinar': '#0e8ab5',
-  'Workshop': '#1a8a5a',
-  'Conference': '#002244',
-  'Campaign': '#b88a0e',
-  'Other': '#9B9A9B',
+  'Webinar': '#0000CC',
+  'Workshop': '#00BFFF',
+  'Conference': '#1A1A2E',
+  'Campaign': '#CC8800',
+  'Other': '#4A4A5A',
 };
 
 export async function render(container) {
@@ -214,8 +214,8 @@ function renderView(container, events, opportunities) {
 
   // Partner chip filters
   const PARTNER_TYPE_COLORS = {
-    'Technology': '#1a73e8', 'OEM': '#ECB22E',
-    'MSP/SI': '#69BE28', 'MENA Regional Distributor': '#E01E5A',
+    'Technology': '#0000CC', 'OEM': '#CC8800',
+    'MSP/SI': '#00BFFF', 'MENA Regional Distributor': '#CC2222',
   };
 
   const chipContainer = el('div', { class: 'partner-chips' });
