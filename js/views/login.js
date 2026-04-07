@@ -37,7 +37,7 @@ export async function render(container) {
       }
     },
       el('img', {
-        src: 'assets/logo.svg',
+        src: 'assets/Logo Image.jpg',
         alt: 'DIY AI Portal',
         style: {
           width: '140px',
