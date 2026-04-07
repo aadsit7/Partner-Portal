@@ -9,6 +9,7 @@ import { formatDate } from '../utils/date.js';
 import { renderCalendar } from '../components/calendar.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { setTopbarTitle } from '../components/sidebar.js';
+import { filterEvents } from '../utils/filters.js';
 
 let calendarInstance = null;
 
@@ -20,7 +21,7 @@ export async function render(container) {
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
 
   try {
-    const events = await readSheetAsObjects(CONFIG.SHEET_EVENTS);
+    const events = filterEvents(await readSheetAsObjects(CONFIG.SHEET_EVENTS));
     renderView(container, events);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },

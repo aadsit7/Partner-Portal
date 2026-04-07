@@ -1693,6 +1693,106 @@
   line-height: var(--leading-relaxed);
 }
 
+/* --- Content Visibility Toggles --- */
+
+.toggle-section {
+  margin-bottom: var(--space-5);
+}
+
+.toggle-section:last-child {
+  margin-bottom: 0;
+}
+
+.toggle-section__heading {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) 0;
+}
+
+.toggle-row + .toggle-row {
+  border-top: 1px solid var(--color-border-light);
+}
+
+.toggle-row__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.toggle-row__label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-primary);
+}
+
+.toggle-row__desc {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.toggle-slider {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+  cursor: pointer;
+  margin-left: var(--space-4);
+}
+
+.toggle-slider__input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.toggle-slider__track {
+  position: absolute;
+  inset: 0;
+  background: var(--color-border);
+  border-radius: 12px;
+  transition: background var(--transition-fast);
+}
+
+.toggle-slider__track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  background: white;
+  border-radius: 50%;
+  transition: transform var(--transition-fast);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-slider__input:checked + .toggle-slider__track {
+  background: var(--color-success);
+}
+
+.toggle-slider__input:checked + .toggle-slider__track::after {
+  transform: translateX(20px);
+}
+
+.toggle-slider__input:focus-visible + .toggle-slider__track {
+  outline: 2px solid var(--color-primary-lighter);
+  outline-offset: 2px;
+}
+
 .form-hint {
   font-size: var(--text-xs);
   color: var(--color-text-muted);

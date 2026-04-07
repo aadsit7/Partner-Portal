@@ -108,6 +108,38 @@ export async function render(container) {
       )
     ),
 
+    // Content Visibility
+    el('div', { class: 'setup-card' },
+      el('h3', { class: 'setup-card__title' }, 'Content Visibility'),
+      el('p', { class: 'setup-card__description' },
+        'Control which data appears across the portal. When off, the corresponding records are hidden from all dashboards and views.'
+      ),
+
+      el('div', { class: 'toggle-section' },
+        el('div', { class: 'toggle-section__heading' }, 'Partners'),
+        toggleRow('Show Inactive Partners',
+          'Display partners with inactive status in all views',
+          'SHOW_INACTIVE_PARTNERS')
+      ),
+
+      el('div', { class: 'toggle-section' },
+        el('div', { class: 'toggle-section__heading' }, 'Events'),
+        toggleRow('Show Past Events',
+          'Display completed events in all views',
+          'SHOW_PAST_EVENTS'),
+        toggleRow('Show Cancelled Events',
+          'Display events with cancelled status in all views',
+          'SHOW_CANCELLED_EVENTS')
+      ),
+
+      el('div', { class: 'toggle-section' },
+        el('div', { class: 'toggle-section__heading' }, 'Opportunities'),
+        toggleRow('Show Closed Lost Opportunities',
+          'Display opportunities with Lost status in all views',
+          'SHOW_CLOSED_LOST_OPPS')
+      )
+    ),
+
     // How it works
     el('div', { class: 'setup-card' },
       el('h3', { class: 'setup-card__title' }, 'How Auto-Sync Works'),
@@ -232,6 +264,29 @@ function infoItem(label, description) {
   return el('div', { class: 'setup-info__item' },
     el('div', { class: 'setup-info__label' }, label),
     el('div', { class: 'setup-info__desc' }, description)
+  );
+}
+
+function toggleRow(label, description, configKey) {
+  const isOn = getRuntimeConfig(configKey);
+  const checkbox = el('input', {
+    type: 'checkbox',
+    class: 'toggle-slider__input',
+    ...(isOn ? { checked: true } : {}),
+    onChange: (e) => {
+      setRuntimeConfig(configKey, e.target.checked);
+    },
+  });
+
+  return el('div', { class: 'toggle-row' },
+    el('div', { class: 'toggle-row__text' },
+      el('div', { class: 'toggle-row__label' }, label),
+      el('div', { class: 'toggle-row__desc' }, description)
+    ),
+    el('label', { class: 'toggle-slider' },
+      checkbox,
+      el('span', { class: 'toggle-slider__track' })
+    )
   );
 }
 

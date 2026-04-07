@@ -12,6 +12,7 @@ import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { statCard } from '../components/card.js';
+import { filterPartners, filterOpportunities } from '../utils/filters.js';
 
 export const title = 'Opportunities';
 
@@ -32,10 +33,10 @@ export async function render(container) {
       readSheetAsObjects(CONFIG.SHEET_PARTNERS),
       readSheetAsObjects(CONFIG.SHEET_EVENTS),
     ]);
-    cachedPartners = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
-    cachedOpps = opportunities;
+    cachedPartners = filterPartners(partners);
+    cachedOpps = filterOpportunities(opportunities);
     cachedEvents = events;
-    renderView(container, opportunities);
+    renderView(container, cachedOpps);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },
       el('div', { class: 'empty-state__title' }, 'Error loading opportunities'),

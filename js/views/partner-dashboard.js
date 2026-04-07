@@ -12,6 +12,7 @@ import { openModal, closeModal } from '../components/modal.js';
 import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
 import { setTopbarTitle } from '../components/sidebar.js';
+import { filterOpportunities } from '../utils/filters.js';
 
 export const title = 'Opportunities';
 
@@ -34,7 +35,7 @@ export async function render(container) {
 
 async function loadOpportunities(partnerId) {
   const all = await readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES);
-  return all.filter(o => o.partner_id === partnerId);
+  return filterOpportunities(all).filter(o => o.partner_id === partnerId);
 }
 
 function renderDashboard(container, opportunities, user) {

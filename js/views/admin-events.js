@@ -13,6 +13,7 @@ import { showToast } from '../components/toast.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { statCard } from '../components/card.js';
 import { parseChecklist, renderChecklist } from '../components/checklist.js';
+import { filterPartners, filterEvents } from '../utils/filters.js';
 
 export const title = 'Events';
 
@@ -54,9 +55,9 @@ export async function render(container) {
       readSheetAsObjects(CONFIG.SHEET_EVENTS),
       readSheetAsObjects(CONFIG.SHEET_PARTNERS),
     ]);
-    cachedPartners = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
-    cachedEvents = events;
-    renderView(container, events);
+    cachedPartners = filterPartners(partners);
+    cachedEvents = filterEvents(events);
+    renderView(container, cachedEvents);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },
       el('div', { class: 'empty-state__title' }, 'Error loading events'),
