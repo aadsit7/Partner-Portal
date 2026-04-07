@@ -18,6 +18,7 @@ import { filterPartners } from '../utils/filters.js';
 export const title = 'Partners';
 
 let allPartners = [];
+let partnerRevenue = {};
 
 export async function render(container) {
   setTopbarTitle('Partner Management');
@@ -25,7 +26,21 @@ export async function render(container) {
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
 
   try {
-    allPartners = await readSheetAsObjects(CONFIG.SHEET_PARTNERS);
+    const [partners, opportunities] = await Promise.all([
+      readSheetAsObjects(CONFIG.SHEET_PARTNERS),
+      readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES),
+    ]);
+    allPartners = partners;
+
+    // Compute revenue lookup per partner
+    partnerRevenue = {};
+    for (const opp of opportunities) {
+      const pid = opp.partner_id;
+      if (!partnerRevenue[pid]) partnerRevenue[pid] = { totalPipeline: 0, oppCount: 0 };
+      partnerRevenue[pid].totalPipeline += parseFloat(opp.deal_value) || 0;
+      partnerRevenue[pid].oppCount += 1;
+    }
+
     const partnerList = filterPartners(allPartners);
     renderView(container, partnerList);
   } catch (err) {
@@ -57,16 +72,9 @@ const TYPE_COLORS = {
 };
 
 function renderBentoDashboard(partners, onFilter) {
-  const activeCount = allPartners.filter(p => (p.status || 'active').toLowerCase() === 'active' && p.is_admin !== 'TRUE').length;
-  const inactiveCount = allPartners.filter(p => (p.status || 'active').toLowerCase() === 'inactive' && p.is_admin !== 'TRUE').length;
-  const totalAll = activeCount + inactiveCount;
-  const activePct = totalAll > 0 ? Math.round((activeCount / totalAll) * 100) : 100;
-
   return el('div', { class: 'bento-grid--partners stagger' },
     buildHeroStat(partners),
     buildTypeBars(partners, onFilter),
-    buildRegionList(partners, onFilter),
-    buildActiveRatio(activeCount, inactiveCount, activePct),
   );
 }
 
@@ -112,56 +120,6 @@ function buildTypeBars(partners, onFilter) {
   );
 }
 
-function buildRegionList(partners, onFilter) {
-  const regionCounts = {};
-  partners.forEach(p => {
-    const r = p.region || 'Unknown';
-    regionCounts[r] = (regionCounts[r] || 0) + 1;
-  });
-
-  const sorted = Object.entries(regionCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const maxCount = sorted.length > 0 ? sorted[0][1] : 1;
-
-  const rows = sorted.map(([region, count]) => {
-    const pct = (count / maxCount) * 100;
-    return el('div', {
-      class: 'bento-bar-row bento-bar-row--clickable',
-      dataset: { filterKey: 'region', filterValue: region },
-      onClick: () => onFilter && onFilter('region', region),
-    },
-      el('div', { class: 'bento-bar-row__label' }, region),
-      el('div', { class: 'bento-bar-row__track' },
-        el('div', { class: 'bento-bar-row__fill', style: { width: pct + '%', background: 'var(--color-primary-lighter)' } })
-      ),
-      el('div', { class: 'bento-bar-row__count' }, String(count)),
-    );
-  });
-
-  return el('div', { class: 'bento-cell' },
-    el('div', { class: 'bento-cell__title' }, 'By Region'),
-    ...rows,
-  );
-}
-
-function buildActiveRatio(activeCount, inactiveCount, activePct) {
-  const total = activeCount + inactiveCount;
-  const barPct = total > 0 ? (activeCount / total) * 100 : 100;
-
-  return el('div', { class: 'bento-cell' },
-    el('div', { class: 'bento-cell__title' }, 'Active Rate'),
-    el('div', { class: 'bento-cell__value' }, activePct + '%'),
-    el('div', { style: { marginTop: 'var(--space-3)' } },
-      el('div', { class: 'bento-bar-row__track' },
-        el('div', { class: 'bento-bar-row__fill', style: { width: barPct + '%', background: 'var(--color-accent)', height: '100%' } })
-      ),
-    ),
-    el('div', { style: { display: 'flex', justifyContent: 'space-between', marginTop: 'var(--space-2)' } },
-      el('span', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' } }, `${activeCount} active`),
-      el('span', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' } }, `${inactiveCount} inactive`),
-    ),
-  );
-}
-
 // ============================================
 // Main View
 // ============================================
@@ -170,11 +128,6 @@ function renderView(container, partners) {
   let searchQuery = '';
   let bentoFilter = { key: null, value: null };
 
-  // Compute active/inactive for summary and dashboard
-  const activeCount = allPartners.filter(p => (p.status || 'active').toLowerCase() === 'active' && p.is_admin !== 'TRUE').length;
-  const inactiveCount = allPartners.filter(p => (p.status || 'active').toLowerCase() === 'inactive' && p.is_admin !== 'TRUE').length;
-  const totalAll = activeCount + inactiveCount;
-  const activePct = totalAll > 0 ? Math.round((activeCount / totalAll) * 100) : 100;
   const premierCount = partners.filter(p => (p.tier || '').toLowerCase().includes('premier')).length;
 
   function applyFilters() {
@@ -190,7 +143,6 @@ function renderView(container, partners) {
       );
     }
     if (bentoFilter.key === 'type') result = result.filter(p => p.partner_type === bentoFilter.value);
-    if (bentoFilter.key === 'region') result = result.filter(p => p.region === bentoFilter.value);
     return result;
   }
 
@@ -245,7 +197,6 @@ function renderView(container, partners) {
       summaryItems: [
         { value: String(partners.length), label: 'Partners' },
         { value: String(premierCount), label: 'Premier' },
-        { value: activePct + '%', label: 'Active' },
       ],
       content: renderBentoDashboard(partners, onBentoFilter),
     }),
@@ -275,9 +226,22 @@ function renderCards(partners) {
   grid.innerHTML = '';
   grid.className = 'partner-card-grid stagger';
 
-  partners.forEach(p => {
+  // Sort by pipeline revenue (desc), then by opportunity count (desc)
+  const sorted = [...partners].sort((a, b) => {
+    const aRev = partnerRevenue[a.partner_id]?.totalPipeline || 0;
+    const bRev = partnerRevenue[b.partner_id]?.totalPipeline || 0;
+    if (bRev !== aRev) return bRev - aRev;
+    const aOpp = partnerRevenue[a.partner_id]?.oppCount || 0;
+    const bOpp = partnerRevenue[b.partner_id]?.oppCount || 0;
+    return bOpp - aOpp;
+  });
+
+  sorted.forEach(p => {
     const tierClass = tierSlug(p.tier);
     const initials = partnerInitials(p.display_name);
+    const rev = partnerRevenue[p.partner_id];
+    const pipeline = rev ? rev.totalPipeline : 0;
+    const oppCount = rev ? rev.oppCount : 0;
 
     const card = el('div', { class: 'partner-mgmt-card' },
       // Card header with avatar and info
@@ -292,9 +256,9 @@ function renderCards(partners) {
 
       // Card details
       el('div', { class: 'partner-mgmt-card__details' },
+        detailRow('Pipeline', formatCurrency(pipeline)),
+        detailRow('Opportunities', String(oppCount)),
         detailRow('Type', p.partner_type || '—'),
-        detailRow('Region', p.region || '—'),
-        detailRow('HQ', p.hq_location || '—'),
         detailRow('Status', null, el('span', { class: `badge badge--xs badge--${p.status?.toLowerCase() || 'active'}` }, p.status || 'active')),
       ),
 
