@@ -46,7 +46,7 @@
 }
 
 @media (max-width: 1024px) {
-  .dashboard-main-layout {
+  .dashboard-top {
     grid-template-columns: 1fr;
   }
 }
