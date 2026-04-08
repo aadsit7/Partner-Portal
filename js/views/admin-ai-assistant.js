@@ -416,16 +416,7 @@ function removeLoading() {
 }
 
 // ── Suggested Questions ────────────────────────────────────────────
-const SUGGESTED_QUESTIONS = [
-  "What's the total active pipeline value?",
-  "Give me a status update on GetRubix",
-  "What are the next steps with Infosys?",
-  "Which partners are Premier / Strategic tier?",
-  "What events are coming up?",
-  "Who attended the last Greenshield meeting?",
-  "What's the Insight deal worth and what stage is it in?",
-  "Summarize our Flexera OEM relationship"
-];
+const SUGGESTED_QUESTIONS = [];
 
 // ── Main Render ────────────────────────────────────────────────────
 export function renderAdminAIAssistant(container) {
