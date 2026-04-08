@@ -16,9 +16,9 @@ const ADMIN_NAV = [
   { path: '/admin/dashboard', label: 'Dashboard', icon: 'dashboard' },
   { path: '/admin/partners', label: 'Partners', icon: 'partners' },
   { path: '/admin/events', label: 'Events / JLG', icon: 'events' },
-  { path: '/admin/ai-assistant', label: 'AI Assistant', icon: 'ai' },
   { path: '/admin/opportunities', label: 'Opportunities', icon: 'opportunities' },
   { path: '/admin/setup', label: 'Setup', icon: 'setup' },
+  { path: '/admin/ai-assistant', label: 'AI Assistant', icon: 'ai' },
 ];
 
 const ICONS = {
