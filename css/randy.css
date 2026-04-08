@@ -127,12 +127,13 @@
   transition: none;
 }
 
-/* Hide button when window is open */
+/* Hide button and stop animations when window is open */
 .randy--open .randy__btn,
 .randy--open .randy__hint,
 .randy--fullscreen .randy__btn,
 .randy--fullscreen .randy__hint {
   display: none;
+  animation: none;
 }
 
 /* ── STATE 2: Pop-out Chat Window ──────────────────────────────── */
@@ -146,7 +147,6 @@
   border: 1px solid #e5e7eb;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
   overflow: hidden;
-  resize: both;
   min-width: 320px;
   min-height: 400px;
   max-width: 600px;
@@ -596,6 +596,18 @@
   border-radius: 12px 12px 0 0;
 }
 
+/* ── Focus States (keyboard accessibility) ─────────────────────── */
+.randy-window__ctrl:focus-visible,
+.randy-window__mic-btn:focus-visible,
+.randy-window__send-btn:focus-visible,
+.randy-welcome__chip:focus-visible,
+.randy-action-card__confirm:focus-visible,
+.randy-action-card__cancel:focus-visible,
+.randy-window__voice-stop:focus-visible {
+  outline: 2px solid #0000CC;
+  outline-offset: 1px;
+}
+
 /* ── Dragging State ────────────────────────────────────────────── */
 .randy--dragging .randy-window {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
@@ -634,8 +646,8 @@
     bottom: 0 !important;
     right: 0 !important;
     left: 0 !important;
-    width: 100vw !important;
-    height: 60vh !important;
+    width: 100% !important;
+    height: clamp(300px, 60vh, 90vh) !important;
     border-radius: 12px 12px 0 0;
     max-width: none;
     resize: none;

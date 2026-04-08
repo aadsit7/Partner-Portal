@@ -67,6 +67,10 @@ let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
 let currentConvId = null;
 let currentConvRow = null;
+let isSaving = false;
+let dragMoveHandler = null;
+let dragUpHandler = null;
+let escapeHandler = null;
 
 // Listening recovery
 let restartCount = 0;
@@ -174,6 +178,10 @@ function stopAll() {
   conversationHistory = [];
   pendingActions = null;
   confirmAttempts = 0;
+  voiceEnabled = false;
+  isDragging = false;
+  const micBtn = document.getElementById('randy-mic-btn');
+  if (micBtn) micBtn.classList.remove('randy-window__mic-btn--active');
 }
 
 // ── Speech Recognition ────────────────────────────────────────────
@@ -393,12 +401,15 @@ async function processUserInput(text, fromVoice = true) {
   } catch (err) {
     abortController = null;
     removeTypingIndicator();
-    if (err.name === 'AbortError') return;
+    if (err.name === 'AbortError') {
+      transition(STATES.PASSIVE, true);
+      return;
+    }
     console.error('Randy API error:', err);
     const errMsg = "Sorry buddy, I hit a snag. " + err.message;
     renderMessage('assistant', errMsg, false);
     if (voiceEnabled && fromVoice) speakText(errMsg);
-    else transition(STATES.ACTIVE_LISTENING, true);
+    else transition(STATES.PASSIVE, true);
   } finally {
     isProcessing = false;
   }
@@ -754,10 +765,11 @@ function showWelcome() {
 
 // ── Conversation Persistence ──────────────────────────────────────
 async function saveRandyConversation() {
-  if (conversationHistory.length < 2) return;
+  if (isSaving || conversationHistory.length < 2) return;
   const user = getCurrentUser();
   if (!user) return;
 
+  isSaving = true;
   try {
     const title = (conversationHistory.find(m => m.role === 'user')?.content || 'Randy chat').substring(0, 60);
     const messagesJson = JSON.stringify(conversationHistory.map(m => ({
@@ -778,6 +790,8 @@ async function saveRandyConversation() {
     }
   } catch (err) {
     console.warn('Randy: failed to save conversation', err);
+  } finally {
+    isSaving = false;
   }
 }
 
@@ -787,6 +801,7 @@ async function handleTextSend() {
   if (!input) return;
   const text = input.value.trim();
   if (!text || isProcessing) return;
+  isProcessing = true; // Guard immediately to prevent race with voice
 
   input.value = '';
   input.style.height = 'auto';
@@ -815,7 +830,8 @@ function toggleVoice() {
     if (synth.speaking) synth.cancel();
     isRandySpeaking = false;
     currentSpokenText = '';
-    if ([STATES.ACTIVE_LISTENING, STATES.SPEAKING, STATES.CONFIRMING].includes(currentState)) {
+    if ([STATES.PROCESSING, STATES.ACTIVE_LISTENING, STATES.SPEAKING, STATES.CONFIRMING].includes(currentState)) {
+      if (abortController) { abortController.abort(); abortController = null; }
       transition(STATES.PASSIVE, true);
     }
     updateVoiceBar();
@@ -998,10 +1014,12 @@ function createWidget() {
     if (micBtn) micBtn.classList.remove('randy-window__mic-btn--active');
   });
 
-  // Escape to exit fullscreen
-  document.addEventListener('keydown', (e) => {
+  // Escape to exit fullscreen (stored for cleanup)
+  if (escapeHandler) document.removeEventListener('keydown', escapeHandler);
+  escapeHandler = (e) => {
     if (e.key === 'Escape' && windowState === 'fullscreen') setWindowState('open');
-  });
+  };
+  document.addEventListener('keydown', escapeHandler);
 
   // Dragging
   initDragging();
@@ -1034,7 +1052,11 @@ function initDragging() {
     e.preventDefault();
   });
 
-  document.addEventListener('mousemove', (e) => {
+  // Clean up old document listeners before adding new ones
+  if (dragMoveHandler) document.removeEventListener('mousemove', dragMoveHandler);
+  if (dragUpHandler) document.removeEventListener('mouseup', dragUpHandler);
+
+  dragMoveHandler = (e) => {
     if (!isDragging) return;
     const x = Math.max(0, Math.min(e.clientX - dragOffset.x, window.innerWidth - 320));
     const y = Math.max(0, Math.min(e.clientY - dragOffset.y, window.innerHeight - 100));
@@ -1044,9 +1066,9 @@ function initDragging() {
     win.style.top = y + 'px';
     win.style.bottom = 'auto';
     win.style.right = 'auto';
-  });
+  };
 
-  document.addEventListener('mouseup', () => {
+  dragUpHandler = () => {
     if (!isDragging) return;
     isDragging = false;
     const widget = document.getElementById('randy-widget');
@@ -1059,7 +1081,10 @@ function initDragging() {
       stored.top = win.style.top;
       localStorage.setItem('pp_randy_window', JSON.stringify(stored));
     } catch { /* ok */ }
-  });
+  };
+
+  document.addEventListener('mousemove', dragMoveHandler);
+  document.addEventListener('mouseup', dragUpHandler);
 }
 
 function flashWidget() {
