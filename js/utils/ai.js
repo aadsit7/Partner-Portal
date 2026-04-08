@@ -195,7 +195,7 @@ ${JSON.stringify(data.meetingIndex, null, 2)}${transcriptContext}`;
 
 // ── API Call ────────────────────────────────────────────────────────
 
-export async function callClaude(messages, sheetData, userMessage, signal) {
+export async function callClaude(messages, sheetData, userMessage, signal, systemPrompt) {
   const apiKey = getRuntimeConfig('ANTHROPIC_API_KEY');
   if (!apiKey) {
     throw new Error('API key not set. Configure it on the Setup page or click the 🔑 icon in AI Assistant.');
@@ -221,7 +221,7 @@ export async function callClaude(messages, sheetData, userMessage, signal) {
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt || SYSTEM_PROMPT,
       messages: augmentedMessages
     }),
     signal: signal || undefined
