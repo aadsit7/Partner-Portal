@@ -7,18 +7,11 @@
 import { CONFIG, getRuntimeConfig, setRuntimeConfig } from '../config.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { loadSheetData, callClaude, invalidateSheetCache } from '../utils/ai.js';
+import { parseActions, executeAction } from '../utils/ai-actions.js';
 import { activateVoiceMode, isVoiceModeActive, stopEverything as stopVoice } from '../components/voice-widget.js';
 import { getCurrentUser } from '../auth.js';
 import { appendRow, updateRow, deleteRow, readSheetAsObjects } from '../sheets.js';
 import { showToast } from '../components/toast.js';
-
-// ── Sheet Headers (for write operations) ───────────────────────────
-const SHEET_HEADERS = {
-  Partners: ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status', 'hq_location'],
-  Opportunities: ['opportunity_id', 'partner_id', 'deal_name', 'customer_name', 'deal_value', 'status', 'stage', 'expected_close', 'description', 'created_at', 'updated_at', 'notes', 'lead_source'],
-  Events: ['event_id', 'title', 'description', 'event_date', 'end_date', 'event_type', 'location', 'url', 'created_by', 'created_at', 'status', 'partner_id', 'checklist'],
-};
-const BLOCKED_FIELDS = ['password_hash', 'is_admin'];
 
 // ── State ──────────────────────────────────────────────────────────
 let conversationHistory = [];
@@ -95,16 +88,6 @@ function removeLoading() {
   if (el) el.remove();
 }
 
-// ── Action Parser ──────────────────────────────────────────────────
-function parseActions(responseText) {
-  const actions = [];
-  const cleanText = responseText.replace(/:::ACTION\n([\s\S]*?)\n:::/g, (_, json) => {
-    try { actions.push(JSON.parse(json)); } catch (e) { console.error('Failed to parse action:', e); }
-    return '';
-  }).trim();
-  return { cleanText, actions };
-}
-
 function renderConfirmationCard(action, container) {
   const icons = { update: '✏️', create: '➕', delete: '🗑️' };
   const card = document.createElement('div');
@@ -148,55 +131,6 @@ function renderConfirmationCard(action, container) {
 
   container.appendChild(card);
   container.scrollTop = container.scrollHeight;
-}
-
-async function executeAction(action) {
-  // Safety checks
-  if (!action.sheet || !SHEET_HEADERS[action.sheet]) throw new Error(`Unknown sheet: ${action.sheet}`);
-  if (action.type === 'delete' && action.sheet === 'Partners') throw new Error('Cannot delete Partners — use status change');
-  if (action.changes) {
-    for (const f of BLOCKED_FIELDS) {
-      if (f in action.changes) throw new Error(`Cannot modify field: ${f}`);
-    }
-  }
-
-  const sheetData = await loadSheetData();
-  const headers = SHEET_HEADERS[action.sheet];
-  const sheetKey = { Partners: 'partners', Opportunities: 'opportunities', Events: 'events' }[action.sheet];
-  const rows = sheetData[sheetKey] || [];
-
-  console.log(`[AI Action] ${new Date().toISOString()} — ${action.type} on ${action.sheet}`, action);
-
-  if (action.type === 'update') {
-    if (!action.row_match || Object.keys(action.row_match).length === 0) throw new Error('No row_match specified');
-    const row = findMatchingRow(rows, action.row_match);
-    if (!row) throw new Error('No matching row found');
-    const values = headers.map(h => {
-      if (action.changes && h in action.changes) return action.changes[h];
-      return row[h] || '';
-    });
-    await updateRow(action.sheet, row._rowIndex, values);
-  } else if (action.type === 'create') {
-    const values = headers.map(h => (action.changes && action.changes[h]) || '');
-    await appendRow(action.sheet, values);
-  } else if (action.type === 'delete') {
-    if (!action.row_match || Object.keys(action.row_match).length === 0) throw new Error('No row_match specified');
-    const row = findMatchingRow(rows, action.row_match);
-    if (!row) throw new Error('No matching row found');
-    await deleteRow(action.sheet, row._rowIndex);
-  }
-
-  invalidateSheetCache();
-}
-
-function findMatchingRow(rows, match) {
-  return rows.find(row => {
-    return Object.entries(match).every(([field, value]) => {
-      const rowVal = String(row[field] || '').toLowerCase();
-      const matchVal = String(value).toLowerCase();
-      return rowVal === matchVal || rowVal.includes(matchVal);
-    });
-  });
 }
 
 // ── Save Indicator ─────────────────────────────────────────────────
@@ -346,7 +280,7 @@ function renderHistoryList(filter = '') {
 
 // ── Main Render ────────────────────────────────────────────────────
 export function renderAdminAIAssistant(container) {
-  setTopbarTitle('AI Assistant');
+  setTopbarTitle('Randy');
 
   const view = container || document.getElementById('view-container') || document.querySelector('main');
   if (!view) return;
@@ -361,9 +295,9 @@ export function renderAdminAIAssistant(container) {
     <div class="ai-assistant-container">
       <div class="ai-header">
         <div class="ai-header-left">
-          <div class="ai-header-icon">⚡</div>
+          <div class="ai-header-icon"><img src="assets/randy-avatar.png" alt="Randy" style="width:46px;height:46px;object-fit:contain;"></div>
           <div>
-            <h2 class="ai-header-title">Portal AI Assistant <span id="ai-save-indicator" class="ai-save-indicator"></span></h2>
+            <h2 class="ai-header-title">Randy Assistant <span id="ai-save-indicator" class="ai-save-indicator"></span></h2>
             <p class="ai-header-sub">Connected to your Partner Portal database via Google Sheets</p>
           </div>
         </div>

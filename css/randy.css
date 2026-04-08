@@ -1,0 +1,597 @@
+/* ============================================
+   Randy — Floating Chat Window
+   Three states: collapsed, open, fullscreen
+   ============================================ */
+
+/* ── Container ─────────────────────────────────────────────────── */
+.randy {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* ── STATE 1: Collapsed Avatar Button ──────────────────────────── */
+.randy__btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid #0000CC;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transition: box-shadow 200ms ease-out, border-color 200ms ease-out, transform 200ms ease-out;
+}
+
+.randy__btn:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.randy__btn:active {
+  transform: scale(0.96);
+}
+
+.randy__btn:focus-visible {
+  outline: 2px solid #0000CC;
+  outline-offset: 2px;
+}
+
+.randy__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+  pointer-events: none;
+}
+
+.randy__hint {
+  display: none;
+  position: absolute;
+  bottom: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 10px;
+  color: #8888AA;
+  pointer-events: none;
+}
+
+/* Passive pulse */
+.randy--passive .randy__btn {
+  animation: randyPulse 3s infinite ease-in-out;
+}
+.randy--passive .randy__hint { display: block; }
+
+@keyframes randyPulse {
+  0%, 100% { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
+  50% { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), 0 0 0 4px rgba(0, 0, 204, 0.15); }
+}
+
+/* Listening red */
+.randy--listening .randy__btn {
+  border-color: #dc2626;
+  animation: randyListenPulse 3s infinite ease-in-out;
+}
+
+@keyframes randyListenPulse {
+  0%, 100% { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
+  50% { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), 0 0 0 4px rgba(220, 38, 38, 0.15); }
+}
+
+/* Speaking green */
+.randy--speaking .randy__btn {
+  border-color: #0F7A3F;
+  animation: randySpeakPulse 500ms infinite ease-in-out;
+}
+
+@keyframes randySpeakPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
+
+/* Processing spinner overlay */
+.randy--processing .randy__btn::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid transparent;
+  border-top-color: #0000CC;
+  border-radius: 50%;
+  background: #fff;
+  animation: randySpin 0.7s infinite linear;
+}
+
+@keyframes randySpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Confirming amber */
+.randy--confirming .randy__btn { border-color: #CC8800; }
+
+/* Wake flash */
+.randy--flash .randy__btn {
+  border-color: #fff !important;
+  box-shadow: 0 0 0 6px rgba(0, 0, 204, 0.2) !important;
+  transition: none;
+}
+
+/* Hide button and stop animations when window is open */
+.randy--open .randy__btn,
+.randy--open .randy__hint,
+.randy--fullscreen .randy__btn,
+.randy--fullscreen .randy__hint {
+  display: none;
+  animation: none;
+}
+
+/* ── STATE 2: Pop-out Chat Window ──────────────────────────────── */
+.randy-window {
+  display: none;
+  flex-direction: column;
+  width: 380px;
+  height: 520px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  min-width: 320px;
+  min-height: 400px;
+  max-width: 600px;
+  max-height: 700px;
+  animation: randyWindowOpen 200ms ease-out;
+}
+
+.randy--open .randy-window {
+  display: flex;
+}
+
+@keyframes randyWindowOpen {
+  from { opacity: 0; transform: scale(0.85) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ── Title Bar ─────────────────────────────────────────────────── */
+.randy-window__titlebar {
+  height: 36px;
+  background: #1A1A2E;
+  color: #fff;
+  border-radius: 12px 12px 0 0;
+  display: flex;
+  align-items: center;
+  padding: 0 6px 0 10px;
+  gap: 8px;
+  cursor: grab;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.randy-window__titlebar:active { cursor: grabbing; }
+
+.randy-window__titlebar-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top center;
+  flex-shrink: 0;
+}
+
+.randy-window__titlebar-name {
+  font-size: 13px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.randy-window__controls {
+  display: flex;
+  gap: 2px;
+}
+
+.randy-window__ctrl {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  transition: background 150ms, color 150ms;
+}
+
+.randy-window__ctrl:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+/* ── Chat Area ─────────────────────────────────────────────────── */
+.randy-window__chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #fff;
+}
+
+/* Welcome state */
+.randy-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px 16px;
+  flex: 1;
+  gap: 8px;
+}
+
+.randy-welcome__avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top center;
+  border: 2px solid #0000CC;
+  margin-bottom: 4px;
+}
+
+.randy-welcome__text {
+  font-size: 14px;
+  color: #4a4a5a;
+  margin: 0;
+}
+
+/* Chat messages */
+.randy-msg {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  max-width: 85%;
+  animation: randyMsgIn 150ms ease-out;
+}
+
+.randy-msg--user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.randy-msg--assistant {
+  align-self: flex-start;
+}
+
+.randy-msg__avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.randy-bubble {
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  word-wrap: break-word;
+  position: relative;
+}
+
+.randy-msg--user .randy-bubble {
+  background: #0000CC;
+  color: #fff;
+  border-bottom-right-radius: 3px;
+}
+
+.randy-msg--assistant .randy-bubble {
+  background: #F5F5FA;
+  color: #1A1A2E;
+  border-bottom-left-radius: 3px;
+}
+
+/* Markdown in assistant bubbles */
+.randy-msg--assistant .randy-bubble strong { color: #0000CC; }
+.randy-msg--assistant .randy-bubble code {
+  background: #e8e8f0;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.randy-msg--assistant .randy-bubble p { margin: 0 0 6px 0; }
+.randy-msg--assistant .randy-bubble p:last-child { margin-bottom: 0; }
+.randy-msg--assistant .randy-bubble ul { margin: 4px 0; padding-left: 18px; }
+.randy-msg--assistant .randy-bubble li { margin-bottom: 2px; }
+
+/* Voice badge */
+.randy-badge-voice {
+  display: inline-block;
+  font-size: 9px;
+  margin-left: 4px;
+  opacity: 0.6;
+  vertical-align: middle;
+}
+
+/* Typing indicator */
+.randy-typing {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 10px 14px;
+}
+
+.randy-typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #0000CC;
+  animation: randyBounce 1.2s infinite;
+}
+.randy-typing span:nth-child(2) { animation-delay: 0.15s; }
+.randy-typing span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes randyBounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+}
+
+@keyframes randyMsgIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Action confirmation card (in-chat) */
+.randy-action-card {
+  background: #FAFAFE;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  margin-top: 4px;
+  align-self: flex-start;
+  max-width: 85%;
+}
+
+.randy-action-card__summary {
+  font-weight: 500;
+  color: #1A1A2E;
+  margin-bottom: 6px;
+}
+
+.randy-action-card__buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.randy-action-card__confirm,
+.randy-action-card__cancel {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 150ms;
+}
+
+.randy-action-card__confirm {
+  background: #0000CC;
+  color: #fff;
+  border-color: #0000CC;
+}
+.randy-action-card__confirm:hover { background: #0000aa; }
+
+.randy-action-card__cancel {
+  background: #fff;
+  color: #4a4a5a;
+}
+.randy-action-card__cancel:hover { background: #f5f5fa; }
+
+.randy-action-card__status {
+  font-size: 11px;
+  color: #0F7A3F;
+  font-weight: 500;
+}
+.randy-action-card__status--cancelled { color: #dc2626; }
+
+/* ── Voice Button Bottom Area ───────────────────────────────────── */
+.randy-window__bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 12px 16px;
+  border-top: 1px solid #e5e7eb;
+  background: #FAFAFE;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.randy-window__status {
+  font-size: 12px;
+  color: #4a4a5a;
+  text-align: center;
+  min-height: 18px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 200ms ease-out;
+}
+
+/* ── Single Voice Toggle Button ────────────────────────────────── */
+.randy-voice-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 28px;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: background 200ms ease-out, box-shadow 200ms ease-out, transform 200ms ease-out;
+}
+
+.randy-voice-btn:active { transform: scale(0.93); }
+
+/* Paused (green) — tap to talk */
+.randy-voice-btn--paused {
+  background: #0F7A3F;
+}
+.randy-voice-btn--paused:hover {
+  box-shadow: 0 0 0 6px rgba(15, 122, 63, 0.15);
+}
+
+/* Listening (red) — animated pulse ring */
+.randy-voice-btn--listening {
+  background: #CC2222;
+  animation: randyListenRing 1.5s infinite ease-out;
+}
+
+@keyframes randyListenRing {
+  0% { box-shadow: 0 0 0 0 rgba(204, 34, 34, 0.4); }
+  100% { box-shadow: 0 0 0 14px rgba(204, 34, 34, 0); }
+}
+
+/* Processing (amber) — spinner */
+.randy-voice-btn--processing {
+  background: #CC8800;
+  cursor: default;
+}
+.randy-voice-btn--processing svg {
+  animation: randySpin 0.7s infinite linear;
+}
+
+/* Speaking (blue) — subtle pulse */
+.randy-voice-btn--speaking {
+  background: #0000CC;
+  animation: randySpeakBtnPulse 2s infinite ease-in-out;
+}
+
+@keyframes randySpeakBtnPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 0, 204, 0.2); }
+  50% { box-shadow: 0 0 0 8px rgba(0, 0, 204, 0); }
+}
+
+/* ── Interim transcription bubble ──────────────────────────────── */
+.randy-msg--interim .randy-bubble {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+/* ── Speaking highlight on assistant message ────────────────────── */
+.randy-msg--speaking .randy-bubble {
+  border-left: 2px solid #0000CC;
+  padding-left: 10px;
+}
+
+/* ── STATE 3: Fullscreen ───────────────────────────────────────── */
+.randy__backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 9998;
+}
+
+.randy--fullscreen .randy__backdrop { display: block; }
+
+.randy--fullscreen .randy-window {
+  position: fixed;
+  inset: 20px;
+  width: auto !important;
+  height: auto !important;
+  max-width: none;
+  max-height: none;
+  border-radius: 12px;
+  z-index: 9999;
+  resize: none;
+  transition: all 300ms ease-out;
+}
+
+.randy--fullscreen .randy-window__titlebar {
+  border-radius: 12px 12px 0 0;
+}
+
+/* ── Focus States (keyboard accessibility) ─────────────────────── */
+.randy-window__ctrl:focus-visible,
+.randy-voice-btn:focus-visible {
+  outline: 2px solid #0000CC;
+  outline-offset: 1px;
+}
+
+/* ── Dragging State ────────────────────────────────────────────── */
+.randy--dragging .randy-window {
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  transition: box-shadow 200ms;
+}
+
+.randy--dragging .randy-window__titlebar { cursor: grabbing; }
+
+/* ── Error Overlay ─────────────────────────────────────────────── */
+.randy__error {
+  display: none;
+  position: absolute;
+  bottom: 48px;
+  right: 0;
+  background: #fff;
+  color: #1A1A2E;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.randy--error .randy__error { display: block; }
+
+/* ── Responsive ────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .randy {
+    bottom: 12px;
+    right: 12px;
+  }
+
+  .randy-window {
+    position: fixed !important;
+    bottom: 0 !important;
+    right: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: clamp(300px, 60vh, 90vh) !important;
+    border-radius: 12px 12px 0 0;
+    max-width: none;
+    resize: none;
+  }
+
+  .randy-window__titlebar {
+    border-radius: 12px 12px 0 0;
+    cursor: default;
+  }
+
+  .randy--fullscreen .randy-window {
+    inset: 0;
+    height: 100vh !important;
+    border-radius: 0;
+  }
+}

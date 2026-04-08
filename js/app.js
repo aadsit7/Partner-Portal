@@ -19,6 +19,7 @@ import * as adminPartnerDetail from './views/admin-partner-detail.js';
 import * as adminSetup from './views/admin-setup.js';
 import { renderAdminAIAssistant, cleanupAdminAIAssistant } from './views/admin-ai-assistant.js';
 import { mountVoiceWidget } from './components/voice-widget.js';
+import { initRandy } from './components/randy.js';
 
 // ---- Register Routes ----
 
@@ -105,7 +106,7 @@ addRoute('/admin/events', {
 });
 
 addRoute('/admin/ai-assistant', {
-  title: 'AI Assistant',
+  title: 'Randy',
   render: async (container) => {
     setupAppShell();
     renderAdminAIAssistant(container);
@@ -134,6 +135,7 @@ addRoute('/admin/setup', {
 // ---- App Shell Setup ----
 
 let voiceWidgetMounted = false;
+let randyMounted = false;
 
 function setupAppShell() {
   const app = document.getElementById('app');
@@ -147,6 +149,12 @@ function setupAppShell() {
   if (user && user.is_admin && !voiceWidgetMounted) {
     mountVoiceWidget();
     voiceWidgetMounted = true;
+  }
+
+  // Mount Randy voice assistant for admin users
+  if (user && user.is_admin && !randyMounted) {
+    initRandy();
+    randyMounted = true;
   }
 }
 
