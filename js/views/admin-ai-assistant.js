@@ -3,8 +3,9 @@
 // ============================================
 // Reads Google Sheets via sheets.js, supports voice input
 
-import { CONFIG, getRuntimeConfig, setRuntimeConfig } from '../config.js';
+import { CONFIG } from '../config.js';
 import { readSheetAsObjects } from '../sheets.js';
+import { setTopbarTitle } from '../components/sidebar.js';
 
 // ── State ──────────────────────────────────────────────────────────
 let conversationHistory = [];
@@ -64,51 +65,59 @@ DATA RULES:
 // Reads all sheets via the existing sheets.js Google Sheets integration
 // Uses a 5-min cache so we don't re-fetch on every message
 
+async function safeRead(sheetName) {
+  try {
+    return await readSheetAsObjects(sheetName);
+  } catch (err) {
+    console.warn(`Sheet "${sheetName}" not available:`, err.message);
+    return [];
+  }
+}
+
 async function loadSheetData(forceRefresh = false) {
   const now = Date.now();
   if (!forceRefresh && cachedSheetData && (now - cacheTimestamp) < CACHE_TTL) {
     return cachedSheetData;
   }
 
-  try {
-    const [partners, opportunities, events, meetingIndex, transcripts] = await Promise.all([
-      readSheetAsObjects(CONFIG.SHEET_PARTNERS),
-      readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES),
-      readSheetAsObjects(CONFIG.SHEET_EVENTS),
-      readSheetAsObjects(CONFIG.SHEET_MEETING_INDEX),
-      readSheetAsObjects(CONFIG.SHEET_TRANSCRIPTS)
-    ]);
+  const [partners, opportunities, events, meetingIndex, transcripts] = await Promise.all([
+    safeRead(CONFIG.SHEET_PARTNERS),
+    safeRead(CONFIG.SHEET_OPPORTUNITIES),
+    safeRead(CONFIG.SHEET_EVENTS),
+    safeRead(CONFIG.SHEET_MEETING_INDEX),
+    safeRead(CONFIG.SHEET_TRANSCRIPTS)
+  ]);
 
-    // Sanitize partners — strip password hashes before sending to Claude
-    const sanitizedPartners = partners.map(p => {
-      const { password_hash, is_admin, ...safe } = p;
-      return safe;
-    });
-
-    // For transcripts, send only metadata + truncated preview to stay within token limits
-    // Full transcript text is sent only when the user asks about a specific partner
-    const transcriptIndex = transcripts.map(t => ({
-      transcript_id: t.transcript_id,
-      partner_id: t.partner_id,
-      partner_name: t.partner_name,
-      conversation_date: t.conversation_date,
-      preview: (t.transcript_text || '').substring(0, 300) + '...'
-    }));
-
-    cachedSheetData = {
-      partners: sanitizedPartners,
-      opportunities: opportunities,
-      events: events,
-      meetingIndex: meetingIndex,
-      transcriptIndex: transcriptIndex,
-      fullTranscripts: transcripts // kept locally for targeted lookups
-    };
-    cacheTimestamp = now;
-    return cachedSheetData;
-  } catch (err) {
-    console.error('Failed to load sheet data:', err);
+  if (partners.length === 0) {
     throw new Error('Could not read Google Sheets. Check your connection on the Setup page.');
   }
+
+  // Sanitize partners — strip password hashes before sending to Claude
+  const sanitizedPartners = partners.map(p => {
+    const { password_hash, is_admin, ...safe } = p;
+    return safe;
+  });
+
+  // For transcripts, send only metadata + truncated preview to stay within token limits
+  // Full transcript text is sent only when the user asks about a specific partner
+  const transcriptIndex = transcripts.map(t => ({
+    transcript_id: t.transcript_id,
+    partner_id: t.partner_id,
+    partner_name: t.partner_name,
+    conversation_date: t.conversation_date,
+    preview: (t.transcript_text || '').substring(0, 300) + '...'
+  }));
+
+  cachedSheetData = {
+    partners: sanitizedPartners,
+    opportunities: opportunities,
+    events: events,
+    meetingIndex: meetingIndex,
+    transcriptIndex: transcriptIndex,
+    fullTranscripts: transcripts // kept locally for targeted lookups
+  };
+  cacheTimestamp = now;
+  return cachedSheetData;
 }
 
 // ── Build Context for API Call ─────────────────────────────────────
@@ -179,9 +188,9 @@ ${JSON.stringify(data.meetingIndex, null, 2)}${transcriptContext}`;
 
 // ── API Call ────────────────────────────────────────────────────────
 async function callClaude(messages, sheetData, userMessage) {
-  const apiKey = getRuntimeConfig('ANTHROPIC_API_KEY');
+  const apiKey = CONFIG.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    throw new Error('Anthropic API key not configured. Click the key icon in the header to add your API key.');
+    throw new Error('Anthropic API key not configured. Add ANTHROPIC_API_KEY to config.js');
   }
 
   abortController = new AbortController();
@@ -420,6 +429,8 @@ const SUGGESTED_QUESTIONS = [
 
 // ── Main Render ────────────────────────────────────────────────────
 export function renderAdminAIAssistant(container) {
+  setTopbarTitle('AI Assistant');
+
   const view = container
     || document.getElementById('view-container')
     || document.querySelector('.view-container')
@@ -443,7 +454,6 @@ export function renderAdminAIAssistant(container) {
           </div>
         </div>
         <div class="ai-header-actions">
-          <button class="ai-refresh-btn" id="ai-api-key" title="Configure API key" style="${getRuntimeConfig('ANTHROPIC_API_KEY') ? '' : 'color:#dc2626;'}">🔑</button>
           <button class="ai-refresh-btn" id="ai-refresh" title="Refresh sheet data">↻</button>
           <button class="ai-clear-btn" id="ai-clear">Clear Chat</button>
         </div>
@@ -534,17 +544,6 @@ export function renderAdminAIAssistant(container) {
   document.getElementById('ai-clear').addEventListener('click', () => {
     conversationHistory = [];
     renderAdminAIAssistant(view);
-  });
-
-  // API key button
-  document.getElementById('ai-api-key').addEventListener('click', () => {
-    const current = getRuntimeConfig('ANTHROPIC_API_KEY');
-    const key = prompt('Enter your Anthropic API key:', current || '');
-    if (key !== null) {
-      setRuntimeConfig('ANTHROPIC_API_KEY', key.trim());
-      const btn = document.getElementById('ai-api-key');
-      btn.style.color = key.trim() ? '' : '#dc2626';
-    }
   });
 
   // Refresh sheet data button
