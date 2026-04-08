@@ -58,6 +58,8 @@ let confirmTimeout = null;
 let pendingActions = null;
 let confirmAttempts = 0;
 let mounted = false;
+let currentSpokenText = '';
+let currentSpeechOnComplete = null;
 
 // Listening recovery
 let restartCount = 0;
@@ -70,6 +72,29 @@ const WAKE_PATTERN = /\b(hey|ok|yo)\s+randy\b/i;
 const DEACTIVATION_PHRASES = ['stop randy', 'stop', "that's all", 'goodbye', 'thanks randy', 'turn off', 'go away', 'shut up'];
 const CONFIRM_WORDS = ['yes', 'yep', 'yeah', 'do it', 'go ahead', 'confirm', 'absolutely', 'sure', 'affirmative'];
 const DENY_WORDS = ['no', 'nope', 'cancel', 'never mind', "don't", 'stop', 'wait', 'skip'];
+
+// ── Interrupt Detection (barge-in) ────────────────────────────────
+function isInterrupt(transcript) {
+  const lower = transcript.toLowerCase();
+
+  // Always allow deactivation phrases as interrupts
+  if (isDeactivationPhrase(lower)) return true;
+
+  // Always allow wake word as interrupt
+  if (WAKE_PATTERN.test(lower)) return true;
+
+  // Echo detection: if most words match what Randy is saying, it's mic echo
+  if (currentSpokenText) {
+    const spokenLower = currentSpokenText.toLowerCase();
+    const words = lower.split(/\s+/).filter(w => w.length > 2);
+    if (words.length > 0) {
+      const matchCount = words.filter(w => spokenLower.includes(w)).length;
+      if (matchCount / words.length > 0.6) return false;
+    }
+  }
+
+  return true;
+}
 
 // ── Feature Detection ─────────────────────────────────────────────
 function hasVoiceSupport() {
@@ -137,6 +162,8 @@ function stopAll() {
   if (abortController) { abortController.abort(); abortController = null; }
   if (confirmTimeout) { clearTimeout(confirmTimeout); confirmTimeout = null; }
   isRandySpeaking = false;
+  currentSpokenText = '';
+  currentSpeechOnComplete = null;
   conversationHistory = [];
   pendingActions = null;
   confirmAttempts = 0;
@@ -153,18 +180,32 @@ function initRecognition() {
   rec.lang = 'en-US';
 
   rec.onresult = (event) => {
-    // Echo prevention: discard if Randy is speaking
-    if (isRandySpeaking) return;
-
     const result = event.results[event.results.length - 1];
     if (!result.isFinal) return;
 
     const confidence = result[0].confidence;
-    // Reject low confidence (but accept 0 = unsupported)
     if (confidence !== 0 && confidence < 0.6) return;
 
     const transcript = result[0].transcript.trim();
     if (!transcript) return;
+
+    // During speaking: check for intentional interrupt vs echo
+    if (isRandySpeaking) {
+      if (isInterrupt(transcript)) {
+        synth.cancel();
+        isRandySpeaking = false;
+        currentSpokenText = '';
+        currentSpeechOnComplete = null;
+        console.log('Randy: interrupted by user');
+        // Transition to appropriate state for processing
+        if (currentState === STATES.SPEAKING) {
+          currentState = STATES.ACTIVE_LISTENING;
+          updateWidgetUI();
+        }
+        handleTranscript(transcript);
+      }
+      return;
+    }
 
     handleTranscript(transcript);
   };
@@ -193,6 +234,11 @@ function initRecognition() {
   };
 
   rec.onend = () => {
+    // Restart during SPEAKING to enable barge-in interrupts
+    if (currentState === STATES.SPEAKING) {
+      scheduleRestart();
+      return;
+    }
     // Restart if still in a listening state and not speaking
     if ((currentState === STATES.PASSIVE || currentState === STATES.ACTIVE_LISTENING || currentState === STATES.CONFIRMING) && !isRandySpeaking) {
       scheduleRestart();
@@ -222,8 +268,7 @@ function scheduleRestart() {
 }
 
 function startRecognition() {
-  if (currentState === STATES.OFF || currentState === STATES.PROCESSING || currentState === STATES.SPEAKING) return;
-  if (isRandySpeaking) return;
+  if (currentState === STATES.OFF || currentState === STATES.PROCESSING) return;
   // Pause if the existing voice widget (chat mic) is active — only one SpeechRecognition at a time
   if (isVoiceModeActive()) return;
 
@@ -303,6 +348,11 @@ async function processUserInput(text) {
 
     conversationHistory.push({ role: 'assistant', content: response });
 
+    // Cap history to prevent memory/context bloat
+    if (conversationHistory.length > 20) {
+      conversationHistory = conversationHistory.slice(-20);
+    }
+
     // Check for action blocks
     const { cleanText, actions } = parseActions(response);
 
@@ -366,6 +416,7 @@ function handleConfirmation(lower) {
 }
 
 async function executeConfirmedAction() {
+  if (confirmTimeout) { clearTimeout(confirmTimeout); confirmTimeout = null; }
   const actions = pendingActions;
   pendingActions = null;
 
@@ -423,18 +474,14 @@ function speakText(text, onComplete) {
   const clean = cleanForSpeech(text);
   if (!clean) { if (onComplete) onComplete(); return; }
 
-  // Echo prevention: stop mic before speaking
+  // Set echo prevention flag — mic stays running for barge-in
   isRandySpeaking = true;
-  if (recognition) {
-    try { recognition.abort(); } catch { /* ok */ }
-  }
+  currentSpokenText = clean;
+  currentSpeechOnComplete = onComplete || null;
 
   if (currentState !== STATES.CONFIRMING && currentState !== STATES.PASSIVE) {
-    // Only transition to SPEAKING if not in a special state
     if (currentState === STATES.PROCESSING || currentState === STATES.ACTIVE_LISTENING) {
-      currentState = STATES.SPEAKING;
-      console.log(`Randy: → SPEAKING`);
-      updateWidgetUI();
+      transition(STATES.SPEAKING);
     }
   }
 
@@ -449,8 +496,11 @@ function speakText(text, onComplete) {
     // 500ms buffer to let audio clear from mic hardware
     setTimeout(() => {
       isRandySpeaking = false;
-      if (onComplete) {
-        onComplete();
+      currentSpokenText = '';
+      const cb = currentSpeechOnComplete;
+      currentSpeechOnComplete = null;
+      if (cb) {
+        cb();
       } else if (currentState === STATES.SPEAKING) {
         transition(STATES.ACTIVE_LISTENING);
       }
@@ -458,16 +508,31 @@ function speakText(text, onComplete) {
   };
 
   utterance.onerror = (e) => {
-    if (e.error !== 'canceled') console.error('Randy speech error:', e.error);
-    isRandySpeaking = false;
-    if (onComplete) {
-      onComplete();
-    } else if (currentState === STATES.SPEAKING) {
-      transition(STATES.ACTIVE_LISTENING);
+    if (e.error === 'canceled') {
+      // Intentional cancel (user interrupt or stopAll)
+      isRandySpeaking = false;
+      currentSpokenText = '';
+      currentSpeechOnComplete = null;
+      return;
     }
+    console.error('Randy speech error:', e.error);
+    setTimeout(() => {
+      isRandySpeaking = false;
+      currentSpokenText = '';
+      const cb = currentSpeechOnComplete;
+      currentSpeechOnComplete = null;
+      if (cb) {
+        cb();
+      } else if (currentState === STATES.SPEAKING) {
+        transition(STATES.ACTIVE_LISTENING);
+      }
+    }, 500);
   };
 
   synth.speak(utterance);
+
+  // Start recognition for barge-in if not already running
+  startRecognition();
 }
 
 // ── Voice Selection ───────────────────────────────────────────────
@@ -509,9 +574,20 @@ function cleanForSpeech(text) {
     .replace(/^\d+\.\s+/gm, '')
     // Strip links
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    // Currency: $120,000 → 120 thousand dollars
-    .replace(/\$(\d{1,3}),(\d{3}),(\d{3})/g, (_, m, t, u) => `${m} million ${parseInt(t)}${u !== '000' ? ' thousand' : ''} dollars`)
-    .replace(/\$(\d{1,3}),(\d{3})/g, (_, t, u) => `${t}${u !== '000' ? ' ' + parseInt(u) : ''} thousand dollars`)
+    // Currency: $1,234,567 → "1 million 234 thousand 567 dollars"
+    .replace(/\$(\d{1,3}),(\d{3}),(\d{3})/g, (_, m, t, u) => {
+      const thousands = parseInt(t);
+      const units = parseInt(u);
+      let r = `${m} million`;
+      if (thousands > 0) r += ` ${thousands} thousand`;
+      if (units > 0) r += ` ${units}`;
+      return r + ' dollars';
+    })
+    // $50,000 → "50 thousand dollars"
+    .replace(/\$(\d{1,3}),(\d{3})/g, (_, t, u) => {
+      const units = parseInt(u);
+      return units > 0 ? `${t} thousand ${units} dollars` : `${t} thousand dollars`;
+    })
     .replace(/\$/g, ' dollars ')
     // Percent
     .replace(/%/g, ' percent')
@@ -580,10 +656,10 @@ function createWidget() {
       </button>
       <span class="randy__hint">Say "Hey Randy"</span>
 
-      <div class="randy__pill" id="randy-pill">
+      <div class="randy__pill" id="randy-pill" role="button" tabindex="0" aria-label="Randy voice assistant">
         <img src="assets/randy-avatar.png" alt="Randy" class="randy__avatar randy__avatar--sm">
-        <span class="randy__label" id="randy-label"></span>
-        <span class="randy__spinner"></span>
+        <span class="randy__label" id="randy-label" role="status" aria-live="polite"></span>
+        <span class="randy__spinner" aria-hidden="true"></span>
         <button class="randy__close" id="randy-close" title="Turn off Randy" aria-label="Turn off Randy">&times;</button>
       </div>
 

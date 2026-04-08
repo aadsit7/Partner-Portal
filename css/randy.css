@@ -53,6 +53,16 @@
   transform: scale(0.96);
 }
 
+.randy__btn:focus-visible {
+  outline: 2px solid #0000CC;
+  outline-offset: 2px;
+}
+
+.randy__close:focus-visible {
+  outline: 2px solid var(--color-text-primary, #1A1A2E);
+  outline-offset: 1px;
+}
+
 /* ── Hint Label ────────────────────────────────────────────────── */
 .randy__hint {
   display: none;
