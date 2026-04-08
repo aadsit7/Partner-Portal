@@ -87,28 +87,41 @@ function initRecognition() {
   rec.interimResults = false;
   rec.lang = 'en-US';
 
-  rec.onresult = async (event) => {
-    const transcript = event.results[0][0].transcript;
-    if (!transcript.trim()) {
-      if (!stopping) startListening();
-      return;
-    }
+  rec.onresult = (event) => {
+    // Only process final results
+    const result = event.results[event.results.length - 1];
+    if (!result.isFinal) return;
+
+    const transcript = result[0].transcript.trim();
+    if (!transcript) return;
+
+    // Immediately prevent any restarts
     setState('processing');
-    await handleVoiceInput(transcript);
+    handleVoiceInput(transcript);
   };
 
   rec.onerror = (event) => {
-    if (event.error === 'no-speech' || event.error === 'aborted') {
-      if (!stopping && voiceState === 'listening') startListening();
+    if (event.error === 'no-speech') {
+      // No speech detected — restart if still in voice mode
+      if (!stopping && voiceState === 'listening') {
+        setTimeout(() => { if (!stopping) startListening(); }, 300);
+      }
       return;
     }
+    if (event.error === 'aborted') return;
     console.error('Voice recognition error:', event.error);
     if (!stopping) stopEverything();
   };
 
   rec.onend = () => {
+    // Only restart if we're still explicitly in listening state
+    // Do NOT restart if processing/speaking — the cycle handles that
     if (!stopping && voiceState === 'listening') {
-      try { rec.start(); } catch { /* already started */ }
+      setTimeout(() => {
+        if (!stopping && voiceState === 'listening') {
+          try { rec.start(); } catch { /* ok */ }
+        }
+      }, 300);
     }
   };
 
