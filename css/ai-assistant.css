@@ -455,25 +455,6 @@
   font-family: inherit;
 }
 
-.voice-widget__btn {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  border: none;
-  background: #0000CC;
-  color: white;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 12px rgba(0, 0, 204, 0.3);
-  transition: all 200ms;
-}
-.voice-widget__btn:hover {
-  transform: scale(1.08);
-  box-shadow: 0 6px 20px rgba(0, 0, 204, 0.4);
-}
-
 .voice-widget__pill {
   display: flex;
   align-items: center;
@@ -550,10 +531,6 @@
   .voice-widget {
     bottom: 16px;
     right: 16px;
-  }
-  .voice-widget__btn {
-    width: 46px;
-    height: 46px;
   }
   .voice-widget__pill {
     min-width: 160px;

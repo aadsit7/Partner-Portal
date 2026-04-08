@@ -1,7 +1,7 @@
 // ============================================
 // Persistent Voice Assistant Widget
 // ============================================
-// Floating button in bottom-right, survives route changes.
+// Floating pill in bottom-right, activated from chat mic button.
 // Mounted to #voice-root (outside view-container).
 
 import { isAdmin } from '../auth.js';
@@ -11,6 +11,7 @@ import { getCurrentPath } from '../router.js';
 // ── State ──────────────────────────────────────────────────────────
 let voiceHistory = [];
 let voiceState = 'idle'; // idle | listening | processing | speaking
+let stopping = false;
 let recognition = null;
 let synth = window.speechSynthesis;
 let currentUtterance = null;
@@ -27,15 +28,15 @@ function hasVoiceSupport() {
 // ── Markdown Stripping ─────────────────────────────────────────────
 function stripMarkdown(text) {
   return text
-    .replace(/```[\s\S]*?```/g, '')     // code blocks
-    .replace(/`([^`]+)`/g, '$1')         // inline code
-    .replace(/#{1,4}\s+/g, '')           // headings
-    .replace(/\*\*(.+?)\*\*/g, '$1')    // bold
-    .replace(/\*(.+?)\*/g, '$1')         // italic
-    .replace(/^[-•*]\s+/gm, '')          // bullets
-    .replace(/^\d+\.\s+/gm, '')          // numbered lists
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // links
-    .replace(/\n{2,}/g, '. ')            // paragraph breaks → pauses
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/#{1,4}\s+/g, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/^[-•*]\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\n{2,}/g, '. ')
     .replace(/\n/g, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
@@ -64,13 +65,13 @@ function speak(text) {
 
   currentUtterance.onstart = () => setState('speaking');
   currentUtterance.onend = () => {
-    if (voiceState === 'speaking') {
-      startListening(); // restart the loop
+    if (!stopping && voiceState === 'speaking') {
+      startListening();
     }
   };
   currentUtterance.onerror = (e) => {
     if (e.error !== 'canceled') console.error('Speech error:', e.error);
-    if (voiceState === 'speaking') startListening();
+    if (!stopping && voiceState === 'speaking') startListening();
   };
 
   synth.speak(currentUtterance);
@@ -89,7 +90,7 @@ function initRecognition() {
   rec.onresult = async (event) => {
     const transcript = event.results[0][0].transcript;
     if (!transcript.trim()) {
-      startListening();
+      if (!stopping) startListening();
       return;
     }
     await handleVoiceInput(transcript);
@@ -97,16 +98,15 @@ function initRecognition() {
 
   rec.onerror = (event) => {
     if (event.error === 'no-speech' || event.error === 'aborted') {
-      if (voiceState === 'listening') startListening();
+      if (!stopping && voiceState === 'listening') startListening();
       return;
     }
     console.error('Voice recognition error:', event.error);
-    setState('idle');
+    if (!stopping) stopEverything();
   };
 
   rec.onend = () => {
-    // If still in listening state but recognition ended naturally, restart
-    if (voiceState === 'listening') {
+    if (!stopping && voiceState === 'listening') {
       try { rec.start(); } catch { /* already started */ }
     }
   };
@@ -115,6 +115,7 @@ function initRecognition() {
 }
 
 function startListening() {
+  if (stopping) return;
   if (!recognition) recognition = initRecognition();
   if (!recognition) return;
 
@@ -127,21 +128,26 @@ function startListening() {
 }
 
 function stopEverything() {
+  stopping = true;
+
   if (recognition) {
     try { recognition.abort(); } catch { /* ok */ }
   }
   if (synth.speaking) synth.cancel();
   if (abortController) abortController.abort();
+
+  currentUtterance = null;
   voiceHistory = [];
   setState('idle');
+  hideWidget();
   localStorage.removeItem(STORAGE_KEY);
 }
 
 // ── Claude API Handler ─────────────────────────────────────────────
 async function handleVoiceInput(text) {
+  if (stopping) return;
   setState('processing');
 
-  // Render in chat UI if on AI Assistant tab
   renderInChatIfVisible('user', text);
 
   voiceHistory.push({ role: 'user', content: text });
@@ -153,11 +159,14 @@ async function handleVoiceInput(text) {
     voiceHistory.push({ role: 'assistant', content: response });
 
     renderInChatIfVisible('assistant', response);
-    speak(response);
+
+    if (!stopping) {
+      speak(response);
+    }
   } catch (err) {
     if (err.name === 'AbortError') return;
     console.error('Voice assistant error:', err);
-    speak('Sorry, I encountered an error. ' + err.message);
+    if (!stopping) speak('Sorry, I encountered an error. ' + err.message);
   }
 }
 
@@ -167,11 +176,9 @@ function renderInChatIfVisible(role, text) {
   const chatArea = document.getElementById('ai-chat-area');
   if (!chatArea) return;
 
-  // Remove welcome message if present
   const welcome = chatArea.querySelector('.ai-welcome');
   if (welcome) welcome.remove();
 
-  // Use the chat view's renderMessage if available
   if (typeof window._aiChatRenderMessage === 'function') {
     window._aiChatRenderMessage(role, text, chatArea);
   }
@@ -187,7 +194,6 @@ function updateWidget() {
   const widget = document.getElementById('voice-widget');
   if (!widget) return;
 
-  const btn = widget.querySelector('.voice-widget__btn');
   const pill = widget.querySelector('.voice-widget__pill');
   const label = widget.querySelector('.voice-widget__label');
   const micIcon = widget.querySelector('.voice-widget__mic');
@@ -198,9 +204,7 @@ function updateWidget() {
 
   if (voiceState === 'idle') {
     pill.hidden = true;
-    btn.hidden = false;
   } else {
-    btn.hidden = true;
     pill.hidden = false;
     micIcon.hidden = voiceState !== 'listening';
     speakerIcon.hidden = voiceState !== 'speaking';
@@ -211,6 +215,34 @@ function updateWidget() {
   }
 }
 
+function hideWidget() {
+  const widget = document.getElementById('voice-widget');
+  if (widget) widget.style.display = 'none';
+}
+
+function showWidget() {
+  const widget = document.getElementById('voice-widget');
+  if (widget) widget.style.display = '';
+}
+
+// ── Public API ─────────────────────────────────────────────────────
+export function activateVoiceMode() {
+  if (!hasVoiceSupport()) return;
+  if (!mounted) return;
+
+  stopping = false;
+  voiceHistory = [];
+  localStorage.setItem(STORAGE_KEY, 'true');
+  showWidget();
+  startListening();
+}
+
+export function isVoiceModeActive() {
+  return voiceState !== 'idle' && !stopping;
+}
+
+export { stopEverything };
+
 // ── Mount / Unmount ────────────────────────────────────────────────
 export function mountVoiceWidget() {
   if (mounted) return;
@@ -220,15 +252,7 @@ export function mountVoiceWidget() {
   if (!root) return;
 
   root.innerHTML = `
-    <div id="voice-widget" class="voice-widget voice-widget--idle">
-      <button class="voice-widget__btn" title="Start voice assistant">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-          <line x1="12" y1="19" x2="12" y2="23"></line>
-          <line x1="8" y1="23" x2="16" y2="23"></line>
-        </svg>
-      </button>
+    <div id="voice-widget" class="voice-widget voice-widget--idle" style="display:none">
       <div class="voice-widget__pill" hidden>
         <div class="voice-widget__mic">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -249,28 +273,15 @@ export function mountVoiceWidget() {
           <span></span><span></span><span></span>
         </div>
         <span class="voice-widget__label">Listening...</span>
-        <button class="voice-widget__stop" title="Stop">
+        <button class="voice-widget__stop" title="Stop voice assistant">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"></rect></svg>
         </button>
       </div>
     </div>
   `;
 
-  // Event: click floating button to start
-  root.querySelector('.voice-widget__btn').addEventListener('click', () => {
-    localStorage.setItem(STORAGE_KEY, 'true');
-    voiceHistory = [];
-    startListening();
-  });
-
-  // Event: click pill or stop button to stop
+  // Click pill or stop button to stop everything
   root.querySelector('.voice-widget__pill').addEventListener('click', stopEverything);
-
-  // Restore visible state if was active before refresh (but don't auto-listen)
-  if (localStorage.getItem(STORAGE_KEY) === 'true') {
-    // Show widget in ready state — user needs to click to restart
-    localStorage.removeItem(STORAGE_KEY);
-  }
 
   // Load voices (some browsers load them async)
   if (synth.onvoiceschanged !== undefined) {

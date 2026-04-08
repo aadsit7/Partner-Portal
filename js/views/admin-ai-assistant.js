@@ -6,104 +6,20 @@
 import { getRuntimeConfig, setRuntimeConfig } from '../config.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { loadSheetData, callClaude } from '../utils/ai.js';
+import { activateVoiceMode, isVoiceModeActive, stopEverything as stopVoice } from '../components/voice-widget.js';
 
 // ── State ──────────────────────────────────────────────────────────
 let conversationHistory = [];
 let isStreaming = false;
 let abortController = null;
 
-// ── Voice Input (Web Speech API) ───────────────────────────────────
-let recognition = null;
-let isListening = false;
-
-function initVoice() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) return null;
-
-  recognition = new SpeechRecognition();
-  recognition.continuous = false;
-  recognition.interimResults = true;
-  recognition.lang = 'en-US';
-
-  recognition.onresult = (event) => {
-    const input = document.getElementById('ai-input');
-    const sendBtn = document.getElementById('ai-send');
-    let finalTranscript = '';
-    let interimTranscript = '';
-
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const transcript = event.results[i][0].transcript;
-      if (event.results[i].isFinal) {
-        finalTranscript += transcript;
-      } else {
-        interimTranscript += transcript;
-      }
-    }
-
-    if (finalTranscript) {
-      input.value = finalTranscript;
-      sendBtn.disabled = false;
-    } else if (interimTranscript) {
-      input.value = interimTranscript;
-      input.style.opacity = '0.7';
-    }
-  };
-
-  recognition.onend = () => {
-    isListening = false;
-    updateMicButton(false);
-    const input = document.getElementById('ai-input');
-    input.style.opacity = '1';
-
-    if (input.value.trim()) {
-      handleSend();
-    }
-  };
-
-  recognition.onerror = (event) => {
-    isListening = false;
-    updateMicButton(false);
-    if (event.error !== 'aborted' && event.error !== 'no-speech') {
-      console.error('Speech recognition error:', event.error);
-    }
-  };
-
-  return recognition;
-}
-
+// ── Voice Mode (delegates to floating voice widget) ────────────────
 function toggleVoice() {
-  if (!recognition) {
-    recognition = initVoice();
-    if (!recognition) {
-      showToastMessage('Voice input not supported in this browser. Try Chrome or Edge.', 'warning');
-      return;
-    }
+  if (isVoiceModeActive()) {
+    stopVoice();
+    return;
   }
-
-  if (isListening) {
-    recognition.stop();
-    isListening = false;
-    updateMicButton(false);
-  } else {
-    const input = document.getElementById('ai-input');
-    input.value = '';
-    input.placeholder = 'Listening...';
-    recognition.start();
-    isListening = true;
-    updateMicButton(true);
-  }
-}
-
-function updateMicButton(active) {
-  const btn = document.getElementById('ai-mic');
-  const input = document.getElementById('ai-input');
-  if (btn) {
-    btn.classList.toggle('ai-mic-active', active);
-    btn.title = active ? 'Stop listening' : 'Voice input';
-  }
-  if (input && !active) {
-    input.placeholder = 'Ask about partners, pipeline, meetings, events...';
-  }
+  activateVoiceMode();
 }
 
 function showToastMessage(message, type = 'info') {
@@ -381,8 +297,6 @@ async function handleSend() {
 
 export function cleanupAdminAIAssistant() {
   if (abortController) abortController.abort();
-  if (recognition && isListening) recognition.stop();
   document.removeEventListener('keydown', handleKeyShortcut);
   isStreaming = false;
-  isListening = false;
 }
