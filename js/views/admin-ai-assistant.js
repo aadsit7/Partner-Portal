@@ -295,7 +295,7 @@ export function renderAdminAIAssistant(container) {
     <div class="ai-assistant-container">
       <div class="ai-header">
         <div class="ai-header-left">
-          <div class="ai-header-icon"><img src="assets/randy-avatar.png" alt="Randy" style="width:28px;height:28px;border-radius:50%;object-fit:cover;object-position:top center;"></div>
+          <div class="ai-header-icon"><img src="assets/randy-avatar.png" alt="Randy" style="width:46px;height:46px;object-fit:contain;"></div>
           <div>
             <h2 class="ai-header-title">Randy Assistant <span id="ai-save-indicator" class="ai-save-indicator"></span></h2>
             <p class="ai-header-sub">Connected to your Partner Portal database via Google Sheets</p>
