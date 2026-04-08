@@ -16,6 +16,7 @@ const ADMIN_NAV = [
   { path: '/admin/dashboard', label: 'Dashboard', icon: 'dashboard' },
   { path: '/admin/partners', label: 'Partners', icon: 'partners' },
   { path: '/admin/events', label: 'Events / JLG', icon: 'events' },
+  { path: '/admin/ai-assistant', label: 'AI Assistant', icon: 'ai' },
   { path: '/admin/opportunities', label: 'Opportunities', icon: 'opportunities' },
   { path: '/admin/setup', label: 'Setup', icon: 'setup' },
 ];
@@ -27,6 +28,7 @@ const ICONS = {
   partners: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="7" cy="6" r="3" stroke="currentColor" stroke-width="1.5"/><circle cx="14" cy="7" r="2.5" stroke="currentColor" stroke-width="1.5"/><path d="M1 17c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M13 11.5c2.5 0 4.5 2 4.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   opportunities: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2l2.5 5 5.5.8-4 3.9.9 5.3L10 14.5 5.1 17l.9-5.3-4-3.9 5.5-.8L10 2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>',
   events: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="3" width="16" height="15" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M2 8h16" stroke="currentColor" stroke-width="1.5"/><path d="M6 1v4M14 1v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="7" cy="12" r="1" fill="currentColor"/><circle cx="10" cy="12" r="1" fill="currentColor"/><circle cx="13" cy="12" r="1" fill="currentColor"/></svg>',
+  ai: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2v3M10 15v3M2 10h3M15 10h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M4.93 4.93l2.12 2.12M12.95 12.95l2.12 2.12M15.07 4.93l-2.12 2.12M7.05 12.95l-2.12 2.12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="10" r="3" stroke="currentColor" stroke-width="1.5"/></svg>',
   setup: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M10 1v2M10 17v2M18.36 4.64l-1.42 1.42M3.05 14.95l-1.42 1.42M19 10h-2M3 10H1M15.54 15.54l-1.42-1.42M5.46 5.46L4.05 4.05M15.54 4.46l-1.42 1.42M5.46 14.54l-1.42 1.42" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   logout: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M6.5 16H3.5a1.5 1.5 0 01-1.5-1.5v-11A1.5 1.5 0 013.5 2h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12 12.5l3.5-3.5L12 5.5M7 9h8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };

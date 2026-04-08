@@ -17,6 +17,7 @@ import * as adminEvents from './views/admin-events.js';
 import * as adminOpportunities from './views/admin-opportunities.js';
 import * as adminPartnerDetail from './views/admin-partner-detail.js';
 import * as adminSetup from './views/admin-setup.js';
+import { renderAdminAIAssistant, cleanupAdminAIAssistant } from './views/admin-ai-assistant.js';
 
 // ---- Register Routes ----
 
@@ -100,6 +101,15 @@ addRoute('/admin/events', {
     await adminEvents.render(container);
   },
   cleanup: adminEvents.cleanup,
+});
+
+addRoute('/admin/ai-assistant', {
+  title: 'AI Assistant',
+  render: async (container) => {
+    setupAppShell();
+    renderAdminAIAssistant(container);
+  },
+  cleanup: cleanupAdminAIAssistant,
 });
 
 addRoute('/admin/partner-detail', {

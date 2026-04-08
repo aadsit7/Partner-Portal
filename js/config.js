@@ -53,11 +53,15 @@ export const CONFIG = {
   // Allowed admin email(s) — only these Google accounts can log in as admin
   ADMIN_EMAILS: ['aadsit7@gmail.com', 'adsitvideo@gmail.com'],
 
+  // Anthropic API (for AI Assistant) — key stored in localStorage via runtime config
+  ANTHROPIC_API_KEY: '',
+
   // Sheet names (must match your Google Spreadsheet tab names)
   SHEET_PARTNERS: 'Partners',
   SHEET_OPPORTUNITIES: 'Opportunities',
   SHEET_EVENTS: 'Events',
   SHEET_TRANSCRIPTS: 'Transcripts',
+  SHEET_MEETING_INDEX: 'Meeting_Index',
 
   // Support & Resources iframe URL
   SUPPORT_URL: 'https://partnerprogram.github.io/Application-Workspace/',
