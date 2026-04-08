@@ -203,10 +203,11 @@ export async function callClaude(messages, sheetData, userMessage, signal) {
 
   const dataContext = buildDataContext(sheetData, userMessage);
   const augmentedMessages = messages.map((m, i) => {
+    const msg = { role: m.role, content: m.content };
     if (i === messages.length - 1 && m.role === 'user') {
-      return { ...m, content: `${m.content}\n\n---\n${dataContext}` };
+      msg.content = `${m.content}\n\n---\n${dataContext}`;
     }
-    return m;
+    return msg;
   });
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
