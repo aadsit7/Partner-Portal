@@ -574,18 +574,14 @@ function createWidget() {
   root.innerHTML = `
     <div class="randy randy--off" id="randy-widget">
       <button class="randy__btn" id="randy-btn" title="Randy Voice Assistant" aria-label="Activate Randy voice assistant">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-          <line x1="12" y1="19" x2="12" y2="23"></line>
-          <line x1="8" y1="23" x2="16" y2="23"></line>
-        </svg>
+        <img src="assets/randy-avatar.png" alt="Randy" class="randy__avatar">
       </button>
       <span class="randy__hint">Say "Hey Randy"</span>
 
       <div class="randy__pill" id="randy-pill">
-        <div class="randy__icon" id="randy-icon"></div>
+        <img src="assets/randy-avatar.png" alt="Randy" class="randy__avatar randy__avatar--sm">
         <span class="randy__label" id="randy-label"></span>
+        <span class="randy__spinner"></span>
         <button class="randy__close" id="randy-close" title="Turn off Randy" aria-label="Turn off Randy">&times;</button>
       </div>
 
@@ -624,10 +620,9 @@ function updateWidgetUI() {
   const widget = document.getElementById('randy-widget');
   if (!widget) return;
 
-  const icon = document.getElementById('randy-icon');
   const label = document.getElementById('randy-label');
 
-  // Reset classes
+  // Reset classes — state communicated via CSS classes on widget
   widget.className = 'randy';
 
   const isActive = [STATES.ACTIVE_LISTENING, STATES.PROCESSING, STATES.SPEAKING, STATES.CONFIRMING].includes(currentState);
@@ -642,40 +637,30 @@ function updateWidgetUI() {
     switch (currentState) {
       case STATES.ACTIVE_LISTENING:
         widget.classList.add('randy--listening');
-        icon.innerHTML = micSVG();
-        label.textContent = 'Randy is listening...';
+        label.textContent = 'Listening...';
         break;
       case STATES.PROCESSING:
-        icon.innerHTML = '<div class="randy__dots"><span></span><span></span><span></span></div>';
+        widget.classList.add('randy--processing');
         label.textContent = 'Thinking...';
         break;
       case STATES.SPEAKING:
-        icon.innerHTML = '<div class="randy__speaker-bars"><span></span><span></span><span></span></div>';
-        label.textContent = 'Randy is speaking...';
+        widget.classList.add('randy--speaking');
+        label.textContent = 'Speaking...';
         break;
       case STATES.CONFIRMING:
         widget.classList.add('randy--confirming');
-        icon.innerHTML = '&#9888;';
         label.textContent = 'Yes or no?';
         break;
     }
   }
 }
 
-function micSVG() {
-  return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-    <line x1="12" y1="19" x2="12" y2="23"></line>
-    <line x1="8" y1="23" x2="16" y2="23"></line>
-  </svg>`;
-}
-
 function flashWidget() {
+  const btn = document.getElementById('randy-btn');
+  if (!btn) return;
   const widget = document.getElementById('randy-widget');
-  if (!widget) return;
-  widget.classList.add('randy--flash');
-  setTimeout(() => widget.classList.remove('randy--flash'), 150);
+  if (widget) widget.classList.add('randy--flash');
+  setTimeout(() => { if (widget) widget.classList.remove('randy--flash'); }, 150);
 }
 
 function showError(msg) {
