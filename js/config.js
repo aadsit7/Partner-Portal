@@ -53,8 +53,8 @@ export const CONFIG = {
   // Allowed admin email(s) — only these Google accounts can log in as admin
   ADMIN_EMAILS: ['aadsit7@gmail.com', 'adsitvideo@gmail.com'],
 
-  // Anthropic API (for AI Assistant)
-  ANTHROPIC_API_KEY: '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',
+  // Anthropic API (for AI Assistant) — key stored in browser localStorage via runtime config
+  ANTHROPIC_API_KEY: '',
 
   // Sheet names (must match your Google Spreadsheet tab names)
   SHEET_PARTNERS: 'Partners',
