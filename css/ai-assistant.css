@@ -4,7 +4,7 @@
 
 .ai-assistant-container {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   grid-template-rows: auto 1fr auto;
   height: calc(100vh - var(--header-height, 56px) - 2rem);
   max-height: calc(100vh - var(--header-height, 56px) - 2rem);
@@ -17,7 +17,7 @@
 /* ── Grid Layout ────────────────────────────────────────────── */
 .ai-header { grid-column: 1 / -1; }
 .ai-chat-panel { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; overflow: hidden; }
-.ai-history-panel { grid-column: 2; grid-row: 2 / 4; border-left: 1px solid #e5e7eb; display: flex; flex-direction: column; overflow: hidden; background: #fafafe; }
+.ai-history-panel { display: none; }
 .ai-input-area { grid-column: 1; grid-row: 3; }
 
 /* ── Header ─────────────────────────────────────────────────── */
