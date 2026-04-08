@@ -211,18 +211,27 @@ function initRecognition() {
 
   const rec = new SR();
   rec.continuous = false;
-  rec.interimResults = false;
+  rec.interimResults = true;
   rec.lang = 'en-US';
 
   rec.onresult = (event) => {
     const result = event.results[event.results.length - 1];
-    if (!result.isFinal) return;
+    const transcript = result[0].transcript.trim();
+    if (!transcript) return;
+
+    // Show live interim transcription in chat
+    if (!result.isFinal) {
+      if (currentState === STATES.ACTIVE_LISTENING && !isRandySpeaking) {
+        updateInterimBubble(transcript);
+      }
+      return;
+    }
+
+    // Final result — clear interim bubble
+    removeInterimBubble();
 
     const confidence = result[0].confidence;
     if (confidence !== 0 && confidence < 0.6) return;
-
-    const transcript = result[0].transcript.trim();
-    if (!transcript) return;
 
     // During speaking: check for intentional interrupt vs echo
     if (isRandySpeaking) {
@@ -377,7 +386,7 @@ function isDeactivationPhrase(lower) {
 // ── Process User Input (voice-only) ───────────────────────────────
 async function processUserInput(text) {
   transition(STATES.PROCESSING);
-  renderMessage('user', text, true);
+  renderMessage('user', text);
   renderTypingIndicator();
 
   conversationHistory.push({ role: 'user', content: text });
@@ -397,7 +406,7 @@ async function processUserInput(text) {
 
     const { cleanText, actions } = parseActions(response);
     removeTypingIndicator();
-    renderMessage('assistant', cleanText, true);
+    const assistantMsg = renderMessage('assistant', cleanText);
 
     if (actions.length > 0) {
       pendingActions = [...actions];
@@ -421,7 +430,7 @@ async function processUserInput(text) {
     }
     console.error('Randy API error:', err);
     const errMsg = "Sorry buddy, I hit a snag. " + err.message;
-    renderMessage('assistant', errMsg, false);
+    renderMessage('assistant', errMsg);
     speakText(errMsg);
   } finally {
     isProcessing = false;
@@ -542,6 +551,7 @@ function speakText(text, onComplete) {
 
   utterance.onend = () => {
     // 1000ms buffer to let audio fully clear from mic/speakers
+    clearSpeakingHighlight();
     setTimeout(() => {
       lastSpokenText = currentSpokenText;
       lastSpeechEndTime = Date.now();
@@ -558,6 +568,7 @@ function speakText(text, onComplete) {
   };
 
   utterance.onerror = (e) => {
+    clearSpeakingHighlight();
     if (e.error === 'canceled') {
       lastSpokenText = currentSpokenText;
       lastSpeechEndTime = Date.now();
@@ -654,6 +665,34 @@ function cleanForSpeech(text) {
     .trim();
 }
 
+// ── Interim Transcription Bubble ───────────────────────────────────
+function updateInterimBubble(text) {
+  const chat = document.getElementById('randy-chat');
+  if (!chat) return;
+  let bubble = document.getElementById('randy-interim');
+  if (!bubble) {
+    const welcome = chat.querySelector('.randy-welcome');
+    if (welcome) welcome.remove();
+    const msg = document.createElement('div');
+    msg.className = 'randy-msg randy-msg--user randy-msg--interim';
+    msg.id = 'randy-interim';
+    msg.innerHTML = '<div class="randy-bubble"></div>';
+    chat.appendChild(msg);
+    bubble = msg;
+  }
+  bubble.querySelector('.randy-bubble').textContent = text;
+  chat.scrollTop = chat.scrollHeight;
+
+  // Also show in status text
+  const status = document.getElementById('randy-status');
+  if (status) status.textContent = text;
+}
+
+function removeInterimBubble() {
+  const el = document.getElementById('randy-interim');
+  if (el) el.remove();
+}
+
 // ── Chat Message Rendering ────────────────────────────────────────
 function renderMarkdown(text) {
   return text
@@ -668,13 +707,15 @@ function renderMarkdown(text) {
     .replace(/^/, '<p>').replace(/$/, '</p>');
 }
 
-function renderMessage(role, text, isVoice = false) {
+function renderMessage(role, text) {
   const chat = document.getElementById('randy-chat');
   if (!chat) return;
 
-  // Remove welcome if present
   const welcome = chat.querySelector('.randy-welcome');
   if (welcome) welcome.remove();
+
+  // Remove speaking highlight from previous messages
+  chat.querySelectorAll('.randy-msg--speaking').forEach(el => el.classList.remove('randy-msg--speaking'));
 
   const isUser = role === 'user';
   const msg = document.createElement('div');
@@ -686,6 +727,8 @@ function renderMessage(role, text, isVoice = false) {
     avatar.src = 'assets/randy-avatar.png';
     avatar.alt = 'Randy';
     msg.appendChild(avatar);
+    // Mark as currently being spoken
+    msg.classList.add('randy-msg--speaking');
   }
 
   const bubble = document.createElement('div');
@@ -696,16 +739,10 @@ function renderMessage(role, text, isVoice = false) {
     bubble.innerHTML = renderMarkdown(text);
   }
 
-  if (isVoice) {
-    const badge = document.createElement('span');
-    badge.className = 'randy-badge-voice';
-    badge.textContent = '\uD83C\uDF99';
-    bubble.appendChild(badge);
-  }
-
   msg.appendChild(bubble);
   chat.appendChild(msg);
   chat.scrollTop = chat.scrollHeight;
+  return msg;
 }
 
 function renderTypingIndicator() {
@@ -725,13 +762,18 @@ function removeTypingIndicator() {
   if (el) el.remove();
 }
 
+function clearSpeakingHighlight() {
+  const chat = document.getElementById('randy-chat');
+  if (chat) chat.querySelectorAll('.randy-msg--speaking').forEach(el => el.classList.remove('randy-msg--speaking'));
+}
+
 function showWelcome() {
   const chat = document.getElementById('randy-chat');
   if (!chat) return;
   chat.innerHTML = `
     <div class="randy-welcome">
       <img src="assets/randy-avatar.png" alt="Randy" class="randy-welcome__avatar">
-      <p class="randy-welcome__text">Hey, Randy here. Hit the green button or say "Hey Randy" to start.</p>
+      <p class="randy-welcome__text">Hey, Randy here. Tap the button or say "Hey Randy" to get started.</p>
     </div>
   `;
 }
@@ -816,12 +858,13 @@ function updateWidgetUI() {
 
   // Apply window state
   updateWindowUI();
-  updateControlButtons();
+  updateVoiceButton();
 }
 
 // ── Widget DOM ────────────────────────────────────────────────────
-const MIC_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
-const STOP_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
+const MIC_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
+const SPINNER_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2a10 10 0 0 1 10 10"/></svg>`;
+const SPEAKER_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>`;
 
 function createWidget() {
   const root = document.getElementById('randy-root');
@@ -849,11 +892,9 @@ function createWidget() {
 
         <div class="randy-window__chat" id="randy-chat"></div>
 
-        <div class="randy-window__status" id="randy-status" role="status" aria-live="polite">Paused</div>
-
-        <div class="randy-window__controls-bar">
-          <button class="randy-ctrl-go" id="randy-go" title="Start listening" aria-label="Start listening">${MIC_SVG}</button>
-          <button class="randy-ctrl-stop" id="randy-stop" title="Pause Randy" aria-label="Pause Randy">${STOP_SVG}</button>
+        <div class="randy-window__bottom">
+          <div class="randy-window__status" id="randy-status" role="status" aria-live="polite">Tap to talk</div>
+          <button class="randy-voice-btn randy-voice-btn--paused" id="randy-voice-btn" aria-label="Toggle voice">${MIC_SVG}</button>
         </div>
       </div>
 
@@ -868,7 +909,7 @@ function createWidget() {
       if (currentState === STATES.OFF) transition(STATES.PASSIVE);
       setWindowState('open');
       if (conversationHistory.length === 0) showWelcome();
-      updateControlButtons();
+      updateVoiceButton();
     } else {
       setWindowState('collapsed');
     }
@@ -876,14 +917,12 @@ function createWidget() {
 
   // Window controls
   document.getElementById('randy-minimize').addEventListener('click', () => {
-    // Minimize: keep conversation alive, just hide window
     setWindowState('collapsed');
   });
   document.getElementById('randy-fullscreen-btn').addEventListener('click', () => {
     setWindowState(windowState === 'fullscreen' ? 'open' : 'fullscreen');
   });
   document.getElementById('randy-close-window').addEventListener('click', () => {
-    // Close: save, then end conversation completely
     saveRandyConversation();
     if (recognition) { try { recognition.abort(); } catch { /* ok */ } }
     if (synth.speaking) synth.cancel();
@@ -891,6 +930,8 @@ function createWidget() {
     isRandySpeaking = false;
     currentSpokenText = '';
     currentSpeechOnComplete = null;
+    lastSpokenText = '';
+    lastSpeechEndTime = 0;
     conversationHistory = [];
     pendingActions = null;
     confirmAttempts = 0;
@@ -904,60 +945,98 @@ function createWidget() {
   });
   document.getElementById('randy-backdrop').addEventListener('click', () => setWindowState('open'));
 
-  // Green GO button — start listening
-  document.getElementById('randy-go').addEventListener('click', () => {
-    voiceEnabled = true;
-    if (currentState === STATES.OFF) transition(STATES.PASSIVE);
-    if (currentState === STATES.PASSIVE) transition(STATES.ACTIVE_LISTENING);
-    updateControlButtons();
-  });
+  // Single voice toggle button
+  document.getElementById('randy-voice-btn').addEventListener('click', handleVoiceBtnClick);
 
-  // Red STOP button — pause
-  document.getElementById('randy-stop').addEventListener('click', () => {
-    voiceEnabled = false;
-    if (synth.speaking) synth.cancel();
-    isRandySpeaking = false;
-    currentSpokenText = '';
-    if (abortController) { abortController.abort(); abortController = null; }
-    if ([STATES.PROCESSING, STATES.ACTIVE_LISTENING, STATES.SPEAKING, STATES.CONFIRMING].includes(currentState)) {
-      transition(STATES.PASSIVE, true);
-    }
-    updateControlButtons();
-  });
-
-  // Escape to exit fullscreen (stored for cleanup)
+  // Escape to exit fullscreen
   if (escapeHandler) document.removeEventListener('keydown', escapeHandler);
   escapeHandler = (e) => {
     if (e.key === 'Escape' && windowState === 'fullscreen') setWindowState('open');
   };
   document.addEventListener('keydown', escapeHandler);
 
-  // Dragging
   initDragging();
 }
 
-// ── Voice Control Buttons State ───────────────────────────────────
-function updateControlButtons() {
-  const goBtn = document.getElementById('randy-go');
-  const stopBtn = document.getElementById('randy-stop');
+// ── Single Voice Button Logic ─────────────────────────────────────
+function handleVoiceBtnClick() {
+  switch (currentState) {
+    case STATES.OFF:
+    case STATES.PASSIVE:
+      // Paused → start listening
+      voiceEnabled = true;
+      if (currentState === STATES.OFF) transition(STATES.PASSIVE);
+      transition(STATES.ACTIVE_LISTENING);
+      break;
+    case STATES.ACTIVE_LISTENING:
+      // Listening → pause
+      voiceEnabled = false;
+      transition(STATES.PASSIVE, true);
+      break;
+    case STATES.SPEAKING:
+      // Speaking → interrupt and listen
+      synth.cancel();
+      isRandySpeaking = false;
+      currentSpokenText = '';
+      currentSpeechOnComplete = null;
+      voiceEnabled = true;
+      currentState = STATES.ACTIVE_LISTENING;
+      updateWidgetUI();
+      startRecognition();
+      break;
+    case STATES.PROCESSING:
+      // Processing → do nothing (brief moment)
+      break;
+    case STATES.CONFIRMING:
+      // Confirming → pause
+      voiceEnabled = false;
+      pendingActions = null;
+      if (confirmTimeout) { clearTimeout(confirmTimeout); confirmTimeout = null; }
+      transition(STATES.PASSIVE, true);
+      break;
+  }
+  updateVoiceButton();
+}
+
+function updateVoiceButton() {
+  const btn = document.getElementById('randy-voice-btn');
   const status = document.getElementById('randy-status');
-  if (!goBtn || !stopBtn || !status) return;
+  if (!btn || !status) return;
 
-  const isActive = [STATES.ACTIVE_LISTENING, STATES.PROCESSING, STATES.SPEAKING, STATES.CONFIRMING].includes(currentState);
+  // Reset classes
+  btn.className = 'randy-voice-btn';
 
-  goBtn.classList.toggle('randy-ctrl-go--active', isActive);
-  goBtn.classList.toggle('randy-ctrl-go--dimmed', !isActive && currentState !== STATES.OFF);
-  stopBtn.classList.toggle('randy-ctrl-stop--active', !isActive && currentState !== STATES.OFF);
-
-  const labels = {
-    ACTIVE_LISTENING: 'Randy is listening...',
-    PROCESSING: 'Thinking...',
-    SPEAKING: 'Randy is speaking...',
-    CONFIRMING: 'Yes or no?',
-    PASSIVE: 'Paused',
-    OFF: 'Paused',
-  };
-  status.textContent = labels[currentState] || 'Paused';
+  switch (currentState) {
+    case STATES.OFF:
+    case STATES.PASSIVE:
+      btn.classList.add('randy-voice-btn--paused');
+      btn.innerHTML = MIC_SVG;
+      status.textContent = 'Tap to talk';
+      break;
+    case STATES.ACTIVE_LISTENING:
+      btn.classList.add('randy-voice-btn--listening');
+      btn.innerHTML = MIC_SVG;
+      // Status shows live transcript (updated by updateInterimBubble) or default
+      if (!status.textContent || status.textContent === 'Tap to talk' || status.textContent === 'Thinking...' || status.textContent === 'Randy is speaking...') {
+        status.textContent = 'Listening...';
+      }
+      break;
+    case STATES.PROCESSING:
+      btn.classList.add('randy-voice-btn--processing');
+      btn.innerHTML = SPINNER_SVG;
+      status.textContent = 'Thinking...';
+      break;
+    case STATES.SPEAKING:
+      btn.classList.add('randy-voice-btn--speaking');
+      btn.innerHTML = SPEAKER_SVG;
+      status.textContent = 'Randy is speaking...';
+      break;
+    case STATES.CONFIRMING:
+      btn.classList.add('randy-voice-btn--listening');
+      btn.innerHTML = MIC_SVG;
+      status.textContent = 'Yes or no?';
+      break;
+  }
 }
 
 // ── Dragging ──────────────────────────────────────────────────────
