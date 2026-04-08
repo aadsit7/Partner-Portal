@@ -31,6 +31,14 @@ export async function render(container) {
     value: hasApiKey ? apiKey : '',
   });
 
+  // --- AI Key input (pre-filled, stored in localStorage) ---
+  const aiKeyInput = el('input', {
+    class: 'form-input',
+    type: 'text',
+    placeholder: 'Paste your Anthropic API key here',
+    value: getRuntimeConfig('ANTHROPIC_API_KEY') || '',
+  });
+
   // --- Spreadsheet ID display ---
   const sheetIdDisplay = el('input', {
     class: 'form-input',
@@ -86,6 +94,28 @@ export async function render(container) {
         el('div', { class: 'form-hint' },
           'Optional if logged in with Google SSO. Required for unauthenticated access. ',
           'Create one at console.cloud.google.com > Credentials.'
+        )
+      ),
+
+      el('div', { class: 'form-group' },
+        el('label', { class: 'form-label' }, 'AI Assistant API Key'),
+        el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
+          aiKeyInput,
+          el('button', {
+            class: 'btn btn--secondary',
+            title: 'Copy to clipboard',
+            style: { padding: '8px 12px', flexShrink: '0' },
+            onClick: () => {
+              const val = aiKeyInput.value.trim();
+              if (val) {
+                navigator.clipboard.writeText(val).then(() => showToast('API key copied to clipboard', 'success'));
+              }
+            }
+          }, '📋')
+        ),
+        el('div', { class: 'form-hint' },
+          'Anthropic API key for the AI Assistant tab. Click 📋 to copy, then paste into the AI Assistant\'s 🔑 prompt. ',
+          'Get a key at console.anthropic.com > Settings > API keys.'
         )
       ),
 
@@ -165,6 +195,9 @@ export async function render(container) {
 
     if (newId) setRuntimeConfig('SPREADSHEET_ID', newId);
     if (newKey) setRuntimeConfig('API_KEY', newKey);
+
+    const newAiKey = aiKeyInput.value.trim();
+    if (newAiKey) setRuntimeConfig('ANTHROPIC_API_KEY', newAiKey);
 
     showToast('Configuration saved', 'success');
     checkStatus();
