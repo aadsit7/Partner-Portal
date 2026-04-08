@@ -280,7 +280,7 @@ function renderHistoryList(filter = '') {
 
 // ── Main Render ────────────────────────────────────────────────────
 export function renderAdminAIAssistant(container) {
-  setTopbarTitle('AI Assistant');
+  setTopbarTitle('Randy');
 
   const view = container || document.getElementById('view-container') || document.querySelector('main');
   if (!view) return;
@@ -297,7 +297,7 @@ export function renderAdminAIAssistant(container) {
         <div class="ai-header-left">
           <div class="ai-header-icon">⚡</div>
           <div>
-            <h2 class="ai-header-title">Portal AI Assistant <span id="ai-save-indicator" class="ai-save-indicator"></span></h2>
+            <h2 class="ai-header-title">Randy <span id="ai-save-indicator" class="ai-save-indicator"></span></h2>
             <p class="ai-header-sub">Connected to your Partner Portal database via Google Sheets</p>
           </div>
         </div>

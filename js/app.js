@@ -106,7 +106,7 @@ addRoute('/admin/events', {
 });
 
 addRoute('/admin/ai-assistant', {
-  title: 'AI Assistant',
+  title: 'Randy',
   render: async (container) => {
     setupAppShell();
     renderAdminAIAssistant(container);
