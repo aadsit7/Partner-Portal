@@ -11,6 +11,9 @@ export const SHEET_HEADERS = {
   Partners: ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status', 'hq_location'],
   Opportunities: ['opportunity_id', 'partner_id', 'deal_name', 'customer_name', 'deal_value', 'status', 'stage', 'expected_close', 'description', 'created_at', 'updated_at', 'notes', 'lead_source'],
   Events: ['event_id', 'title', 'description', 'event_date', 'end_date', 'event_type', 'location', 'url', 'created_by', 'created_at', 'status', 'partner_id', 'checklist'],
+  Transcripts: ['transcript_id', 'partner_id', 'partner_name', 'conversation_date', 'transcript_text', 'created_at'],
+  Meeting_Index: ['meeting_id', 'transcript_id', 'partner_id', 'partner_name', 'meeting_date', 'meeting_title', 'attendees', 'summary', 'key_decisions', 'topics_discussed'],
+  AI_Conversations: ['conversation_id', 'user_id', 'started_at', 'title', 'messages', 'status'],
 };
 export const BLOCKED_FIELDS = ['password_hash', 'is_admin'];
 
@@ -48,8 +51,8 @@ export async function executeAction(action) {
 
   const sheetData = await loadSheetData();
   const headers = SHEET_HEADERS[action.sheet];
-  const sheetKey = { Partners: 'partners', Opportunities: 'opportunities', Events: 'events' }[action.sheet];
-  const rows = sheetData[sheetKey] || [];
+  const sheetKey = { Partners: 'partners', Opportunities: 'opportunities', Events: 'events', Transcripts: 'fullTranscripts', Meeting_Index: 'meetingIndex' }[action.sheet];
+  const rows = (sheetKey && sheetData[sheetKey]) || [];
 
   console.log(`[AI Action] ${new Date().toISOString()} — ${action.type} on ${action.sheet}`, action);
 
