@@ -3,235 +3,14 @@
 // ============================================
 // Reads Google Sheets via sheets.js, supports voice input
 
-import { CONFIG, getRuntimeConfig, setRuntimeConfig } from '../config.js';
-import { readSheetAsObjects } from '../sheets.js';
+import { getRuntimeConfig, setRuntimeConfig } from '../config.js';
 import { setTopbarTitle } from '../components/sidebar.js';
+import { loadSheetData, callClaude } from '../utils/ai.js';
 
 // ── State ──────────────────────────────────────────────────────────
 let conversationHistory = [];
 let isStreaming = false;
 let abortController = null;
-let cachedSheetData = null;
-let cacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes — re-read sheets after this
-
-// ── System Prompt ──────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are an AI assistant for Recast Software's Partner Portal. You answer questions about partners, deals, events, meetings, and partnership activity using the database context provided in each message.
-
-IMPORTANT: The full database contents are included in each message under DATA CONTEXT. Use ONLY this data to answer questions. Do not make up information.
-
-DATABASE SCHEMA & FIELD NOTES:
-
-PARTNERS — Master list of partner organizations
-- partner_id (PK), display_name, partner_type, tier, region, status (active/inactive), hq_location
-- password_hash → NEVER SURFACE THIS FIELD
-- Default: only show active partners unless asked
-
-OPPORTUNITIES — Deals and pipeline
-- opportunity_id (PK), partner_id (FK→Partners), deal_name, customer_name, deal_value (USD), status (In Progress/Won/Lost), stage (Qualified/Proposal/Negotiation/Closed Won/Closed Lost), expected_close
-- description → LONG field with full meeting recaps, executive summaries, technical assessments
-- notes → JSON array string, "[]" means empty
-
-EVENTS — Marketing events, webinars, roundtables
-- event_id (PK), title, description, event_date, end_date, event_type, location, status, partner_id (FK→Partners)
-
-MEETING_INDEX — Structured index of individual meetings extracted from Transcripts
-- meeting_id (PK), transcript_id (FK→Transcripts), partner_id, partner_name, meeting_date, meeting_title, attendees, summary, key_decisions, topics_discussed
-- Use this FIRST for meeting questions — it's structured and fast
-
-TRANSCRIPTS — Raw meeting transcripts (LARGE — only included when relevant)
-- transcript_id (PK), partner_id, partner_name, conversation_date, transcript_text (5,000-15,000+ words each)
-- Only search these if Meeting_Index doesn't have enough detail
-
-QUERY ROUTING:
-1. Partner info → PARTNERS
-2. Deal/pipeline/revenue → OPPORTUNITIES (join to PARTNERS for names via partner_id)
-3. Events → EVENTS
-4. Meeting/conversation questions → MEETING_INDEX first, then TRANSCRIPTS if needed
-5. People/contacts → MEETING_INDEX.attendees first, then TRANSCRIPTS
-6. Technical environment → OPPORTUNITIES.description
-7. Action items/next steps → MEETING_INDEX.key_decisions
-8. "Status update on X" → sweep PARTNERS + OPPORTUNITIES + MEETING_INDEX
-
-DATA RULES:
-- All monetary values are USD — always label ($XXX,XXX)
-- Partial name matching OK ("Rubix" → "GetRubix")
-- Default to most recent meeting when multiple exist
-- If not confident, say what you checked and what's missing
-- Keep responses concise unless asked for detail
-- Include meeting dates and attendees when citing meetings`;
-
-// ── Sheet Data Loading ─────────────────────────────────────────────
-// Reads all sheets via the existing sheets.js Google Sheets integration
-// Uses a 5-min cache so we don't re-fetch on every message
-
-async function safeRead(sheetName) {
-  try {
-    return await readSheetAsObjects(sheetName);
-  } catch (err) {
-    console.warn(`Sheet "${sheetName}" not available:`, err.message);
-    return [];
-  }
-}
-
-async function loadSheetData(forceRefresh = false) {
-  const now = Date.now();
-  if (!forceRefresh && cachedSheetData && (now - cacheTimestamp) < CACHE_TTL) {
-    return cachedSheetData;
-  }
-
-  const [partners, opportunities, events, meetingIndex, transcripts] = await Promise.all([
-    safeRead(CONFIG.SHEET_PARTNERS),
-    safeRead(CONFIG.SHEET_OPPORTUNITIES),
-    safeRead(CONFIG.SHEET_EVENTS),
-    safeRead(CONFIG.SHEET_MEETING_INDEX),
-    safeRead(CONFIG.SHEET_TRANSCRIPTS)
-  ]);
-
-  if (partners.length === 0) {
-    throw new Error('Could not read Google Sheets. Check your connection on the Setup page.');
-  }
-
-  // Sanitize partners — strip password hashes before sending to Claude
-  const sanitizedPartners = partners.map(p => {
-    const { password_hash, is_admin, ...safe } = p;
-    return safe;
-  });
-
-  // For transcripts, send only metadata + truncated preview to stay within token limits
-  // Full transcript text is sent only when the user asks about a specific partner
-  const transcriptIndex = transcripts.map(t => ({
-    transcript_id: t.transcript_id,
-    partner_id: t.partner_id,
-    partner_name: t.partner_name,
-    conversation_date: t.conversation_date,
-    preview: (t.transcript_text || '').substring(0, 300) + '...'
-  }));
-
-  cachedSheetData = {
-    partners: sanitizedPartners,
-    opportunities: opportunities,
-    events: events,
-    meetingIndex: meetingIndex,
-    transcriptIndex: transcriptIndex,
-    fullTranscripts: transcripts // kept locally for targeted lookups
-  };
-  cacheTimestamp = now;
-  return cachedSheetData;
-}
-
-// ── Build Context for API Call ─────────────────────────────────────
-// Smart context: always sends structured data, only sends full transcripts
-// when the question seems to need them
-
-function buildDataContext(data, userMessage) {
-  const msg = userMessage.toLowerCase();
-
-  // Determine if we need full transcript text
-  // Trigger on: specific partner deep-dive, exact quotes, "full history", transcript-related keywords
-  let transcriptContext = '';
-  const needsTranscripts = /transcript|full detail|full history|exact|verbatim|what did .+ say|tell me everything|deep dive|email|contract|agreement/i.test(userMessage);
-
-  if (needsTranscripts) {
-    // Find which partner they're asking about and include only those transcripts
-    const partnerMatch = data.partners.find(p =>
-      msg.includes(p.display_name.toLowerCase()) ||
-      msg.includes(p.display_name.toLowerCase().replace(/\s+/g, ''))
-    );
-
-    if (partnerMatch) {
-      const relevantTranscripts = data.fullTranscripts
-        .filter(t => String(t.partner_id) === String(partnerMatch.partner_id))
-        .map(t => ({
-          transcript_id: t.transcript_id,
-          partner_name: t.partner_name,
-          conversation_date: t.conversation_date,
-          transcript_text: (t.transcript_text || '').substring(0, 8000) // Cap at ~8K chars per transcript
-        }));
-
-      if (relevantTranscripts.length > 0) {
-        transcriptContext = `\n\nFULL TRANSCRIPTS (for ${partnerMatch.display_name}):\n${JSON.stringify(relevantTranscripts, null, 2)}`;
-      }
-    } else {
-      // No specific partner identified — send previews only
-      transcriptContext = `\n\nTRANSCRIPT PREVIEWS (ask about a specific partner for full text):\n${JSON.stringify(data.transcriptIndex, null, 2)}`;
-    }
-  } else {
-    transcriptContext = `\n\nTRANSCRIPT PREVIEWS (${data.transcriptIndex.length} transcripts available — ask about a specific partner for full text):\n${JSON.stringify(data.transcriptIndex, null, 2)}`;
-  }
-
-  // Build the context block
-  // Opportunities.description can be huge — truncate for general queries
-  const needsFullDescriptions = /environment|platform|citrix|intune|sccm|avd|technical|architecture|current state|migration/i.test(userMessage);
-
-  const opps = data.opportunities.map(o => {
-    if (needsFullDescriptions) {
-      return { ...o, description: (o.description || '').substring(0, 4000) };
-    }
-    return { ...o, description: (o.description || '').substring(0, 500) + '...' };
-  });
-
-  return `DATA CONTEXT:
-
-PARTNERS (${data.partners.length} records):
-${JSON.stringify(data.partners, null, 2)}
-
-OPPORTUNITIES (${opps.length} records):
-${JSON.stringify(opps, null, 2)}
-
-EVENTS (${data.events.length} records):
-${JSON.stringify(data.events, null, 2)}
-
-MEETING_INDEX (${data.meetingIndex.length} records):
-${JSON.stringify(data.meetingIndex, null, 2)}${transcriptContext}`;
-}
-
-// ── API Call ────────────────────────────────────────────────────────
-async function callClaude(messages, sheetData, userMessage) {
-  const apiKey = getRuntimeConfig('ANTHROPIC_API_KEY');
-  if (!apiKey) {
-    throw new Error('API key not set. Click the 🔑 icon above, or copy the key from the Setup page and paste it here.');
-  }
-
-  abortController = new AbortController();
-
-  // Inject sheet data into the latest user message
-  const dataContext = buildDataContext(sheetData, userMessage);
-  const augmentedMessages = messages.map((m, i) => {
-    if (i === messages.length - 1 && m.role === 'user') {
-      return { ...m, content: `${m.content}\n\n---\n${dataContext}` };
-    }
-    return m;
-  });
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      messages: augmentedMessages
-    }),
-    signal: abortController.signal
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error?.message || `API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  return data.content
-    .filter(block => block.type === 'text')
-    .map(block => block.text)
-    .join('\n');
-}
 
 // ── Voice Input (Web Speech API) ───────────────────────────────────
 let recognition = null;
@@ -276,7 +55,6 @@ function initVoice() {
     const input = document.getElementById('ai-input');
     input.style.opacity = '1';
 
-    // Auto-send if we got a final result
     if (input.value.trim()) {
       handleSend();
     }
@@ -329,7 +107,6 @@ function updateMicButton(active) {
 }
 
 function showToastMessage(message, type = 'info') {
-  // Use portal's toast if available, otherwise console
   if (typeof window.showToast === 'function') {
     window.showToast(message, type);
   } else {
@@ -385,6 +162,9 @@ function renderMessage(role, text, container) {
   return bubble;
 }
 
+// Expose renderMessage globally so voice widget can add transcript entries
+window._aiChatRenderMessage = renderMessage;
+
 function renderLoading(container) {
   const wrapper = document.createElement('div');
   wrapper.className = 'chat-message chat-assistant';
@@ -415,9 +195,6 @@ function removeLoading() {
   if (el) el.remove();
 }
 
-// ── Suggested Questions ────────────────────────────────────────────
-const SUGGESTED_QUESTIONS = [];
-
 // ── Main Render ────────────────────────────────────────────────────
 export function renderAdminAIAssistant(container) {
   setTopbarTitle('AI Assistant');
@@ -429,8 +206,6 @@ export function renderAdminAIAssistant(container) {
   if (!view) return;
 
   conversationHistory = [];
-  cachedSheetData = null;
-  cacheTimestamp = 0;
 
   const hasSpeech = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 
@@ -490,19 +265,6 @@ export function renderAdminAIAssistant(container) {
       </div>
     </div>
   `;
-
-  // Render suggested questions
-  const suggestionsEl = document.getElementById('ai-suggestions');
-  SUGGESTED_QUESTIONS.forEach(q => {
-    const chip = document.createElement('button');
-    chip.className = 'ai-suggestion-chip';
-    chip.textContent = q;
-    chip.addEventListener('click', () => {
-      document.getElementById('ai-input').value = q;
-      handleSend();
-    });
-    suggestionsEl.appendChild(chip);
-  });
 
   // Input handlers
   const input = document.getElementById('ai-input');
@@ -569,7 +331,6 @@ export function renderAdminAIAssistant(container) {
 }
 
 function handleKeyShortcut(e) {
-  // M key toggles mic when not typing in any input
   if (e.key === 'm' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
     e.preventDefault();
     toggleVoice();
@@ -582,33 +343,27 @@ async function handleSend() {
   const text = input.value.trim();
   if (!text || isStreaming) return;
 
-  // Remove welcome on first message
   const welcome = chatArea.querySelector('.ai-welcome');
   if (welcome) welcome.remove();
 
-  // Show user message
   renderMessage('user', text, chatArea);
   input.value = '';
   input.style.height = 'auto';
   document.getElementById('ai-send').disabled = true;
 
-  // Add to history
   conversationHistory.push({ role: 'user', content: text });
 
-  // Show loading
   renderLoading(chatArea);
   isStreaming = true;
 
   try {
-    // Load sheet data (uses cache if fresh)
     const sheetData = await loadSheetData();
 
-    // Update loading text
     const loadingText = document.querySelector('.chat-loading-text');
     if (loadingText) loadingText.textContent = 'Thinking...';
 
-    // Call Claude with sheet context
-    const response = await callClaude(conversationHistory, sheetData, text);
+    abortController = new AbortController();
+    const response = await callClaude(conversationHistory, sheetData, text, abortController.signal);
     removeLoading();
     renderMessage('assistant', response, chatArea);
     conversationHistory.push({ role: 'assistant', content: response });
