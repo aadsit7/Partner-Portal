@@ -55,7 +55,7 @@ let selectedVoice = null;
 let conversationHistory = [];
 let abortController = null;
 let confirmTimeout = null;
-let pendingAction = null;
+let pendingActions = null;
 let confirmAttempts = 0;
 let mounted = false;
 
@@ -138,7 +138,7 @@ function stopAll() {
   if (confirmTimeout) { clearTimeout(confirmTimeout); confirmTimeout = null; }
   isRandySpeaking = false;
   conversationHistory = [];
-  pendingAction = null;
+  pendingActions = null;
   confirmAttempts = 0;
 }
 
@@ -309,10 +309,10 @@ async function processUserInput(text) {
     renderInChatIfVisible('assistant', cleanText);
 
     if (actions.length > 0) {
-      pendingAction = actions[0];
+      pendingActions = [...actions];
       confirmAttempts = 0;
-      const summary = pendingAction.summary || 'make that change';
-      speakText(`${cleanText}. ${summary}. Should I go ahead with that?`, () => {
+      const summaries = actions.map(a => a.summary).filter(Boolean).join(', and ') || 'make that change';
+      speakText(`${cleanText}. I'll ${summaries}. Should I go ahead?`, () => {
         transition(STATES.CONFIRMING);
       });
     } else {
@@ -337,13 +337,13 @@ function handleConfirmation(lower) {
 
   if (confirmTimeout) { clearTimeout(confirmTimeout); confirmTimeout = null; }
 
-  if (isConfirm && pendingAction) {
+  if (isConfirm && pendingActions) {
     executeConfirmedAction();
     return;
   }
 
   if (isDeny) {
-    pendingAction = null;
+    pendingActions = null;
     speakText("OK, skipping that one.", () => {
       transition(STATES.ACTIVE_LISTENING, true);
     });
@@ -353,7 +353,7 @@ function handleConfirmation(lower) {
   // Unclear response
   confirmAttempts++;
   if (confirmAttempts >= 2) {
-    pendingAction = null;
+    pendingActions = null;
     speakText("I'll leave it for now, you can do it in the chat.", () => {
       transition(STATES.ACTIVE_LISTENING, true);
     });
@@ -366,37 +366,39 @@ function handleConfirmation(lower) {
 }
 
 async function executeConfirmedAction() {
-  const action = pendingAction;
-  pendingAction = null;
+  const actions = pendingActions;
+  pendingActions = null;
 
-  // Safety checks in code
-  if (action.changes) {
-    if ('password_hash' in action.changes || 'is_admin' in action.changes) {
+  // Safety checks on all actions before executing any
+  for (const action of actions) {
+    if (action.changes && ('password_hash' in action.changes || 'is_admin' in action.changes)) {
       speakText("Whoa, can't touch that field. Security thing.", () => {
         transition(STATES.ACTIVE_LISTENING, true);
       });
       return;
     }
-  }
-  if (action.type === 'delete' && action.sheet === 'Partners') {
-    speakText("Can't delete partners, only status changes. Portal rules.", () => {
-      transition(STATES.ACTIVE_LISTENING, true);
-    });
-    return;
-  }
-  if (action.row_match && Object.keys(action.row_match).length === 0 && action.type !== 'create') {
-    speakText("I don't have enough info to find that row. Try being more specific.", () => {
-      transition(STATES.ACTIVE_LISTENING, true);
-    });
-    return;
+    if (action.type === 'delete' && action.sheet === 'Partners') {
+      speakText("Can't delete partners, only status changes. Portal rules.", () => {
+        transition(STATES.ACTIVE_LISTENING, true);
+      });
+      return;
+    }
+    if (action.row_match && Object.keys(action.row_match).length === 0 && action.type !== 'create') {
+      speakText("I don't have enough info to find that row. Try being more specific.", () => {
+        transition(STATES.ACTIVE_LISTENING, true);
+      });
+      return;
+    }
   }
 
   transition(STATES.PROCESSING, true);
 
   try {
-    await executeAction(action);
-    console.log(`[Randy Write] ${new Date().toISOString()}`, action);
-    speakText("Done! Got it updated.");
+    for (const action of actions) {
+      await executeAction(action);
+      console.log(`[Randy Write] ${new Date().toISOString()}`, action);
+    }
+    speakText("Done! Got it all updated.");
   } catch (err) {
     console.error('Randy write error:', err);
     speakText("Hmm, that didn't work. " + err.message);
@@ -407,7 +409,7 @@ function startConfirmTimeout() {
   if (confirmTimeout) clearTimeout(confirmTimeout);
   confirmTimeout = setTimeout(() => {
     if (currentState === STATES.CONFIRMING) {
-      pendingAction = null;
+      pendingActions = null;
       speakText("OK, I'll leave it for now.", () => {
         transition(STATES.ACTIVE_LISTENING, true);
       });
