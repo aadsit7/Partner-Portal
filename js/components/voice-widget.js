@@ -286,6 +286,14 @@ export function mountVoiceWidget() {
           <span></span><span></span><span></span>
         </div>
         <span class="voice-widget__label">Listening...</span>
+        <div class="voice-widget__input-wrap" hidden>
+          <input type="text" class="voice-widget__input" placeholder="Type a message..." maxlength="500">
+        </div>
+        <button class="voice-widget__edit" title="Type a message">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+          </svg>
+        </button>
         <button class="voice-widget__stop" title="Stop voice assistant">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"></rect></svg>
         </button>
@@ -293,8 +301,51 @@ export function mountVoiceWidget() {
     </div>
   `;
 
-  // Click pill or stop button to stop everything
-  root.querySelector('.voice-widget__pill').addEventListener('click', stopEverything);
+  // Stop button — only this button stops everything
+  root.querySelector('.voice-widget__stop').addEventListener('click', (e) => {
+    e.stopPropagation();
+    stopEverything();
+  });
+
+  // Edit button — toggle text input
+  const editBtn = root.querySelector('.voice-widget__edit');
+  const inputWrap = root.querySelector('.voice-widget__input-wrap');
+  const textInput = root.querySelector('.voice-widget__input');
+
+  editBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isVisible = !inputWrap.hidden;
+    inputWrap.hidden = isVisible;
+    if (!isVisible) {
+      // Pause recognition while typing
+      if (recognition && voiceState === 'listening') {
+        try { recognition.abort(); } catch { /* ok */ }
+      }
+      textInput.focus();
+    } else {
+      // Resume listening if we were in voice mode
+      if (!stopping && voiceState === 'listening') startListening();
+    }
+  });
+
+  textInput.addEventListener('click', (e) => e.stopPropagation());
+
+  textInput.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      const text = textInput.value.trim();
+      if (!text) return;
+      textInput.value = '';
+      inputWrap.hidden = true;
+      setState('processing');
+      handleVoiceInput(text);
+    }
+    if (e.key === 'Escape') {
+      textInput.value = '';
+      inputWrap.hidden = true;
+      if (!stopping && voiceState !== 'processing' && voiceState !== 'speaking') startListening();
+    }
+  });
 
   // Load voices (some browsers load them async)
   if (synth.onvoiceschanged !== undefined) {

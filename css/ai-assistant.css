@@ -726,6 +726,49 @@
   background: rgba(255, 255, 255, 0.25);
 }
 
+/* Edit button */
+.voice-widget__edit {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 150ms;
+  flex-shrink: 0;
+}
+.voice-widget__edit:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Text input in voice pill */
+.voice-widget__input-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.voice-widget__input {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
+  outline: none;
+}
+.voice-widget__input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+.voice-widget__input:focus {
+  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.18);
+}
+
 /* Listening state — pulsing red mic */
 .voice-widget--listening .voice-widget__mic {
   color: #ef4444;
