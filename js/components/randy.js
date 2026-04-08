@@ -62,7 +62,6 @@ let currentSpeechOnComplete = null;
 let windowState = 'collapsed'; // 'collapsed' | 'open' | 'fullscreen'
 let voiceEnabled = false;
 let isProcessing = false;
-let savedWindowPos = null;
 let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
 let currentConvId = null;
@@ -180,8 +179,6 @@ function stopAll() {
   confirmAttempts = 0;
   voiceEnabled = false;
   isDragging = false;
-  const micBtn = document.getElementById('randy-mic-btn');
-  if (micBtn) micBtn.classList.remove('randy-window__mic-btn--active');
 }
 
 // ── Speech Recognition ────────────────────────────────────────────
@@ -318,7 +315,7 @@ function handleTranscript(transcript) {
 
     if (afterWake.length > 2) {
       speakText("Oh hey!", () => {
-        processUserInput(afterWake, true);
+        processUserInput(afterWake);
       });
     } else {
       speakText("Oh hey! Randy here. What do you need, buddy?");
@@ -335,7 +332,7 @@ function handleTranscript(transcript) {
       return;
     }
 
-    processUserInput(transcript, true);
+    processUserInput(transcript);
     return;
   }
 
@@ -349,10 +346,10 @@ function isDeactivationPhrase(lower) {
   return DEACTIVATION_PHRASES.some(phrase => lower.includes(phrase));
 }
 
-// ── Process User Input (voice or text) ────────────────────────────
-async function processUserInput(text, fromVoice = true) {
+// ── Process User Input (voice-only) ───────────────────────────────
+async function processUserInput(text) {
   transition(STATES.PROCESSING);
-  renderMessage('user', text, fromVoice);
+  renderMessage('user', text, true);
   renderTypingIndicator();
 
   conversationHistory.push({ role: 'user', content: text });
@@ -372,28 +369,17 @@ async function processUserInput(text, fromVoice = true) {
 
     const { cleanText, actions } = parseActions(response);
     removeTypingIndicator();
-    renderMessage('assistant', cleanText, fromVoice);
+    renderMessage('assistant', cleanText, true);
 
     if (actions.length > 0) {
       pendingActions = [...actions];
       confirmAttempts = 0;
       const summaries = actions.map(a => a.summary).filter(Boolean).join(', and ') || 'make that change';
-
-      if (voiceEnabled && fromVoice) {
-        speakText(`${cleanText}. I'll ${summaries}. Should I go ahead?`, () => {
-          transition(STATES.CONFIRMING);
-        });
-      } else {
-        // Text mode: render confirmation cards in chat
-        actions.forEach(a => renderActionCard(a));
-        transition(STATES.ACTIVE_LISTENING, true);
-      }
+      speakText(`${cleanText}. I'll ${summaries}. Should I go ahead?`, () => {
+        transition(STATES.CONFIRMING);
+      });
     } else {
-      if (voiceEnabled && fromVoice) {
-        speakText(cleanText);
-      } else {
-        transition(STATES.ACTIVE_LISTENING, true);
-      }
+      speakText(cleanText);
     }
 
     saveRandyConversation();
@@ -408,8 +394,7 @@ async function processUserInput(text, fromVoice = true) {
     console.error('Randy API error:', err);
     const errMsg = "Sorry buddy, I hit a snag. " + err.message;
     renderMessage('assistant', errMsg, false);
-    if (voiceEnabled && fromVoice) speakText(errMsg);
-    else transition(STATES.PASSIVE, true);
+    speakText(errMsg);
   } finally {
     isProcessing = false;
   }
@@ -707,60 +692,15 @@ function removeTypingIndicator() {
   if (el) el.remove();
 }
 
-function renderActionCard(action) {
-  const chat = document.getElementById('randy-chat');
-  if (!chat) return;
-
-  const card = document.createElement('div');
-  card.className = 'randy-action-card';
-  card.innerHTML = `
-    <div class="randy-action-card__summary">${(action.summary || '').replace(/</g, '&lt;')}</div>
-    <div class="randy-action-card__buttons">
-      <button class="randy-action-card__confirm">Confirm</button>
-      <button class="randy-action-card__cancel">Cancel</button>
-    </div>
-  `;
-
-  const btns = card.querySelector('.randy-action-card__buttons');
-  card.querySelector('.randy-action-card__confirm').addEventListener('click', async () => {
-    btns.innerHTML = '<span class="randy-action-card__status">Applying...</span>';
-    try {
-      await executeAction(action);
-      invalidateSheetCache();
-      btns.innerHTML = '<span class="randy-action-card__status">Done!</span>';
-    } catch (err) {
-      btns.innerHTML = `<span class="randy-action-card__status randy-action-card__status--cancelled">Failed: ${err.message}</span>`;
-    }
-  });
-
-  card.querySelector('.randy-action-card__cancel').addEventListener('click', () => {
-    btns.innerHTML = '<span class="randy-action-card__status randy-action-card__status--cancelled">Cancelled</span>';
-  });
-
-  chat.appendChild(card);
-  chat.scrollTop = chat.scrollHeight;
-}
-
 function showWelcome() {
   const chat = document.getElementById('randy-chat');
   if (!chat) return;
   chat.innerHTML = `
     <div class="randy-welcome">
       <img src="assets/randy-avatar.png" alt="Randy" class="randy-welcome__avatar">
-      <p class="randy-welcome__text">Hey, Randy here. Type or talk — I'm ready.</p>
-      <div class="randy-welcome__chips">
-        <button class="randy-welcome__chip">What's the pipeline?</button>
-        <button class="randy-welcome__chip">Any upcoming events?</button>
-        <button class="randy-welcome__chip">Partner summary</button>
-        <button class="randy-welcome__chip">Log a call</button>
-      </div>
+      <p class="randy-welcome__text">Hey, Randy here. Hit the green button or say "Hey Randy" to start.</p>
     </div>
   `;
-  chat.querySelectorAll('.randy-welcome__chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      processUserInput(chip.textContent, voiceEnabled);
-    });
-  });
 }
 
 // ── Conversation Persistence ──────────────────────────────────────
@@ -795,49 +735,6 @@ async function saveRandyConversation() {
   }
 }
 
-// ── Text Input Handling ───────────────────────────────────────────
-async function handleTextSend() {
-  const input = document.getElementById('randy-text-input');
-  if (!input) return;
-  const text = input.value.trim();
-  if (!text || isProcessing) return;
-  isProcessing = true; // Guard immediately to prevent race with voice
-
-  input.value = '';
-  input.style.height = 'auto';
-  document.getElementById('randy-send-btn').disabled = true;
-
-  // Ensure voice state is at least ACTIVE_LISTENING for processing
-  if (currentState === STATES.OFF || currentState === STATES.PASSIVE) {
-    transition(STATES.PASSIVE, true);
-    transition(STATES.ACTIVE_LISTENING);
-  }
-
-  await processUserInput(text, false);
-}
-
-function toggleVoice() {
-  voiceEnabled = !voiceEnabled;
-  const micBtn = document.getElementById('randy-mic-btn');
-  if (micBtn) micBtn.classList.toggle('randy-window__mic-btn--active', voiceEnabled);
-
-  if (voiceEnabled) {
-    if (currentState === STATES.OFF) transition(STATES.PASSIVE);
-    if (currentState === STATES.PASSIVE) transition(STATES.ACTIVE_LISTENING);
-    updateVoiceBar();
-  } else {
-    // Stop voice, return to passive listening
-    if (synth.speaking) synth.cancel();
-    isRandySpeaking = false;
-    currentSpokenText = '';
-    if ([STATES.PROCESSING, STATES.ACTIVE_LISTENING, STATES.SPEAKING, STATES.CONFIRMING].includes(currentState)) {
-      if (abortController) { abortController.abort(); abortController = null; }
-      transition(STATES.PASSIVE, true);
-    }
-    updateVoiceBar();
-  }
-}
-
 // ── Window State Management ───────────────────────────────────────
 function setWindowState(state) {
   windowState = state;
@@ -868,28 +765,6 @@ function updateWindowUI() {
   }
 }
 
-// ── Voice Status Bar ──────────────────────────────────────────────
-function updateVoiceBar() {
-  const bar = document.getElementById('randy-voice-bar');
-  const label = document.getElementById('randy-voice-label');
-  if (!bar) return;
-
-  if (!voiceEnabled) {
-    bar.hidden = true;
-    return;
-  }
-
-  bar.hidden = false;
-  const labels = {
-    ACTIVE_LISTENING: 'Listening...',
-    PROCESSING: 'Thinking...',
-    SPEAKING: 'Speaking...',
-    CONFIRMING: 'Yes or no?',
-    PASSIVE: 'Voice ready',
-  };
-  if (label) label.textContent = labels[currentState] || 'Voice active';
-}
-
 // ── Combined UI Update (called by transition()) ───────────────────
 function updateWidgetUI() {
   const widget = document.getElementById('randy-widget');
@@ -908,16 +783,12 @@ function updateWidgetUI() {
 
   // Apply window state
   updateWindowUI();
-  updateVoiceBar();
-
-  // Update mic button state
-  const micBtn = document.getElementById('randy-mic-btn');
-  if (micBtn) micBtn.classList.toggle('randy-window__mic-btn--active', voiceEnabled);
+  updateControlButtons();
 }
 
 // ── Widget DOM ────────────────────────────────────────────────────
-const MIC_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
-const SEND_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
+const MIC_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
+const STOP_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
 
 function createWidget() {
   const root = document.getElementById('randy-root');
@@ -945,16 +816,11 @@ function createWidget() {
 
         <div class="randy-window__chat" id="randy-chat"></div>
 
-        <div class="randy-window__voice-bar" id="randy-voice-bar" hidden>
-          <span class="randy-window__voice-dot"></span>
-          <span class="randy-window__voice-label" id="randy-voice-label" role="status" aria-live="polite">Listening...</span>
-          <button class="randy-window__voice-stop" id="randy-voice-stop">Stop</button>
-        </div>
+        <div class="randy-window__status" id="randy-status" role="status" aria-live="polite">Paused</div>
 
-        <div class="randy-window__input-area">
-          <button class="randy-window__mic-btn" id="randy-mic-btn" title="Toggle voice" aria-label="Toggle voice input">${MIC_SVG}</button>
-          <textarea id="randy-text-input" placeholder="Type a message..." rows="1" maxlength="2000"></textarea>
-          <button class="randy-window__send-btn" id="randy-send-btn" disabled aria-label="Send message">${SEND_SVG}</button>
+        <div class="randy-window__controls-bar">
+          <button class="randy-ctrl-go" id="randy-go" title="Start listening" aria-label="Start listening">${MIC_SVG}</button>
+          <button class="randy-ctrl-stop" id="randy-stop" title="Pause Randy" aria-label="Pause Randy">${STOP_SVG}</button>
         </div>
       </div>
 
@@ -969,49 +835,61 @@ function createWidget() {
       if (currentState === STATES.OFF) transition(STATES.PASSIVE);
       setWindowState('open');
       if (conversationHistory.length === 0) showWelcome();
+      updateControlButtons();
     } else {
       setWindowState('collapsed');
     }
   });
 
   // Window controls
-  document.getElementById('randy-minimize').addEventListener('click', () => setWindowState('collapsed'));
+  document.getElementById('randy-minimize').addEventListener('click', () => {
+    // Minimize: keep conversation alive, just hide window
+    setWindowState('collapsed');
+  });
   document.getElementById('randy-fullscreen-btn').addEventListener('click', () => {
     setWindowState(windowState === 'fullscreen' ? 'open' : 'fullscreen');
   });
   document.getElementById('randy-close-window').addEventListener('click', () => {
-    setWindowState('collapsed');
+    // Close: save, then end conversation completely
+    saveRandyConversation();
+    if (recognition) { try { recognition.abort(); } catch { /* ok */ } }
+    if (synth.speaking) synth.cancel();
+    if (abortController) { abortController.abort(); abortController = null; }
+    isRandySpeaking = false;
+    currentSpokenText = '';
+    currentSpeechOnComplete = null;
     conversationHistory = [];
+    pendingActions = null;
+    confirmAttempts = 0;
     currentConvId = null;
     currentConvRow = null;
+    voiceEnabled = false;
     const chat = document.getElementById('randy-chat');
     if (chat) chat.innerHTML = '';
+    setWindowState('collapsed');
+    transition(STATES.OFF, true);
   });
   document.getElementById('randy-backdrop').addEventListener('click', () => setWindowState('open'));
 
-  // Text input
-  const input = document.getElementById('randy-text-input');
-  const sendBtn = document.getElementById('randy-send-btn');
-  input.addEventListener('input', () => {
-    input.style.height = 'auto';
-    input.style.height = Math.min(input.scrollHeight, 80) + 'px';
-    sendBtn.disabled = !input.value.trim();
+  // Green GO button — start listening
+  document.getElementById('randy-go').addEventListener('click', () => {
+    voiceEnabled = true;
+    if (currentState === STATES.OFF) transition(STATES.PASSIVE);
+    if (currentState === STATES.PASSIVE) transition(STATES.ACTIVE_LISTENING);
+    updateControlButtons();
   });
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (input.value.trim()) handleTextSend(); }
-  });
-  sendBtn.addEventListener('click', handleTextSend);
 
-  // Voice controls
-  document.getElementById('randy-mic-btn').addEventListener('click', toggleVoice);
-  document.getElementById('randy-voice-stop').addEventListener('click', () => {
+  // Red STOP button — pause
+  document.getElementById('randy-stop').addEventListener('click', () => {
     voiceEnabled = false;
     if (synth.speaking) synth.cancel();
     isRandySpeaking = false;
-    transition(STATES.PASSIVE, true);
-    updateVoiceBar();
-    const micBtn = document.getElementById('randy-mic-btn');
-    if (micBtn) micBtn.classList.remove('randy-window__mic-btn--active');
+    currentSpokenText = '';
+    if (abortController) { abortController.abort(); abortController = null; }
+    if ([STATES.PROCESSING, STATES.ACTIVE_LISTENING, STATES.SPEAKING, STATES.CONFIRMING].includes(currentState)) {
+      transition(STATES.PASSIVE, true);
+    }
+    updateControlButtons();
   });
 
   // Escape to exit fullscreen (stored for cleanup)
@@ -1023,6 +901,30 @@ function createWidget() {
 
   // Dragging
   initDragging();
+}
+
+// ── Voice Control Buttons State ───────────────────────────────────
+function updateControlButtons() {
+  const goBtn = document.getElementById('randy-go');
+  const stopBtn = document.getElementById('randy-stop');
+  const status = document.getElementById('randy-status');
+  if (!goBtn || !stopBtn || !status) return;
+
+  const isActive = [STATES.ACTIVE_LISTENING, STATES.PROCESSING, STATES.SPEAKING, STATES.CONFIRMING].includes(currentState);
+
+  goBtn.classList.toggle('randy-ctrl-go--active', isActive);
+  goBtn.classList.toggle('randy-ctrl-go--dimmed', !isActive && currentState !== STATES.OFF);
+  stopBtn.classList.toggle('randy-ctrl-stop--active', !isActive && currentState !== STATES.OFF);
+
+  const labels = {
+    ACTIVE_LISTENING: 'Randy is listening...',
+    PROCESSING: 'Thinking...',
+    SPEAKING: 'Randy is speaking...',
+    CONFIRMING: 'Yes or no?',
+    PASSIVE: 'Paused',
+    OFF: 'Paused',
+  };
+  status.textContent = labels[currentState] || 'Paused';
 }
 
 // ── Dragging ──────────────────────────────────────────────────────
