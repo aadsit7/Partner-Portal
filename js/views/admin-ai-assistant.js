@@ -1,36 +1,40 @@
 // ============================================
-// AI Assistant Chat View
+// AI Assistant Chat View — Split Screen
 // ============================================
-// Reads Google Sheets via sheets.js, supports voice input
+// Left: chat with Claude. Right: conversation history.
+// Supports voice, write actions, and sheet persistence.
 
-import { getRuntimeConfig, setRuntimeConfig } from '../config.js';
+import { CONFIG, getRuntimeConfig, setRuntimeConfig } from '../config.js';
 import { setTopbarTitle } from '../components/sidebar.js';
-import { loadSheetData, callClaude } from '../utils/ai.js';
+import { loadSheetData, callClaude, invalidateSheetCache } from '../utils/ai.js';
 import { activateVoiceMode, isVoiceModeActive, stopEverything as stopVoice } from '../components/voice-widget.js';
+import { getCurrentUser } from '../auth.js';
+import { appendRow, updateRow, deleteRow, readSheetAsObjects } from '../sheets.js';
+import { showToast } from '../components/toast.js';
+
+// ── Sheet Headers (for write operations) ───────────────────────────
+const SHEET_HEADERS = {
+  Partners: ['partner_id', 'username', 'display_name', 'partner_type', 'tier', 'region', 'created_at', 'is_admin', 'password_hash', 'status', 'hq_location'],
+  Opportunities: ['opportunity_id', 'partner_id', 'deal_name', 'customer_name', 'deal_value', 'status', 'stage', 'expected_close', 'description', 'created_at', 'updated_at', 'notes', 'lead_source'],
+  Events: ['event_id', 'title', 'description', 'event_date', 'end_date', 'event_type', 'location', 'url', 'created_by', 'created_at', 'status', 'partner_id', 'checklist'],
+};
+const BLOCKED_FIELDS = ['password_hash', 'is_admin'];
 
 // ── State ──────────────────────────────────────────────────────────
 let conversationHistory = [];
 let isStreaming = false;
 let abortController = null;
+let currentConversationId = null;
+let currentConversationRow = null;
+let conversations = [];
 
-// ── Voice Mode (delegates to floating voice widget) ────────────────
+// ── Voice Mode ─────────────────────────────────────────────────────
 function toggleVoice() {
-  if (isVoiceModeActive()) {
-    stopVoice();
-    return;
-  }
+  if (isVoiceModeActive()) { stopVoice(); return; }
   activateVoiceMode();
 }
 
-function showToastMessage(message, type = 'info') {
-  if (typeof window.showToast === 'function') {
-    window.showToast(message, type);
-  } else {
-    console.warn(message);
-  }
-}
-
-// ── Markdown-lite Renderer ─────────────────────────────────────────
+// ── Markdown Renderer ──────────────────────────────────────────────
 function renderMarkdown(text) {
   return text
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -49,61 +53,41 @@ function renderMarkdown(text) {
     .replace(/<\/(h[234]|ul|li)><\/p>/g, '</$1>');
 }
 
-// ── Chat UI Components ─────────────────────────────────────────────
+// ── Chat Message Rendering ─────────────────────────────────────────
 function renderMessage(role, text, container) {
   const isUser = role === 'user';
   const wrapper = document.createElement('div');
   wrapper.className = `chat-message ${isUser ? 'chat-user' : 'chat-assistant'}`;
-
   const avatar = document.createElement('div');
   avatar.className = 'chat-avatar';
   avatar.textContent = isUser ? 'AA' : 'C';
-
   const bubble = document.createElement('div');
   bubble.className = 'chat-bubble';
   bubble.innerHTML = isUser
     ? `<p>${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`
     : renderMarkdown(text);
-
-  if (isUser) {
-    wrapper.appendChild(bubble);
-    wrapper.appendChild(avatar);
-  } else {
-    wrapper.appendChild(avatar);
-    wrapper.appendChild(bubble);
-  }
-
+  if (isUser) { wrapper.appendChild(bubble); wrapper.appendChild(avatar); }
+  else { wrapper.appendChild(avatar); wrapper.appendChild(bubble); }
   container.appendChild(wrapper);
   container.scrollTop = container.scrollHeight;
   return bubble;
 }
-
-// Expose renderMessage globally so voice widget can add transcript entries
 window._aiChatRenderMessage = renderMessage;
 
 function renderLoading(container) {
   const wrapper = document.createElement('div');
   wrapper.className = 'chat-message chat-assistant';
   wrapper.id = 'chat-loading';
-
   const avatar = document.createElement('div');
   avatar.className = 'chat-avatar';
   avatar.textContent = 'C';
-
   const bubble = document.createElement('div');
   bubble.className = 'chat-bubble chat-loading-bubble';
-  bubble.innerHTML = `
-    <div class="chat-loading-dots">
-      <span></span><span></span><span></span>
-    </div>
-    <span class="chat-loading-text">Reading your sheets...</span>
-  `;
-
+  bubble.innerHTML = `<div class="chat-loading-dots"><span></span><span></span><span></span></div><span class="chat-loading-text">Reading your sheets...</span>`;
   wrapper.appendChild(avatar);
   wrapper.appendChild(bubble);
   container.appendChild(wrapper);
   container.scrollTop = container.scrollHeight;
-  return wrapper;
 }
 
 function removeLoading() {
@@ -111,17 +95,265 @@ function removeLoading() {
   if (el) el.remove();
 }
 
+// ── Action Parser ──────────────────────────────────────────────────
+function parseActions(responseText) {
+  const actions = [];
+  const cleanText = responseText.replace(/:::ACTION\n([\s\S]*?)\n:::/g, (_, json) => {
+    try { actions.push(JSON.parse(json)); } catch (e) { console.error('Failed to parse action:', e); }
+    return '';
+  }).trim();
+  return { cleanText, actions };
+}
+
+function renderConfirmationCard(action, container) {
+  const icons = { update: '✏️', create: '➕', delete: '🗑️' };
+  const card = document.createElement('div');
+  card.className = 'action-card';
+  card.innerHTML = `
+    <div class="action-card__header">
+      <div class="action-card__icon">${icons[action.type] || '⚡'}</div>
+      <div class="action-card__summary">${(action.summary || '').replace(/</g, '&lt;')}</div>
+    </div>
+    <div class="action-card__detail">${action.sheet} · ${action.type} · ${JSON.stringify(action.row_match || {})}</div>
+    <div class="action-card__buttons">
+      <button class="action-card__confirm">Confirm</button>
+      <button class="action-card__cancel">Cancel</button>
+    </div>
+  `;
+  const confirmBtn = card.querySelector('.action-card__confirm');
+  const cancelBtn = card.querySelector('.action-card__cancel');
+  const buttonsDiv = card.querySelector('.action-card__buttons');
+
+  confirmBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    confirmBtn.disabled = true;
+    cancelBtn.disabled = true;
+    confirmBtn.textContent = 'Applying...';
+    try {
+      await executeAction(action);
+      buttonsDiv.innerHTML = '<div class="action-card__status action-card__status--applied">✓ Applied</div>';
+      showToast('Change applied successfully', 'success');
+    } catch (err) {
+      buttonsDiv.innerHTML = `<div class="action-card__status action-card__status--cancelled">✗ Failed: ${err.message}</div>`;
+      showToast(err.message, 'error');
+    }
+  });
+
+  cancelBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    confirmBtn.disabled = true;
+    cancelBtn.disabled = true;
+    buttonsDiv.innerHTML = '<div class="action-card__status action-card__status--cancelled">✗ Cancelled</div>';
+  });
+
+  container.appendChild(card);
+  container.scrollTop = container.scrollHeight;
+}
+
+async function executeAction(action) {
+  // Safety checks
+  if (!action.sheet || !SHEET_HEADERS[action.sheet]) throw new Error(`Unknown sheet: ${action.sheet}`);
+  if (action.type === 'delete' && action.sheet === 'Partners') throw new Error('Cannot delete Partners — use status change');
+  if (action.changes) {
+    for (const f of BLOCKED_FIELDS) {
+      if (f in action.changes) throw new Error(`Cannot modify field: ${f}`);
+    }
+  }
+
+  const sheetData = await loadSheetData();
+  const headers = SHEET_HEADERS[action.sheet];
+  const sheetKey = { Partners: 'partners', Opportunities: 'opportunities', Events: 'events' }[action.sheet];
+  const rows = sheetData[sheetKey] || [];
+
+  console.log(`[AI Action] ${new Date().toISOString()} — ${action.type} on ${action.sheet}`, action);
+
+  if (action.type === 'update') {
+    if (!action.row_match || Object.keys(action.row_match).length === 0) throw new Error('No row_match specified');
+    const row = findMatchingRow(rows, action.row_match);
+    if (!row) throw new Error('No matching row found');
+    const values = headers.map(h => {
+      if (action.changes && h in action.changes) return action.changes[h];
+      return row[h] || '';
+    });
+    await updateRow(action.sheet, row._rowIndex, values);
+  } else if (action.type === 'create') {
+    const values = headers.map(h => (action.changes && action.changes[h]) || '');
+    await appendRow(action.sheet, values);
+  } else if (action.type === 'delete') {
+    if (!action.row_match || Object.keys(action.row_match).length === 0) throw new Error('No row_match specified');
+    const row = findMatchingRow(rows, action.row_match);
+    if (!row) throw new Error('No matching row found');
+    await deleteRow(action.sheet, row._rowIndex);
+  }
+
+  invalidateSheetCache();
+}
+
+function findMatchingRow(rows, match) {
+  return rows.find(row => {
+    return Object.entries(match).every(([field, value]) => {
+      const rowVal = String(row[field] || '').toLowerCase();
+      const matchVal = String(value).toLowerCase();
+      return rowVal === matchVal || rowVal.includes(matchVal);
+    });
+  });
+}
+
+// ── Save Indicator ─────────────────────────────────────────────────
+function flashSave(success = true) {
+  const el = document.getElementById('ai-save-indicator');
+  if (!el) return;
+  el.textContent = success ? 'Saved ✓' : 'Save failed';
+  el.className = `ai-save-indicator visible${success ? '' : ' error'}`;
+  setTimeout(() => { el.className = 'ai-save-indicator'; }, 2000);
+}
+
+// ── Conversation Persistence ───────────────────────────────────────
+async function loadConversations() {
+  try {
+    const all = await readSheetAsObjects(CONFIG.SHEET_AI_CONVERSATIONS);
+    const user = getCurrentUser();
+    conversations = all
+      .filter(c => c.user_id === (user?.username || ''))
+      .sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
+  } catch {
+    conversations = [];
+  }
+  renderHistoryList();
+}
+
+async function saveConversation(isNew) {
+  const user = getCurrentUser();
+  if (!user) return;
+
+  const messagesWithTs = conversationHistory.map(m => ({
+    ...m,
+    timestamp: m.timestamp || new Date().toISOString()
+  }));
+  const title = (conversationHistory.find(m => m.role === 'user')?.content || '').substring(0, 60);
+  const messagesJson = JSON.stringify(messagesWithTs);
+
+  try {
+    if (isNew) {
+      currentConversationId = 'conv_' + Date.now();
+      const values = [currentConversationId, user.username, new Date().toISOString(), title, messagesJson, 'active'];
+      await appendRow(CONFIG.SHEET_AI_CONVERSATIONS, values);
+      // Read back to get _rowIndex
+      const all = await readSheetAsObjects(CONFIG.SHEET_AI_CONVERSATIONS);
+      const saved = all.find(c => c.conversation_id === currentConversationId);
+      currentConversationRow = saved?._rowIndex || null;
+      conversations.unshift(saved || { conversation_id: currentConversationId, title, started_at: new Date().toISOString(), messages: messagesJson, _rowIndex: currentConversationRow });
+    } else if (currentConversationRow) {
+      const conv = conversations.find(c => c.conversation_id === currentConversationId);
+      const values = [currentConversationId, user.username, conv?.started_at || '', title, messagesJson, 'active'];
+      await updateRow(CONFIG.SHEET_AI_CONVERSATIONS, currentConversationRow, values);
+      if (conv) { conv.messages = messagesJson; conv.title = title; }
+    }
+    flashSave(true);
+    renderHistoryList();
+  } catch (err) {
+    console.error('Save conversation failed:', err);
+    flashSave(false);
+  }
+}
+
+async function deleteConversation(convId, rowIndex) {
+  try {
+    await deleteRow(CONFIG.SHEET_AI_CONVERSATIONS, rowIndex);
+    conversations = conversations.filter(c => c.conversation_id !== convId);
+    if (currentConversationId === convId) startNewChat();
+    renderHistoryList();
+    showToast('Conversation deleted', 'success');
+  } catch (err) {
+    showToast('Delete failed: ' + err.message, 'error');
+  }
+}
+
+function loadConversation(conv) {
+  try {
+    const msgs = JSON.parse(conv.messages || '[]');
+    conversationHistory = msgs;
+    currentConversationId = conv.conversation_id;
+    currentConversationRow = conv._rowIndex;
+
+    const chatArea = document.getElementById('ai-chat-area');
+    if (!chatArea) return;
+    chatArea.innerHTML = '';
+    msgs.forEach(m => renderMessage(m.role, m.content, chatArea));
+    renderHistoryList();
+  } catch (err) {
+    console.error('Failed to load conversation:', err);
+  }
+}
+
+function startNewChat() {
+  conversationHistory = [];
+  currentConversationId = null;
+  currentConversationRow = null;
+  const chatArea = document.getElementById('ai-chat-area');
+  if (chatArea) {
+    chatArea.innerHTML = `
+      <div class="ai-welcome">
+        <div class="ai-welcome-icon">💬</div>
+        <h3>Ask me anything about your partners, deals, events, or meetings</h3>
+        <p>I read your Google Sheet live — Partners, Opportunities, Events, Transcripts, and Meeting Index.</p>
+      </div>`;
+  }
+  renderHistoryList();
+}
+
+// ── History Panel ──────────────────────────────────────────────────
+function renderHistoryList(filter = '') {
+  const list = document.getElementById('ai-history-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  const filtered = filter
+    ? conversations.filter(c => (c.title || '').toLowerCase().includes(filter.toLowerCase()))
+    : conversations;
+
+  if (filtered.length === 0) {
+    list.innerHTML = '<div class="ai-history-empty">No conversations yet</div>';
+    return;
+  }
+
+  filtered.forEach(conv => {
+    let msgs = [];
+    try { msgs = JSON.parse(conv.messages || '[]'); } catch { /* ignore */ }
+    const firstReply = msgs.find(m => m.role === 'assistant');
+    const preview = firstReply ? firstReply.content.substring(0, 100) + '...' : '';
+    const date = conv.started_at ? new Date(conv.started_at).toLocaleDateString() : '';
+
+    const card = document.createElement('div');
+    card.className = `ai-history-card${conv.conversation_id === currentConversationId ? ' active' : ''}`;
+    card.innerHTML = `
+      <div class="ai-history-card__title">${(conv.title || 'Untitled').replace(/</g, '&lt;')}</div>
+      <div class="ai-history-card__meta">${date} · ${msgs.length} messages</div>
+      <div class="ai-history-card__preview">${preview.replace(/</g, '&lt;')}</div>
+      <button class="ai-history-card__delete" title="Delete">×</button>
+    `;
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.ai-history-card__delete')) return;
+      loadConversation(conv);
+    });
+    card.querySelector('.ai-history-card__delete').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteConversation(conv.conversation_id, conv._rowIndex);
+    });
+    list.appendChild(card);
+  });
+}
+
 // ── Main Render ────────────────────────────────────────────────────
 export function renderAdminAIAssistant(container) {
   setTopbarTitle('AI Assistant');
 
-  const view = container
-    || document.getElementById('view-container')
-    || document.querySelector('.view-container')
-    || document.querySelector('main');
+  const view = container || document.getElementById('view-container') || document.querySelector('main');
   if (!view) return;
 
   conversationHistory = [];
+  currentConversationId = null;
+  currentConversationRow = null;
 
   const hasSpeech = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 
@@ -131,7 +363,7 @@ export function renderAdminAIAssistant(container) {
         <div class="ai-header-left">
           <div class="ai-header-icon">⚡</div>
           <div>
-            <h2 class="ai-header-title">Portal AI Assistant</h2>
+            <h2 class="ai-header-title">Portal AI Assistant <span id="ai-save-indicator" class="ai-save-indicator"></span></h2>
             <p class="ai-header-sub">Connected to your Partner Portal database via Google Sheets</p>
           </div>
         </div>
@@ -142,17 +374,35 @@ export function renderAdminAIAssistant(container) {
         </div>
       </div>
 
-      <div class="ai-chat-area" id="ai-chat-area">
-        <div class="ai-welcome">
-          <div class="ai-welcome-icon">💬</div>
-          <h3>Ask me anything about your partners, deals, events, or meetings</h3>
-          <p>I read your Google Sheet live — Partners, Opportunities, Events, Transcripts, and Meeting Index.</p>
-          ${hasSpeech ? '<p class="ai-voice-hint">🎙️ Click the mic button or press <kbd>M</kbd> to use voice input</p>' : ''}
-          <div class="ai-suggestions" id="ai-suggestions"></div>
+      <div class="ai-mobile-toggle" id="ai-mobile-toggle">
+        <button class="active" data-panel="chat">Chat</button>
+        <button data-panel="history">History</button>
+      </div>
+
+      <div class="ai-chat-panel" id="ai-chat-panel">
+        <div class="ai-chat-area" id="ai-chat-area">
+          <div class="ai-welcome">
+            <div class="ai-welcome-icon">💬</div>
+            <h3>Ask me anything about your partners, deals, events, or meetings</h3>
+            <p>I read your Google Sheet live — Partners, Opportunities, Events, Transcripts, and Meeting Index.</p>
+          </div>
         </div>
       </div>
 
-      <div class="ai-input-area">
+      <div class="ai-history-panel" id="ai-history-panel">
+        <div class="ai-history-header">
+          <div class="ai-history-header__top">
+            <h3 class="ai-history-header__title">History</h3>
+            <button class="ai-history-new-btn" id="ai-new-chat">+ New Chat</button>
+          </div>
+          <input type="text" class="ai-history-search" id="ai-history-search" placeholder="Search conversations...">
+        </div>
+        <div class="ai-history-list" id="ai-history-list">
+          <div class="ai-history-empty">Loading...</div>
+        </div>
+      </div>
+
+      <div class="ai-input-area" id="ai-input-area">
         <div class="ai-input-wrapper">
           ${hasSpeech ? `
           <button class="ai-mic-btn" id="ai-mic" title="Voice input">
@@ -164,12 +414,7 @@ export function renderAdminAIAssistant(container) {
             </svg>
           </button>
           ` : ''}
-          <textarea
-            id="ai-input"
-            placeholder="Ask about partners, pipeline, meetings, events..."
-            rows="1"
-            maxlength="2000"
-          ></textarea>
+          <textarea id="ai-input" placeholder="Ask about partners, pipeline, meetings, events..." rows="1" maxlength="2000"></textarea>
           <button class="ai-send-btn" id="ai-send" disabled>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -182,7 +427,7 @@ export function renderAdminAIAssistant(container) {
     </div>
   `;
 
-  // Input handlers
+  // ── Event Listeners ────────────────────────────────────────────
   const input = document.getElementById('ai-input');
   const sendBtn = document.getElementById('ai-send');
 
@@ -191,59 +436,55 @@ export function renderAdminAIAssistant(container) {
     input.style.height = Math.min(input.scrollHeight, 120) + 'px';
     sendBtn.disabled = !input.value.trim();
   });
-
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (input.value.trim()) handleSend();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (input.value.trim()) handleSend(); }
   });
-
   sendBtn.addEventListener('click', handleSend);
 
-  // Voice button
   const micBtn = document.getElementById('ai-mic');
-  if (micBtn) {
-    micBtn.addEventListener('click', toggleVoice);
-  }
+  if (micBtn) micBtn.addEventListener('click', toggleVoice);
 
-  // Keyboard shortcut: M to toggle mic (when input not focused)
   document.addEventListener('keydown', handleKeyShortcut);
 
-  // Clear button
-  document.getElementById('ai-clear').addEventListener('click', () => {
-    conversationHistory = [];
-    renderAdminAIAssistant(view);
-  });
+  document.getElementById('ai-clear').addEventListener('click', startNewChat);
+  document.getElementById('ai-new-chat').addEventListener('click', startNewChat);
 
-  // API key button
   document.getElementById('ai-api-key').addEventListener('click', () => {
     const current = getRuntimeConfig('ANTHROPIC_API_KEY');
     const key = prompt('Enter your Anthropic API key (copy from Setup page):', current || '');
     if (key !== null) {
       setRuntimeConfig('ANTHROPIC_API_KEY', key.trim());
-      const btn = document.getElementById('ai-api-key');
-      btn.style.color = key.trim() ? '' : '#dc2626';
+      document.getElementById('ai-api-key').style.color = key.trim() ? '' : '#dc2626';
     }
   });
 
-  // Refresh sheet data button
   document.getElementById('ai-refresh').addEventListener('click', async () => {
     const btn = document.getElementById('ai-refresh');
-    btn.disabled = true;
-    btn.textContent = '⟳';
-    try {
-      await loadSheetData(true);
-      btn.textContent = '✓';
-      setTimeout(() => { btn.textContent = '↻'; btn.disabled = false; }, 1500);
-    } catch (err) {
-      btn.textContent = '✗';
-      setTimeout(() => { btn.textContent = '↻'; btn.disabled = false; }, 1500);
-    }
+    btn.disabled = true; btn.textContent = '⟳';
+    try { await loadSheetData(true); btn.textContent = '✓'; }
+    catch { btn.textContent = '✗'; }
+    setTimeout(() => { btn.textContent = '↻'; btn.disabled = false; }, 1500);
   });
 
-  // Pre-load sheet data
-  loadSheetData().catch(err => console.warn('Pre-load failed:', err));
+  // History search
+  document.getElementById('ai-history-search').addEventListener('input', (e) => {
+    renderHistoryList(e.target.value);
+  });
+
+  // Mobile toggle
+  document.getElementById('ai-mobile-toggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const panel = btn.dataset.panel;
+    document.querySelectorAll('#ai-mobile-toggle button').forEach(b => b.classList.toggle('active', b === btn));
+    document.getElementById('ai-chat-panel').classList.toggle('mobile-hidden', panel === 'history');
+    document.getElementById('ai-input-area').classList.toggle('mobile-hidden', panel === 'history');
+    document.getElementById('ai-history-panel').classList.toggle('mobile-visible', panel === 'history');
+  });
+
+  // Pre-load
+  loadSheetData().catch(() => {});
+  loadConversations();
 }
 
 function handleKeyShortcut(e) {
@@ -267,27 +508,37 @@ async function handleSend() {
   input.style.height = 'auto';
   document.getElementById('ai-send').disabled = true;
 
-  conversationHistory.push({ role: 'user', content: text });
+  const isNewConversation = conversationHistory.length === 0;
+  conversationHistory.push({ role: 'user', content: text, timestamp: new Date().toISOString() });
 
   renderLoading(chatArea);
   isStreaming = true;
 
   try {
     const sheetData = await loadSheetData();
-
     const loadingText = document.querySelector('.chat-loading-text');
     if (loadingText) loadingText.textContent = 'Thinking...';
 
     abortController = new AbortController();
     const response = await callClaude(conversationHistory, sheetData, text, abortController.signal);
     removeLoading();
-    renderMessage('assistant', response, chatArea);
-    conversationHistory.push({ role: 'assistant', content: response });
+
+    // Parse actions from response
+    const { cleanText, actions } = parseActions(response);
+
+    renderMessage('assistant', cleanText, chatArea);
+    conversationHistory.push({ role: 'assistant', content: response, timestamp: new Date().toISOString() });
+
+    // Render confirmation cards for any actions
+    actions.forEach(action => renderConfirmationCard(action, chatArea));
+
+    // Save conversation
+    await saveConversation(isNewConversation);
   } catch (err) {
     removeLoading();
     if (err.name === 'AbortError') return;
     renderMessage('assistant',
-      `**Error:** ${err.message}\n\nMake sure your Google Sheet connection is working (check Setup page) and your API key is configured in config.js.`,
+      `**Error:** ${err.message}\n\nMake sure your Google Sheet connection is working (check Setup page) and your API key is configured.`,
       chatArea
     );
   } finally {
