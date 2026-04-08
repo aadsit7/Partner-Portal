@@ -445,3 +445,118 @@
     padding: 12px 16px;
   }
 }
+
+/* ── Voice Widget (Floating) ────────────────────────────────────── */
+.voice-widget {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  font-family: inherit;
+}
+
+.voice-widget__btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: #0000CC;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 204, 0.3);
+  transition: all 200ms;
+}
+.voice-widget__btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(0, 0, 204, 0.4);
+}
+
+.voice-widget__pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #1a1a2e;
+  color: white;
+  padding: 10px 16px;
+  border-radius: 28px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  animation: chatFadeIn 200ms ease-out;
+  min-width: 180px;
+}
+
+.voice-widget__label {
+  font-size: 13px;
+  font-weight: 500;
+  flex: 1;
+  white-space: nowrap;
+}
+
+.voice-widget__stop {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 150ms;
+}
+.voice-widget__stop:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Listening state — pulsing red mic */
+.voice-widget--listening .voice-widget__mic {
+  color: #ef4444;
+  animation: micPulse 1.5s ease-in-out infinite;
+  border-radius: 50%;
+}
+
+/* Processing state — loading dots */
+.voice-widget__dots {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+.voice-widget__dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: white;
+  animation: chatBounce 1.2s infinite;
+}
+.voice-widget__dots span:nth-child(2) { animation-delay: 0.15s; }
+.voice-widget__dots span:nth-child(3) { animation-delay: 0.3s; }
+
+/* Speaking state — animated speaker */
+.voice-widget--speaking .voice-widget__speaker {
+  animation: speakerPulse 1s ease-in-out infinite;
+}
+
+@keyframes speakerPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .voice-widget {
+    bottom: 16px;
+    right: 16px;
+  }
+  .voice-widget__btn {
+    width: 46px;
+    height: 46px;
+  }
+  .voice-widget__pill {
+    min-width: 160px;
+    padding: 8px 12px;
+  }
+}

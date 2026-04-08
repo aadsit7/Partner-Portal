@@ -18,6 +18,7 @@ import * as adminOpportunities from './views/admin-opportunities.js';
 import * as adminPartnerDetail from './views/admin-partner-detail.js';
 import * as adminSetup from './views/admin-setup.js';
 import { renderAdminAIAssistant, cleanupAdminAIAssistant } from './views/admin-ai-assistant.js';
+import { mountVoiceWidget } from './components/voice-widget.js';
 
 // ---- Register Routes ----
 
@@ -132,12 +133,21 @@ addRoute('/admin/setup', {
 
 // ---- App Shell Setup ----
 
+let voiceWidgetMounted = false;
+
 function setupAppShell() {
   const app = document.getElementById('app');
   if (app.className !== 'app-shell--app') {
     app.className = 'app-shell--app';
   }
   renderSidebar();
+
+  // Mount voice widget once for admin users
+  const user = getCurrentUser();
+  if (user && user.is_admin && !voiceWidgetMounted) {
+    mountVoiceWidget();
+    voiceWidgetMounted = true;
+  }
 }
 
 // ---- Initialize ----
