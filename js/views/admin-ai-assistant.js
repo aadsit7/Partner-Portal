@@ -3,7 +3,7 @@
 // ============================================
 // Reads Google Sheets via sheets.js, supports voice input
 
-import { CONFIG, getRuntimeConfig, setRuntimeConfig } from '../config.js';
+import { CONFIG } from '../config.js';
 import { readSheetAsObjects } from '../sheets.js';
 
 // ── State ──────────────────────────────────────────────────────────
@@ -179,9 +179,9 @@ ${JSON.stringify(data.meetingIndex, null, 2)}${transcriptContext}`;
 
 // ── API Call ────────────────────────────────────────────────────────
 async function callClaude(messages, sheetData, userMessage) {
-  const apiKey = getRuntimeConfig('ANTHROPIC_API_KEY');
+  const apiKey = CONFIG.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    throw new Error('Anthropic API key not configured. Click the key icon in the header to add your API key.');
+    throw new Error('Anthropic API key not configured. Add ANTHROPIC_API_KEY to config.js');
   }
 
   abortController = new AbortController();
@@ -443,7 +443,6 @@ export function renderAdminAIAssistant(container) {
           </div>
         </div>
         <div class="ai-header-actions">
-          <button class="ai-refresh-btn" id="ai-api-key" title="Configure API key" style="${getRuntimeConfig('ANTHROPIC_API_KEY') ? '' : 'color:#dc2626;'}">🔑</button>
           <button class="ai-refresh-btn" id="ai-refresh" title="Refresh sheet data">↻</button>
           <button class="ai-clear-btn" id="ai-clear">Clear Chat</button>
         </div>
@@ -534,17 +533,6 @@ export function renderAdminAIAssistant(container) {
   document.getElementById('ai-clear').addEventListener('click', () => {
     conversationHistory = [];
     renderAdminAIAssistant(view);
-  });
-
-  // API key button
-  document.getElementById('ai-api-key').addEventListener('click', () => {
-    const current = getRuntimeConfig('ANTHROPIC_API_KEY');
-    const key = prompt('Enter your Anthropic API key:', current || '');
-    if (key !== null) {
-      setRuntimeConfig('ANTHROPIC_API_KEY', key.trim());
-      const btn = document.getElementById('ai-api-key');
-      btn.style.color = key.trim() ? '' : '#dc2626';
-    }
   });
 
   // Refresh sheet data button
