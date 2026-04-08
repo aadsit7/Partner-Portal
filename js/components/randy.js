@@ -59,6 +59,9 @@ let confirmAttempts = 0;
 let mounted = false;
 let currentSpokenText = '';
 let currentSpeechOnComplete = null;
+let lastSpokenText = '';     // persists after speech for echo tail detection
+let lastSpeechEndTime = 0;   // timestamp when Randy last stopped speaking
+const ECHO_COOLDOWN = 3000;  // ms to keep checking for echo after speech ends
 let windowState = 'collapsed'; // 'collapsed' | 'open' | 'fullscreen'
 let voiceEnabled = false;
 let isProcessing = false;
@@ -104,6 +107,24 @@ function isInterrupt(transcript) {
   }
 
   return true;
+}
+
+// ── Echo Tail Detection (after Randy finishes speaking) ───────────
+function isEchoTail(transcript) {
+  // If we're still within the cooldown window after Randy spoke, check for echo
+  if (!lastSpokenText || (Date.now() - lastSpeechEndTime) > ECHO_COOLDOWN) return false;
+
+  const lower = transcript.toLowerCase();
+  const spokenLower = lastSpokenText.toLowerCase();
+
+  // If transcript is a substring of what Randy just said — echo
+  if (spokenLower.includes(lower)) return true;
+
+  // Word overlap check (same as isInterrupt but inverted — high overlap = echo)
+  const words = lower.split(/\s+/).filter(w => w.length > 2);
+  if (words.length === 0) return true; // empty/short = likely noise
+  const matchCount = words.filter(w => spokenLower.includes(w)).length;
+  return (matchCount / words.length) > 0.5;
 }
 
 // ── Feature Detection ─────────────────────────────────────────────
@@ -174,6 +195,8 @@ function stopAll() {
   isRandySpeaking = false;
   currentSpokenText = '';
   currentSpeechOnComplete = null;
+  lastSpokenText = '';
+  lastSpeechEndTime = 0;
   conversationHistory = [];
   pendingActions = null;
   confirmAttempts = 0;
@@ -209,13 +232,18 @@ function initRecognition() {
         currentSpokenText = '';
         currentSpeechOnComplete = null;
         console.log('Randy: interrupted by user');
-        // Transition to appropriate state for processing
         if (currentState === STATES.SPEAKING) {
           currentState = STATES.ACTIVE_LISTENING;
           updateWidgetUI();
         }
         handleTranscript(transcript);
       }
+      return;
+    }
+
+    // After Randy just finished speaking: catch echo tails
+    if (isEchoTail(transcript)) {
+      console.log('Randy: discarded echo tail:', transcript.substring(0, 40));
       return;
     }
 
@@ -513,8 +541,10 @@ function speakText(text, onComplete) {
   utterance.rate = 1.1;
 
   utterance.onend = () => {
-    // 500ms buffer to let audio clear from mic hardware
+    // 1000ms buffer to let audio fully clear from mic/speakers
     setTimeout(() => {
+      lastSpokenText = currentSpokenText;
+      lastSpeechEndTime = Date.now();
       isRandySpeaking = false;
       currentSpokenText = '';
       const cb = currentSpeechOnComplete;
@@ -524,12 +554,13 @@ function speakText(text, onComplete) {
       } else if (currentState === STATES.SPEAKING) {
         transition(STATES.ACTIVE_LISTENING);
       }
-    }, 500);
+    }, 1000);
   };
 
   utterance.onerror = (e) => {
     if (e.error === 'canceled') {
-      // Intentional cancel (user interrupt or stopAll)
+      lastSpokenText = currentSpokenText;
+      lastSpeechEndTime = Date.now();
       isRandySpeaking = false;
       currentSpokenText = '';
       currentSpeechOnComplete = null;
@@ -537,6 +568,8 @@ function speakText(text, onComplete) {
     }
     console.error('Randy speech error:', e.error);
     setTimeout(() => {
+      lastSpokenText = currentSpokenText;
+      lastSpeechEndTime = Date.now();
       isRandySpeaking = false;
       currentSpokenText = '';
       const cb = currentSpeechOnComplete;
@@ -546,7 +579,7 @@ function speakText(text, onComplete) {
       } else if (currentState === STATES.SPEAKING) {
         transition(STATES.ACTIVE_LISTENING);
       }
-    }, 500);
+    }, 1000);
   };
 
   synth.speak(utterance);
