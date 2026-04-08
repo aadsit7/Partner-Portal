@@ -5,6 +5,7 @@
 
 import { CONFIG } from '../config.js';
 import { readSheetAsObjects } from '../sheets.js';
+import { setTopbarTitle } from '../components/sidebar.js';
 
 // ── State ──────────────────────────────────────────────────────────
 let conversationHistory = [];
@@ -64,51 +65,59 @@ DATA RULES:
 // Reads all sheets via the existing sheets.js Google Sheets integration
 // Uses a 5-min cache so we don't re-fetch on every message
 
+async function safeRead(sheetName) {
+  try {
+    return await readSheetAsObjects(sheetName);
+  } catch (err) {
+    console.warn(`Sheet "${sheetName}" not available:`, err.message);
+    return [];
+  }
+}
+
 async function loadSheetData(forceRefresh = false) {
   const now = Date.now();
   if (!forceRefresh && cachedSheetData && (now - cacheTimestamp) < CACHE_TTL) {
     return cachedSheetData;
   }
 
-  try {
-    const [partners, opportunities, events, meetingIndex, transcripts] = await Promise.all([
-      readSheetAsObjects(CONFIG.SHEET_PARTNERS),
-      readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES),
-      readSheetAsObjects(CONFIG.SHEET_EVENTS),
-      readSheetAsObjects(CONFIG.SHEET_MEETING_INDEX),
-      readSheetAsObjects(CONFIG.SHEET_TRANSCRIPTS)
-    ]);
+  const [partners, opportunities, events, meetingIndex, transcripts] = await Promise.all([
+    safeRead(CONFIG.SHEET_PARTNERS),
+    safeRead(CONFIG.SHEET_OPPORTUNITIES),
+    safeRead(CONFIG.SHEET_EVENTS),
+    safeRead(CONFIG.SHEET_MEETING_INDEX),
+    safeRead(CONFIG.SHEET_TRANSCRIPTS)
+  ]);
 
-    // Sanitize partners — strip password hashes before sending to Claude
-    const sanitizedPartners = partners.map(p => {
-      const { password_hash, is_admin, ...safe } = p;
-      return safe;
-    });
-
-    // For transcripts, send only metadata + truncated preview to stay within token limits
-    // Full transcript text is sent only when the user asks about a specific partner
-    const transcriptIndex = transcripts.map(t => ({
-      transcript_id: t.transcript_id,
-      partner_id: t.partner_id,
-      partner_name: t.partner_name,
-      conversation_date: t.conversation_date,
-      preview: (t.transcript_text || '').substring(0, 300) + '...'
-    }));
-
-    cachedSheetData = {
-      partners: sanitizedPartners,
-      opportunities: opportunities,
-      events: events,
-      meetingIndex: meetingIndex,
-      transcriptIndex: transcriptIndex,
-      fullTranscripts: transcripts // kept locally for targeted lookups
-    };
-    cacheTimestamp = now;
-    return cachedSheetData;
-  } catch (err) {
-    console.error('Failed to load sheet data:', err);
+  if (partners.length === 0) {
     throw new Error('Could not read Google Sheets. Check your connection on the Setup page.');
   }
+
+  // Sanitize partners — strip password hashes before sending to Claude
+  const sanitizedPartners = partners.map(p => {
+    const { password_hash, is_admin, ...safe } = p;
+    return safe;
+  });
+
+  // For transcripts, send only metadata + truncated preview to stay within token limits
+  // Full transcript text is sent only when the user asks about a specific partner
+  const transcriptIndex = transcripts.map(t => ({
+    transcript_id: t.transcript_id,
+    partner_id: t.partner_id,
+    partner_name: t.partner_name,
+    conversation_date: t.conversation_date,
+    preview: (t.transcript_text || '').substring(0, 300) + '...'
+  }));
+
+  cachedSheetData = {
+    partners: sanitizedPartners,
+    opportunities: opportunities,
+    events: events,
+    meetingIndex: meetingIndex,
+    transcriptIndex: transcriptIndex,
+    fullTranscripts: transcripts // kept locally for targeted lookups
+  };
+  cacheTimestamp = now;
+  return cachedSheetData;
 }
 
 // ── Build Context for API Call ─────────────────────────────────────
@@ -420,6 +429,8 @@ const SUGGESTED_QUESTIONS = [
 
 // ── Main Render ────────────────────────────────────────────────────
 export function renderAdminAIAssistant(container) {
+  setTopbarTitle('AI Assistant');
+
   const view = container
     || document.getElementById('view-container')
     || document.querySelector('.view-container')
