@@ -54,7 +54,7 @@ export const CONFIG = {
   ADMIN_EMAILS: ['aadsit7@gmail.com', 'adsitvideo@gmail.com'],
 
   // Anthropic API (for AI Assistant)
-  ANTHROPIC_API_KEY: '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',
+  ANTHROPIC_API_KEY: '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',
 
   // Sheet names (must match your Google Spreadsheet tab names)
   SHEET_PARTNERS: 'Partners',
