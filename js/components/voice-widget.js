@@ -93,6 +93,7 @@ function initRecognition() {
       if (!stopping) startListening();
       return;
     }
+    setState('processing');
     await handleVoiceInput(transcript);
   };
 
@@ -146,7 +147,6 @@ function stopEverything() {
 // ── Claude API Handler ─────────────────────────────────────────────
 async function handleVoiceInput(text) {
   if (stopping) return;
-  setState('processing');
 
   renderInChatIfVisible('user', text);
 
