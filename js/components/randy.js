@@ -10,6 +10,7 @@ import { getCurrentPath } from '../router.js';
 import { CONFIG } from '../config.js';
 import { getCurrentUser } from '../auth.js';
 import { appendRow, updateRow, readSheetAsObjects } from '../sheets.js';
+import { isVoiceModeActive } from './voice-widget.js';
 
 // ── Randy Personality Prompt ──────────────────────────────────────
 const RANDY_PERSONALITY = `
@@ -223,6 +224,8 @@ function scheduleRestart() {
 function startRecognition() {
   if (currentState === STATES.OFF || currentState === STATES.PROCESSING || currentState === STATES.SPEAKING) return;
   if (isRandySpeaking) return;
+  // Pause if the existing voice widget (chat mic) is active — only one SpeechRecognition at a time
+  if (isVoiceModeActive()) return;
 
   if (!recognition) recognition = initRecognition();
   if (!recognition) return;
