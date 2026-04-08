@@ -424,6 +424,59 @@
   flex-shrink: 0;
   gap: 8px;
 }
+.randy-window__voice-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.randy-edit-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid #d1d5db;
+  background: white;
+  color: #4a4a5a;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 150ms;
+}
+.randy-edit-btn:hover { background: #f3f4f6; color: #0000CC; border-color: #0000CC; }
+.randy-input-row {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  padding: 0 4px;
+}
+.randy-text-input {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  border: 1.5px solid #d1d5db;
+  border-radius: 8px;
+  outline: none;
+  background: white;
+  color: #1a1a2e;
+}
+.randy-text-input:focus { border-color: #0000CC; box-shadow: 0 0 0 2px rgba(0,0,204,0.08); }
+.randy-text-input::placeholder { color: #9ca3af; }
+.randy-send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: #0000CC;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 150ms;
+}
+.randy-send-btn:hover { background: #0000aa; }
 
 .randy-window__status {
   font-size: 12px;

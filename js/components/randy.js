@@ -894,7 +894,18 @@ function createWidget() {
 
         <div class="randy-window__bottom">
           <div class="randy-window__status" id="randy-status" role="status" aria-live="polite">Tap to talk</div>
-          <button class="randy-voice-btn randy-voice-btn--paused" id="randy-voice-btn" aria-label="Toggle voice">${MIC_SVG}</button>
+          <div class="randy-window__voice-row">
+            <button class="randy-voice-btn randy-voice-btn--paused" id="randy-voice-btn" aria-label="Toggle voice">${MIC_SVG}</button>
+            <button class="randy-edit-btn" id="randy-edit-btn" title="Type a message" aria-label="Type a message">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+            </button>
+          </div>
+          <div class="randy-input-row" id="randy-input-row" hidden>
+            <input type="text" class="randy-text-input" id="randy-text-input" placeholder="Type a message..." maxlength="500">
+            <button class="randy-send-btn" id="randy-send-btn" title="Send">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -947,6 +958,32 @@ function createWidget() {
 
   // Single voice toggle button
   document.getElementById('randy-voice-btn').addEventListener('click', handleVoiceBtnClick);
+
+  // Edit/keyboard input toggle
+  const editBtn = document.getElementById('randy-edit-btn');
+  const inputRow = document.getElementById('randy-input-row');
+  const textInput = document.getElementById('randy-text-input');
+  const sendBtn = document.getElementById('randy-send-btn');
+
+  editBtn.addEventListener('click', () => {
+    const isVisible = !inputRow.hidden;
+    inputRow.hidden = isVisible;
+    if (!isVisible) textInput.focus();
+  });
+
+  function sendTypedMessage() {
+    const text = textInput.value.trim();
+    if (!text || isProcessing) return;
+    textInput.value = '';
+    inputRow.hidden = true;
+    processUserInput(text);
+  }
+
+  textInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); sendTypedMessage(); }
+    if (e.key === 'Escape') { textInput.value = ''; inputRow.hidden = true; }
+  });
+  sendBtn.addEventListener('click', sendTypedMessage);
 
   // Escape to exit fullscreen
   if (escapeHandler) document.removeEventListener('keydown', escapeHandler);
