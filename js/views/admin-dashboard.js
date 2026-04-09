@@ -28,12 +28,12 @@ const TYPE_FILTER_KEY = 'pp_dashboard_type_filter';
 function loadTypeFilter() {
   try {
     const raw = localStorage.getItem(TYPE_FILTER_KEY);
-    if (raw) {
+    if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed; // [] means "All Types"
     }
   } catch { /* ignore */ }
-  return ['MSP/SI', 'Technology']; // default types
+  return ['MSP/SI', 'Technology']; // default on first visit
 }
 
 function saveTypeFilter(selectedTypes) {
