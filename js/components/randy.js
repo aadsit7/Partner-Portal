@@ -732,7 +732,7 @@ function speakText(text, onComplete) {
 
   const utterance = new SpeechSynthesisUtterance(clean);
   if (selectedVoice) utterance.voice = selectedVoice;
-  utterance.pitch = 0.8;
+  utterance.pitch = 0.7;
   utterance.rate = 0.95;
 
   utterance.onend = () => {
@@ -787,25 +787,35 @@ function speakText(text, onComplete) {
 
 // ── Voice Selection ───────────────────────────────────────────────
 function selectVoice() {
-  const voices = synth.getVoices();
-  if (!voices.length) return;
+  const allVoices = synth.getVoices();
+  if (!allVoices.length) return;
 
-  // Priority order
+  // Exclude feminine-sounding voices
+  const femaleNames = ['female', 'woman', 'girl', 'zira', 'hazel', 'susan',
+    'catherine', 'samantha', 'karen', 'moira', 'fiona', 'tessa', 'victoria', 'allison'];
+  const voices = allVoices.filter(v => {
+    const lower = v.name.toLowerCase();
+    return !femaleNames.some(f => lower.includes(f));
+  });
+
+  // Priority order — aggressively prefer deep male voices
   const priorities = [
+    v => v.name.includes('Mark'),
+    v => v.name.includes('David'),
+    v => v.name.includes('James'),
+    v => v.name.includes('Daniel'),
+    v => v.name.includes('Alex') && v.lang.startsWith('en'),
     v => v.name.includes('Google US English'),
-    v => v.name.includes('Microsoft Mark'),
-    v => v.name.includes('Microsoft David'),
-    v => v.name.includes('Alex'),
-    v => v.lang.startsWith('en-US') && v.name.toLowerCase().includes('male'),
     v => v.lang.startsWith('en-US'),
   ];
 
   for (const test of priorities) {
     const match = voices.find(test);
-    if (match) { selectedVoice = match; return; }
+    if (match) { selectedVoice = match; console.log('Randy voice:', selectedVoice.name, selectedVoice.lang); return; }
   }
 
-  selectedVoice = voices[0] || null;
+  selectedVoice = voices[0] || allVoices[0] || null;
+  if (selectedVoice) console.log('Randy voice:', selectedVoice.name, selectedVoice.lang);
 }
 
 // ── Text Cleaning for Speech ──────────────────────────────────────
