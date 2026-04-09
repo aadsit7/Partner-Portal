@@ -42,9 +42,13 @@ export function formatMonthYear(date) {
   return `${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 }
 
-/** Get today as ISO date string (YYYY-MM-DD) */
+/** Get today as ISO date string (YYYY-MM-DD) in local timezone */
 export function todayISO() {
-  return new Date().toISOString().split('T')[0];
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /** Get now as ISO string */

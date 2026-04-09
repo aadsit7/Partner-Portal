@@ -259,8 +259,10 @@ function openTranscriptModal(partner, existingTranscript, previousTranscripts, o
     class: 'form-input',
     type: 'date',
     id: 'transcript-date',
-    value: isEdit ? (existingTranscript.conversation_date || '') : todayISO(),
   });
+  // Set value as a DOM property (not setAttribute) so the date picker
+  // reliably reflects user changes when read back via dateInput.value
+  dateInput.value = isEdit ? (existingTranscript.conversation_date || '') : todayISO();
 
   const editor = initQuillEditor({
     placeholder: 'Paste or type the call transcript here...',
