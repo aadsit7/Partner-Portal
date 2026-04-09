@@ -19,6 +19,27 @@ export const title = 'Admin Dashboard';
 let mapInstance = null;
 let mapMarkers = [];
 
+// ============================================
+// Partner Type Filter — localStorage helpers
+// ============================================
+
+const TYPE_FILTER_KEY = 'pp_dashboard_type_filter';
+
+function loadTypeFilter() {
+  try {
+    const raw = localStorage.getItem(TYPE_FILTER_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch { /* ignore */ }
+  return []; // empty = "All Types"
+}
+
+function saveTypeFilter(selectedTypes) {
+  localStorage.setItem(TYPE_FILTER_KEY, JSON.stringify(selectedTypes));
+}
+
 const TYPE_COLORS = {
   'Technology':                'var(--color-primary-lighter)',
   'OEM':                       'var(--color-warning)',
@@ -141,20 +162,45 @@ export async function render(container) {
 }
 
 function renderDashboard(container, partners, opportunities, events) {
+  // --- Base filtered lists (admin/inactive/cancelled excluded) ---
   const partnerList = filterPartners(partners);
   const filteredOpps = filterOpportunities(opportunities);
   const filteredEvents = filterEvents(events);
-  const upcomingEvents = filteredEvents.filter(e => e.status === 'Upcoming' || e.status === 'In Progress');
 
-  const totalPipeline = filteredOpps.reduce((sum, o) => sum + (parseFloat(o.deal_value) || 0), 0);
-  const wonValue = filteredOpps
+  // --- Type filter (multi-select, persisted in localStorage) ---
+  const selectedTypes = loadTypeFilter();
+
+  // Unfiltered type data for button labels (always show full counts)
+  const allTypeData = computeTypeData(partnerList, filteredOpps);
+  const allUniqueTypes = Object.keys(allTypeData);
+  const allTotalPipeline = filteredOpps.reduce((sum, o) => sum + (parseFloat(o.deal_value) || 0), 0);
+
+  // Prune selectedTypes: remove any that no longer exist in the data
+  const validSelected = selectedTypes.filter(t => allUniqueTypes.includes(t));
+  if (validSelected.length !== selectedTypes.length) saveTypeFilter(validSelected);
+
+  // Apply type filter
+  const tfPartners = validSelected.length === 0
+    ? partnerList
+    : partnerList.filter(p => validSelected.includes(p.partner_type));
+  const tfPartnerIds = new Set(tfPartners.map(p => p.partner_id));
+  const tfOpps = validSelected.length === 0
+    ? filteredOpps
+    : filteredOpps.filter(o => tfPartnerIds.has(o.partner_id));
+  const tfEvents = validSelected.length === 0
+    ? filteredEvents
+    : filteredEvents.filter(e => !e.partner_id || tfPartnerIds.has(e.partner_id));
+  const tfUpcoming = tfEvents.filter(e => e.status === 'Upcoming' || e.status === 'In Progress');
+
+  const tfTotalPipeline = tfOpps.reduce((sum, o) => sum + (parseFloat(o.deal_value) || 0), 0);
+  const tfWonValue = tfOpps
     .filter(o => o.status === 'Won')
     .reduce((sum, o) => sum + (parseFloat(o.deal_value) || 0), 0);
 
-  // Per-partner stats
-  const partnerStats = partnerList.map(partner => {
-    const partnerOpps = filteredOpps.filter(o => o.partner_id === partner.partner_id);
-    const partnerEvents = filteredEvents.filter(e => e.partner_id === partner.partner_id);
+  // Per-partner stats (type-filtered)
+  const partnerStats = tfPartners.map(partner => {
+    const partnerOpps = tfOpps.filter(o => o.partner_id === partner.partner_id);
+    const partnerEvents = tfEvents.filter(e => e.partner_id === partner.partner_id);
     const upcomingPartnerEvents = partnerEvents.filter(e => e.status === 'Upcoming' || e.status === 'In Progress');
     const total = partnerOpps.length;
     const totalVal = partnerOpps.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
@@ -167,9 +213,49 @@ function renderDashboard(container, partners, opportunities, events) {
     };
   }).sort((a, b) => b.stats.totalValue - a.stats.totalValue);
 
-  // Type distribution data
-  const typeData = computeTypeData(partnerList, filteredOpps);
+  // Type distribution data (type-filtered, for partners view)
+  const typeData = computeTypeData(tfPartners, tfOpps);
   const uniqueTypes = Object.keys(typeData);
+
+  // --- Type filter button bar ---
+  function buildTypeFilterBar() {
+    const buttons = [];
+
+    // "All Types" button
+    const allActive = validSelected.length === 0;
+    buttons.push(el('button', {
+      class: allActive ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm',
+      onClick: () => { saveTypeFilter([]); renderDashboard(container, partners, opportunities, events); },
+    },
+      el('span', { class: 'type-filter-label' }, `All Types (${partnerList.length})`),
+      el('span', { class: 'type-filter-pipeline' }, formatCurrency(allTotalPipeline)),
+    ));
+
+    // One button per unique type (from unfiltered data)
+    allUniqueTypes.forEach(type => {
+      const d = allTypeData[type];
+      const isActive = validSelected.includes(type);
+      buttons.push(el('button', {
+        class: isActive ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm',
+        onClick: () => {
+          let next;
+          if (isActive) {
+            next = validSelected.filter(t => t !== type);
+          } else {
+            next = [...validSelected, type];
+          }
+          if (next.length === 0 || next.length === allUniqueTypes.length) next = [];
+          saveTypeFilter(next);
+          renderDashboard(container, partners, opportunities, events);
+        },
+      },
+        el('span', { class: 'type-filter-label' }, `${type} (${d.count})`),
+        el('span', { class: 'type-filter-pipeline' }, formatCurrency(d.pipeline)),
+      ));
+    });
+
+    return el('div', { class: 'view-toggle type-filter-bar' }, ...buttons);
+  }
 
   // Tab state
   let activeTab = 'activity';
@@ -197,12 +283,12 @@ function renderDashboard(container, partners, opportunities, events) {
     partnersView.style.display = tab === 'partners' ? '' : 'none';
 
     if (tab === 'partners' && !partnersView.hasChildNodes()) {
-      buildPartnersView(partnersView, partnerList, partnerStats, typeData, uniqueTypes, totalPipeline, filteredOpps);
+      buildPartnersView(partnersView, tfPartners, partnerStats, typeData, uniqueTypes, tfTotalPipeline, tfOpps);
     }
   }
 
   // Build activity view content
-  buildActivityView(activityView, partnerStats, upcomingEvents, filteredEvents, filteredOpps, container);
+  buildActivityView(activityView, partnerStats, tfUpcoming, tfEvents, tfOpps, container);
 
   // Interactive stat card handlers
   let activeStatKey = '';
@@ -216,7 +302,6 @@ function renderDashboard(container, partners, opportunities, events) {
     else if (activeStatKey === 'events') {
       switchTab('activity');
       setTimeout(() => {
-        const timeline = document.querySelector('.section-header__title');
         const headers = document.querySelectorAll('.section-header__title');
         for (const h of headers) { if (h.textContent.includes('Joint Events')) { h.scrollIntoView({ behavior: 'smooth', block: 'start' }); break; } }
       }, 100);
@@ -232,11 +317,9 @@ function renderDashboard(container, partners, opportunities, events) {
   let activeBarPartner = null;
   function onBarClick(partnerName) {
     if (activeBarPartner === partnerName) { activeBarPartner = null; } else { activeBarPartner = partnerName; }
-    // Toggle active class on bar rows
     document.querySelectorAll('.demandgen-bar-row--clickable').forEach(row => {
       row.classList.toggle('demandgen-bar-row--active', row.dataset.partnerName === activeBarPartner);
     });
-    // Filter activity cards
     switchTab('activity');
     const activityCards = activityView.querySelectorAll('.activity-card');
     activityCards.forEach(card => {
@@ -253,27 +336,30 @@ function renderDashboard(container, partners, opportunities, events) {
     // Top zone: 2×2 stat cards on left, Opportunity Source chart on right
     el('div', { class: 'dashboard-top' },
       el('div', { class: 'dashboard-top__stats stagger' },
-        statCard('Total Partners', partnerList.length, {
+        statCard('Total Partners', tfPartners.length, {
           accentColor: 'var(--color-primary-lighter)',
           onClick: () => toggleStat('partners'),
         }),
-        statCard('Total Pipeline', formatCurrency(totalPipeline), {
+        statCard('Total Pipeline', formatCurrency(tfTotalPipeline), {
           accentColor: 'var(--color-accent)',
           onClick: () => toggleStat('pipeline'),
         }),
-        statCard('Revenue Won', formatCurrency(wonValue), {
+        statCard('Revenue Won', formatCurrency(tfWonValue), {
           accentColor: 'var(--color-status-won)',
           onClick: () => toggleStat('won'),
         }),
-        statCard('Upcoming Events', upcomingEvents.length, {
+        statCard('Upcoming Events', tfUpcoming.length, {
           accentColor: 'var(--color-status-registered)',
           onClick: () => toggleStat('events'),
         }),
       ),
       el('div', { class: 'dashboard-top__chart' },
-        buildPartnerSourceChart(filteredOpps, partnerList, onBarClick),
+        buildPartnerSourceChart(tfOpps, tfPartners, onBarClick),
       ),
     ),
+
+    // Type filter bar (below KPI cards, above tab toggle)
+    buildTypeFilterBar(),
 
     // Tabs + views (full width below)
     el('div', { class: 'view-toggle' }, activityTabBtn, partnersTabBtn),
