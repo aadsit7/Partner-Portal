@@ -484,8 +484,12 @@ async function executeNavCommand(nav) {
       if (type === 'partner') {
         try {
           const data = await loadSheetData();
-          const partner = data.partners.find(p =>
-            p.display_name && p.display_name.toLowerCase().includes(name)
+          const partners = data.partners || [];
+          // Exact match first, then partial
+          const partner = partners.find(p =>
+            (p.display_name || '').toLowerCase() === name
+          ) || partners.find(p =>
+            (p.display_name || '').toLowerCase().includes(name)
           );
           if (partner) {
             console.log('Randy NAV: opening partner', partner.display_name, partner.partner_id);
@@ -500,9 +504,14 @@ async function executeNavCommand(nav) {
       } else if (type === 'opportunity') {
         try {
           const data = await loadSheetData();
-          const opp = data.opportunities.find(o =>
-            (o.deal_name && o.deal_name.toLowerCase().includes(name)) ||
-            (o.customer_name && o.customer_name.toLowerCase().includes(name))
+          const opps = data.opportunities || [];
+          // Exact match first, then partial
+          const opp = opps.find(o =>
+            (o.deal_name || '').toLowerCase() === name ||
+            (o.customer_name || '').toLowerCase() === name
+          ) || opps.find(o =>
+            (o.deal_name || '').toLowerCase().includes(name) ||
+            (o.customer_name || '').toLowerCase().includes(name)
           );
           // Navigate to opportunities page first
           window.location.hash = '#/admin/opportunities';
