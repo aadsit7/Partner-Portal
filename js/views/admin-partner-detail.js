@@ -278,6 +278,13 @@ function openTranscriptModal(partner, existingTranscript, previousTranscripts, o
   });
 
   const editorContainer = el('div', { id: 'transcript-editor' });
+  const fullscreenBtn = el('button', {
+    class: 'transcript-editor-expand-btn',
+    type: 'button',
+    title: 'Expand editor',
+    html: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 10v4h4M14 6V2h-4M2 6V2h4M14 10v4h-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  });
+  const editorWrapper = el('div', { class: 'transcript-editor-wrapper' }, editorContainer, fullscreenBtn);
   let quillInstance = null;
 
   const formContent = el('div', {},
@@ -297,7 +304,7 @@ function openTranscriptModal(partner, existingTranscript, previousTranscripts, o
     ),
     el('div', { class: 'form-group' },
       el('label', { class: 'form-label' }, 'Transcript'),
-      editorContainer
+      editorWrapper
     ),
   );
 
@@ -402,6 +409,37 @@ function openTranscriptModal(partner, existingTranscript, previousTranscripts, o
         const content = ensureHtml(existingTranscript.transcript_text);
         quillInstance.clipboard.dangerouslyPasteHTML(content);
       }
+
+      // Fullscreen toggle
+      let isFullscreen = false;
+      const overlay = el('div', { class: 'transcript-editor-fullscreen' });
+      const collapseBtn = el('button', {
+        class: 'transcript-editor-collapse-btn',
+        type: 'button',
+        html: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4.5 4.5l9 9M13.5 4.5l-9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Close fullscreen',
+        onClick: () => toggleFullscreen(),
+      });
+      const fullscreenHeader = el('div', { class: 'transcript-editor-fullscreen__header' },
+        el('span', { class: 'transcript-editor-fullscreen__title' }, 'Edit Transcript'),
+        collapseBtn,
+      );
+      overlay.appendChild(fullscreenHeader);
+
+      function toggleFullscreen() {
+        isFullscreen = !isFullscreen;
+        if (isFullscreen) {
+          overlay.appendChild(editorContainer);
+          document.body.appendChild(overlay);
+          fullscreenBtn.style.display = 'none';
+        } else {
+          editorWrapper.insertBefore(editorContainer, fullscreenBtn);
+          overlay.remove();
+          fullscreenBtn.style.display = '';
+        }
+        quillInstance.focus();
+      }
+
+      fullscreenBtn.addEventListener('click', toggleFullscreen);
     }
   });
 }
