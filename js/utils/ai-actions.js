@@ -20,22 +20,46 @@ export const BLOCKED_FIELDS = ['password_hash', 'is_admin'];
 // ── Action Parser ──────────────────────────────────────────────────
 export function parseActions(responseText) {
   const actions = [];
+  let parseError = false;
   const cleanText = responseText.replace(/:::ACTION\n([\s\S]*?)\n:::/g, (_, json) => {
-    try { actions.push(JSON.parse(json)); } catch (e) { console.error('Failed to parse action:', e); }
+    try { actions.push(JSON.parse(json)); } catch (e) { console.error('Failed to parse action:', e); parseError = true; }
     return '';
   }).trim();
+  // If action JSON was malformed, surface it so the user knows
+  if (parseError && actions.length === 0) {
+    return { cleanText: cleanText || "I tried to set up that change but hit a formatting issue. Can you try again?", actions: [] };
+  }
   return { cleanText, actions };
 }
 
 // ── Row Matching ───────────────────────────────────────────────────
+// ID fields use exact match only; name fields allow partial match
+const ID_FIELDS = ['partner_id', 'opportunity_id', 'event_id', 'transcript_id', 'meeting_id', 'conversation_id'];
+
 export function findMatchingRow(rows, match) {
-  return rows.find(row => {
+  // First pass: exact match on all fields
+  const exact = rows.find(row => {
+    return Object.entries(match).every(([field, value]) => {
+      return String(row[field] || '').toLowerCase() === String(value).toLowerCase();
+    });
+  });
+  if (exact) return exact;
+
+  // Second pass: exact on IDs, partial on names — but only if no ambiguity
+  const partial = rows.filter(row => {
     return Object.entries(match).every(([field, value]) => {
       const rowVal = String(row[field] || '').toLowerCase();
       const matchVal = String(value).toLowerCase();
+      if (ID_FIELDS.includes(field)) return rowVal === matchVal;
       return rowVal === matchVal || rowVal.includes(matchVal);
     });
   });
+  if (partial.length === 1) return partial[0];
+  if (partial.length > 1) {
+    console.warn('findMatchingRow: ambiguous match — multiple rows found, using first', match);
+    return partial[0];
+  }
+  return undefined;
 }
 
 // ── Action Execution ───────────────────────────────────────────────
@@ -49,7 +73,8 @@ export async function executeAction(action) {
     }
   }
 
-  const sheetData = await loadSheetData();
+  // Always load fresh data for write operations to avoid stale row references
+  const sheetData = await loadSheetData(true);
   const headers = SHEET_HEADERS[action.sheet];
   const sheetKey = { Partners: 'partners', Opportunities: 'opportunities', Events: 'events', Transcripts: 'fullTranscripts', Meeting_Index: 'meetingIndex' }[action.sheet];
   const rows = (sheetKey && sheetData[sheetKey]) || [];

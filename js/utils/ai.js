@@ -221,14 +221,14 @@ export function buildDataContext(data, userMessage) {
     transcriptContext = `\n\nTRANSCRIPT PREVIEWS (${data.transcriptIndex.length} transcripts available — ask about a specific partner for full text):\n${JSON.stringify(data.transcriptIndex, null, 2)}`;
   }
 
-  const needsFullDescriptions = /environment|platform|citrix|intune|sccm|avd|technical|architecture|current state|migration/i.test(userMessage);
+  const needsFullDescriptions = /environment|platform|citrix|intune|sccm|avd|technical|architecture|current state|migration|deal|pipeline|status|update|detail|description|summary|recap|meeting|close|revenue|forecast|note/i.test(userMessage);
 
   const opps = data.opportunities.map(o => {
     const plain = stripHtml(o.description || '');
     if (needsFullDescriptions) {
       return { ...o, description: plain.substring(0, 4000) };
     }
-    return { ...o, description: plain.substring(0, 500) + '...' };
+    return { ...o, description: plain.substring(0, 1500) };
   });
 
   return `DATA CONTEXT:

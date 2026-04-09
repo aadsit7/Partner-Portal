@@ -213,6 +213,9 @@ function classifyTranscript(text) {
   const lower = text.toLowerCase().trim();
   const words = lower.split(/\s+/);
 
+  // Too short to classify — wait for more input (prevents sending "open" before "open Nerdio")
+  if (words.length < 2) return 'unknown';
+
   // Question patterns — check first (more specific)
   const questionStarts = ['what', 'when', 'where', 'who', 'how', 'why', 'which',
     'tell me', 'give me', 'explain', 'summarize', 'describe', 'compare', 'list'];
@@ -220,7 +223,7 @@ function classifyTranscript(text) {
     if (lower.startsWith(q)) return 'question';
   }
 
-  // Longer than 8 words → question (user is still composing)
+  // Longer than 8 words → likely a question or complex request
   if (words.length > 8) return 'question';
 
   // Action patterns — starts with
@@ -234,9 +237,7 @@ function classifyTranscript(text) {
   // Action patterns — contains
   if (/\b(open up|pull up|bring up)\b/.test(lower)) return 'action';
 
-  // Very short (under 8 words) → action
-  if (words.length < 8) return 'action';
-
+  // Short phrases (2-8 words) that aren't actions → default to manual send
   return 'unknown';
 }
 
@@ -317,6 +318,9 @@ function stopAll() {
   pendingActions = null;
   confirmAttempts = 0;
   accumulatedTranscript = '';
+  currentConvId = null;
+  currentConvRow = null;
+  convStartedAt = null;
   voiceEnabled = false;
   isDragging = false;
 }
@@ -540,11 +544,12 @@ function isDeactivationPhrase(lower) {
 // ── NAV Block Parser ─────────────────────────────────────────────
 function parseNavCommands(text) {
   const navs = [];
+  let parseError = false;
   const cleaned = text.replace(/:::NAV\n([\s\S]*?)\n:::/g, (_, json) => {
-    try { navs.push(JSON.parse(json)); } catch (e) { console.error('Failed to parse NAV:', e); }
+    try { navs.push(JSON.parse(json)); } catch (e) { console.error('Failed to parse NAV:', e); parseError = true; }
     return '';
   }).trim();
-  return { cleaned, navs };
+  return { cleaned, navs, parseError };
 }
 
 // ── NAV Execution ────────────────────────────────────────────────
@@ -578,45 +583,60 @@ async function executeNavCommand(nav) {
         try {
           const data = await loadSheetData();
           const partners = data.partners || [];
-          // Exact match first, then partial
+          // Exact match first, then partial (but only single match)
           const partner = partners.find(p =>
             (p.display_name || '').toLowerCase() === name
-          ) || partners.find(p =>
-            (p.display_name || '').toLowerCase().includes(name)
-          );
+          ) || (() => {
+            const matches = partners.filter(p => (p.display_name || '').toLowerCase().includes(name));
+            return matches.length === 1 ? matches[0] : null;
+          })();
           if (partner) {
             console.log('Randy NAV: opening partner', partner.display_name, partner.partner_id);
             window.location.hash = '#/admin/partner-detail?id=' + encodeURIComponent(partner.partner_id);
           } else {
             console.warn('Randy NAV: partner not found:', name);
+            speakText("Couldn't find that partner. Opening the partners list.");
             window.location.hash = '#/admin/partners';
           }
         } catch (e) {
           console.error('Randy NAV: partner lookup failed', e);
+          speakText("Had trouble looking that up. Try again.");
         }
       } else if (type === 'opportunity') {
         try {
           const data = await loadSheetData();
           const opps = data.opportunities || [];
-          // Exact match first, then partial
+          // Exact match first, then partial (single match only)
           const opp = opps.find(o =>
             (o.deal_name || '').toLowerCase() === name ||
             (o.customer_name || '').toLowerCase() === name
-          ) || opps.find(o =>
-            (o.deal_name || '').toLowerCase().includes(name) ||
-            (o.customer_name || '').toLowerCase().includes(name)
-          );
+          ) || (() => {
+            const matches = opps.filter(o =>
+              (o.deal_name || '').toLowerCase().includes(name) ||
+              (o.customer_name || '').toLowerCase().includes(name)
+            );
+            return matches.length === 1 ? matches[0] : null;
+          })();
           // Navigate to opportunities page first
           window.location.hash = '#/admin/opportunities';
           if (opp) {
             console.log('Randy NAV: opening opportunity', opp.deal_name, opp.opportunity_id);
-            // Wait for the view to render, then open the modal
-            setTimeout(() => {
-              openOppModal(opp, document.getElementById('view-container'));
-            }, 300);
+            // Wait for the view to fully render, then open the modal
+            const waitForView = (attempts = 0) => {
+              const container = document.getElementById('view-container');
+              if (container && container.querySelector('.card, .opp-card, table') && attempts < 10) {
+                openOppModal(opp, container);
+              } else if (attempts < 10) {
+                setTimeout(() => waitForView(attempts + 1), 200);
+              }
+            };
+            setTimeout(() => waitForView(), 300);
+          } else {
+            speakText("Couldn't find that deal. Opening the opportunities list.");
           }
         } catch (e) {
           console.error('Randy NAV: opportunity lookup failed', e);
+          speakText("Had trouble looking that up. Try again.");
         }
       }
       break;
@@ -633,16 +653,23 @@ async function executeNavCommand(nav) {
 
 // ── Process User Input (voice-only) ───────────────────────────────
 async function processUserInput(text) {
+  // Re-entry guard — prevent parallel API calls
+  if (isProcessing) return;
+
   transition(STATES.PROCESSING);
   renderMessage('user', text);
   renderTypingIndicator();
 
-  conversationHistory.push({ role: 'user', content: text });
   isProcessing = true;
 
   try {
-    const sheetData = await loadSheetData();
+    // Always load fresh data for accuracy (bypass cache)
+    const sheetData = await loadSheetData(true);
     abortController = new AbortController();
+
+    // Add user message to history only now (after we have data, before API call)
+    conversationHistory.push({ role: 'user', content: text });
+
     const response = await callClaude(conversationHistory, sheetData, text, abortController.signal, RANDY_SYSTEM_PROMPT);
     abortController = null;
 
@@ -681,13 +708,20 @@ async function processUserInput(text) {
     abortController = null;
     removeTypingIndicator();
     if (err.name === 'AbortError') {
-      transition(STATES.PASSIVE, true);
+      // Remove the orphaned user message from history
+      if (conversationHistory.length > 0 && conversationHistory[conversationHistory.length - 1].role === 'user') {
+        conversationHistory.pop();
+      }
+      transition(STATES.ACTIVE_LISTENING, true);
       return;
     }
+    // Remove orphaned user message on error too
+    if (conversationHistory.length > 0 && conversationHistory[conversationHistory.length - 1].role === 'user') {
+      conversationHistory.pop();
+    }
     console.error('Randy API error:', err);
-    const errMsg = "Sorry boss, hit a snag. " + err.message;
-    renderMessage('assistant', errMsg);
-    speakText(errMsg);
+    renderMessage('assistant', "Sorry boss, something went wrong. Try again in a sec.");
+    speakText("Sorry boss, something went wrong. Try again in a sec.");
   } finally {
     isProcessing = false;
   }
@@ -758,14 +792,20 @@ async function executeConfirmedAction() {
   transition(STATES.PROCESSING, true);
 
   try {
+    let completed = 0;
     for (const action of actions) {
       await executeAction(action);
+      completed++;
       console.log(`[Randy Write] ${new Date().toISOString()}`, action);
     }
     speakText("Done! Got it all updated.");
   } catch (err) {
     console.error('Randy write error:', err);
-    speakText("Hmm, that didn't work. " + err.message);
+    if (err.message.includes('No matching row')) {
+      speakText("Couldn't find that record. Double-check the name and try again.");
+    } else {
+      speakText("That didn't go through. Try again or do it manually in the portal.");
+    }
   }
 }
 
@@ -1087,6 +1127,8 @@ function showWelcome() {
 }
 
 // ── Conversation Persistence ──────────────────────────────────────
+let convStartedAt = null;
+
 async function saveRandyConversation() {
   if (isSaving || conversationHistory.length < 2) return;
   const user = getCurrentUser();
@@ -1101,7 +1143,8 @@ async function saveRandyConversation() {
 
     if (!currentConvId) {
       currentConvId = 'conv_randy_' + Date.now();
-      await appendRow(CONFIG.SHEET_AI_CONVERSATIONS, [currentConvId, user.username, new Date().toISOString(), title, messagesJson, 'active']);
+      convStartedAt = new Date().toISOString();
+      await appendRow(CONFIG.SHEET_AI_CONVERSATIONS, [currentConvId, user.username, convStartedAt, title, messagesJson, 'active']);
       // Read back row index for future updates
       try {
         const all = await readSheetAsObjects(CONFIG.SHEET_AI_CONVERSATIONS);
@@ -1109,7 +1152,18 @@ async function saveRandyConversation() {
         currentConvRow = saved?._rowIndex || null;
       } catch { /* ok */ }
     } else if (currentConvRow) {
-      await updateRow(CONFIG.SHEET_AI_CONVERSATIONS, currentConvRow, [currentConvId, user.username, new Date().toISOString(), title, messagesJson, 'active']);
+      // Preserve original started_at timestamp on updates
+      await updateRow(CONFIG.SHEET_AI_CONVERSATIONS, currentConvRow, [currentConvId, user.username, convStartedAt || new Date().toISOString(), title, messagesJson, 'active']);
+    } else {
+      // currentConvRow lookup failed earlier — retry the lookup
+      try {
+        const all = await readSheetAsObjects(CONFIG.SHEET_AI_CONVERSATIONS);
+        const saved = all.find(c => c.conversation_id === currentConvId);
+        if (saved?._rowIndex) {
+          currentConvRow = saved._rowIndex;
+          await updateRow(CONFIG.SHEET_AI_CONVERSATIONS, currentConvRow, [currentConvId, user.username, convStartedAt || new Date().toISOString(), title, messagesJson, 'active']);
+        }
+      } catch { /* ok */ }
     }
   } catch (err) {
     console.warn('Randy: failed to save conversation', err);
@@ -1258,6 +1312,7 @@ function createWidget() {
     confirmAttempts = 0;
     currentConvId = null;
     currentConvRow = null;
+    convStartedAt = null;
     voiceEnabled = false;
     const chat = document.getElementById('randy-chat');
     if (chat) chat.innerHTML = '';
