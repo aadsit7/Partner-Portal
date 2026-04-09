@@ -33,7 +33,7 @@ function loadTypeFilter() {
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
   } catch { /* ignore */ }
-  return []; // empty = "All Types"
+  return ['MSP/SI', 'Technology']; // default types
 }
 
 function saveTypeFilter(selectedTypes) {
@@ -227,7 +227,7 @@ function renderDashboard(container, partners, opportunities, events) {
       class: allActive ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm',
       onClick: () => { saveTypeFilter([]); renderDashboard(container, partners, opportunities, events); },
     },
-      el('span', { class: 'type-filter-label' }, `All Types (${partnerList.length})`),
+      el('span', { class: 'type-filter-label' }, 'All Types'),
       el('span', { class: 'type-filter-pipeline' }, formatCurrency(allTotalPipeline)),
     ));
 
@@ -249,7 +249,7 @@ function renderDashboard(container, partners, opportunities, events) {
           renderDashboard(container, partners, opportunities, events);
         },
       },
-        el('span', { class: 'type-filter-label' }, `${type} (${d.count})`),
+        el('span', { class: 'type-filter-label' }, type),
         el('span', { class: 'type-filter-pipeline' }, formatCurrency(d.pipeline)),
       ));
     });
@@ -333,6 +333,9 @@ function renderDashboard(container, partners, opportunities, events) {
   }
 
   const content = el('div', {},
+    // Type filter bar (above KPI cards, below heading)
+    buildTypeFilterBar(),
+
     // Top zone: 2×2 stat cards on left, Opportunity Source chart on right
     el('div', { class: 'dashboard-top' },
       el('div', { class: 'dashboard-top__stats stagger' },
@@ -357,9 +360,6 @@ function renderDashboard(container, partners, opportunities, events) {
         buildPartnerSourceChart(tfOpps, tfPartners, onBarClick),
       ),
     ),
-
-    // Type filter bar (below KPI cards, above tab toggle)
-    buildTypeFilterBar(),
 
     // Tabs + views (full width below)
     el('div', { class: 'view-toggle' }, activityTabBtn, partnersTabBtn),

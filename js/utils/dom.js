@@ -27,6 +27,10 @@ export function el(tag, attrs = {}, ...children) {
       element.addEventListener(key.slice(2).toLowerCase(), value);
     } else if (key === 'html') {
       element.innerHTML = value;
+    } else if (key === 'value') {
+      // Set value as a DOM property so date/select inputs reliably
+      // reflect user changes when read back via element.value
+      element.value = value ?? '';
     } else if (value !== null && value !== undefined && value !== false) {
       element.setAttribute(key, value);
     }
