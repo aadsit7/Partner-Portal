@@ -14,10 +14,12 @@ import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { filterPartners } from '../utils/filters.js';
+import { loadTypeFilter, saveTypeFilter, computeTypeData, buildTypeFilterBar, applyTypeFilter } from '../components/type-filter.js';
 
 export const title = 'Partners';
 
 let allPartners = [];
+let allOpportunities = [];
 let partnerRevenue = {};
 
 export async function render(container) {
@@ -31,6 +33,7 @@ export async function render(container) {
       readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES),
     ]);
     allPartners = partners;
+    allOpportunities = opportunities;
 
     // Compute revenue lookup per partner
     partnerRevenue = {};
@@ -41,8 +44,7 @@ export async function render(container) {
       partnerRevenue[pid].oppCount += 1;
     }
 
-    const partnerList = filterPartners(allPartners);
-    renderView(container, partnerList);
+    renderWithTypeFilter(container);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },
       el('div', { class: 'empty-state__title' }, 'Error loading partners'),
@@ -51,9 +53,27 @@ export async function render(container) {
   }
 }
 
+function renderWithTypeFilter(container) {
+  const partnerList = filterPartners(allPartners);
+  const selectedTypes = loadTypeFilter();
+  const allTypeData = computeTypeData(partnerList, allOpportunities);
+  const allUniqueTypes = Object.keys(allTypeData);
+  const allTotalPipeline = allOpportunities.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
+  const validSelected = selectedTypes.filter(t => allUniqueTypes.includes(t));
+
+  const { partners: tfPartners } = applyTypeFilter({ partners: partnerList, selected: validSelected });
+
+  const filterBar = buildTypeFilterBar({
+    allUniqueTypes, allTypeData, allTotalPipeline, validSelected,
+    onChanged: () => renderWithTypeFilter(container),
+  });
+
+  renderView(container, tfPartners, filterBar);
+}
+
 function reRender() {
   const viewContainer = document.getElementById('view-container');
-  render(viewContainer);
+  renderWithTypeFilter(viewContainer);
 }
 
 function partnerInitials(name) {
@@ -124,7 +144,7 @@ function buildTypeBars(partners, onFilter) {
 // Main View
 // ============================================
 
-function renderView(container, partners) {
+function renderView(container, partners, filterBar) {
   let searchQuery = '';
   let bentoFilter = { key: null, value: null };
 
@@ -162,6 +182,7 @@ function renderView(container, partners) {
   }
 
   const content = el('div', {},
+    filterBar,
     el('div', { class: 'section-header' },
       el('div', {},
         el('h2', { class: 'section-header__title' }, 'Partners'),

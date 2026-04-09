@@ -14,6 +14,7 @@ import { setTopbarTitle } from '../components/sidebar.js';
 import { statCard } from '../components/card.js';
 import { filterPartners, filterOpportunities } from '../utils/filters.js';
 import { initQuillEditor, ensureHtml } from '../components/quill-editor.js';
+import { loadTypeFilter, computeTypeData, buildTypeFilterBar, applyTypeFilter } from '../components/type-filter.js';
 
 export const title = 'Opportunities';
 
@@ -23,6 +24,9 @@ let cachedEvents = null;
 
 const OPP_STAGES = ['Prospect', 'Qualified', 'Proposal', 'Negotiation', 'Closed'];
 const OPP_STATUSES = ['Registered', 'In Progress', 'Won', 'Lost'];
+
+let allBasePartners = null;
+let allBaseOpps = null;
 
 export async function render(container) {
   setTopbarTitle('Opportunities');
@@ -34,10 +38,11 @@ export async function render(container) {
       readSheetAsObjects(CONFIG.SHEET_PARTNERS),
       readSheetAsObjects(CONFIG.SHEET_EVENTS),
     ]);
-    cachedPartners = filterPartners(partners);
-    cachedOpps = filterOpportunities(opportunities);
+    allBasePartners = filterPartners(partners);
+    allBaseOpps = filterOpportunities(opportunities);
+    cachedPartners = allBasePartners;
     cachedEvents = events;
-    renderView(container, cachedOpps);
+    renderWithTypeFilter(container);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },
       el('div', { class: 'empty-state__title' }, 'Error loading opportunities'),
@@ -46,9 +51,30 @@ export async function render(container) {
   }
 }
 
+function renderWithTypeFilter(container) {
+  const selectedTypes = loadTypeFilter();
+  const allTypeData = computeTypeData(allBasePartners, allBaseOpps);
+  const allUniqueTypes = Object.keys(allTypeData);
+  const allTotalPipeline = allBaseOpps.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
+  const validSelected = selectedTypes.filter(t => allUniqueTypes.includes(t));
+
+  const { partners: tfPartners, opportunities: tfOpps } = applyTypeFilter({
+    partners: allBasePartners, opportunities: allBaseOpps, selected: validSelected,
+  });
+  cachedPartners = tfPartners;
+  cachedOpps = tfOpps;
+
+  const filterBar = buildTypeFilterBar({
+    allUniqueTypes, allTypeData, allTotalPipeline, validSelected,
+    onChanged: () => renderWithTypeFilter(container),
+  });
+
+  renderView(container, cachedOpps, filterBar);
+}
+
 function reRender() {
   const viewContainer = document.getElementById('view-container');
-  render(viewContainer);
+  renderWithTypeFilter(viewContainer);
 }
 
 function getPartnerName(partnerId) {
@@ -135,7 +161,7 @@ function buildDateRangeSlider(minTs, maxTs, onChange) {
 // Main View
 // ============================================
 
-function renderView(container, opportunities) {
+function renderView(container, opportunities, filterBar) {
   let activeView = 'board';
   // Compute close-date range for slider
   const closeDates = opportunities
@@ -235,6 +261,7 @@ function renderView(container, opportunities) {
   const viewContainer = el('div', { id: 'opps-view-container' });
 
   const content = el('div', {},
+    filterBar,
     el('div', { class: 'section-header' },
       el('div', {},
         el('h2', { class: 'section-header__title' }, 'Opportunities'),

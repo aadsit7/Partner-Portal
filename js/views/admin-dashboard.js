@@ -13,6 +13,7 @@ import { formatDate } from '../utils/date.js';
 import { openEventModal } from './admin-events.js';
 import { parseChecklist } from '../components/checklist.js';
 import { filterPartners, filterOpportunities, filterEvents } from '../utils/filters.js';
+import { loadTypeFilter, saveTypeFilter, computeTypeData, buildTypeFilterBar, applyTypeFilter } from '../components/type-filter.js';
 
 export const title = 'Admin Dashboard';
 
@@ -22,23 +23,6 @@ let mapMarkers = [];
 // ============================================
 // Partner Type Filter — localStorage helpers
 // ============================================
-
-const TYPE_FILTER_KEY = 'pp_dashboard_type_filter';
-
-function loadTypeFilter() {
-  try {
-    const raw = localStorage.getItem(TYPE_FILTER_KEY);
-    if (raw !== null) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed; // [] means "All Types"
-    }
-  } catch { /* ignore */ }
-  return ['MSP/SI', 'Technology']; // default on first visit
-}
-
-function saveTypeFilter(selectedTypes) {
-  localStorage.setItem(TYPE_FILTER_KEY, JSON.stringify(selectedTypes));
-}
 
 const TYPE_COLORS = {
   'Technology':                'var(--color-primary-lighter)',
@@ -180,16 +164,9 @@ function renderDashboard(container, partners, opportunities, events) {
   if (validSelected.length !== selectedTypes.length) saveTypeFilter(validSelected);
 
   // Apply type filter
-  const tfPartners = validSelected.length === 0
-    ? partnerList
-    : partnerList.filter(p => validSelected.includes(p.partner_type));
-  const tfPartnerIds = new Set(tfPartners.map(p => p.partner_id));
-  const tfOpps = validSelected.length === 0
-    ? filteredOpps
-    : filteredOpps.filter(o => tfPartnerIds.has(o.partner_id));
-  const tfEvents = validSelected.length === 0
-    ? filteredEvents
-    : filteredEvents.filter(e => !e.partner_id || tfPartnerIds.has(e.partner_id));
+  const { partners: tfPartners, opportunities: tfOpps, events: tfEvents } = applyTypeFilter({
+    partners: partnerList, opportunities: filteredOpps, events: filteredEvents, selected: validSelected,
+  });
   const tfUpcoming = tfEvents.filter(e => e.status === 'Upcoming' || e.status === 'In Progress');
 
   const tfTotalPipeline = tfOpps.reduce((sum, o) => sum + (parseFloat(o.deal_value) || 0), 0);
@@ -217,45 +194,11 @@ function renderDashboard(container, partners, opportunities, events) {
   const typeData = computeTypeData(tfPartners, tfOpps);
   const uniqueTypes = Object.keys(typeData);
 
-  // --- Type filter button bar ---
-  function buildTypeFilterBar() {
-    const buttons = [];
-
-    // "All Types" button
-    const allActive = validSelected.length === 0;
-    buttons.push(el('button', {
-      class: allActive ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm',
-      onClick: () => { saveTypeFilter([]); renderDashboard(container, partners, opportunities, events); },
-    },
-      el('span', { class: 'type-filter-label' }, 'All Types'),
-      el('span', { class: 'type-filter-pipeline' }, formatCurrency(allTotalPipeline)),
-    ));
-
-    // One button per unique type (from unfiltered data)
-    allUniqueTypes.forEach(type => {
-      const d = allTypeData[type];
-      const isActive = validSelected.includes(type);
-      buttons.push(el('button', {
-        class: isActive ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm',
-        onClick: () => {
-          let next;
-          if (isActive) {
-            next = validSelected.filter(t => t !== type);
-          } else {
-            next = [...validSelected, type];
-          }
-          if (next.length === 0 || next.length === allUniqueTypes.length) next = [];
-          saveTypeFilter(next);
-          renderDashboard(container, partners, opportunities, events);
-        },
-      },
-        el('span', { class: 'type-filter-label' }, type),
-        el('span', { class: 'type-filter-pipeline' }, formatCurrency(d.pipeline)),
-      ));
-    });
-
-    return el('div', { class: 'view-toggle type-filter-bar' }, ...buttons);
-  }
+  // --- Type filter button bar (shared module) ---
+  const typeFilterBar = buildTypeFilterBar({
+    allUniqueTypes, allTypeData, allTotalPipeline, validSelected,
+    onChanged: () => renderDashboard(container, partners, opportunities, events),
+  });
 
   // Tab state
   let activeTab = 'activity';
@@ -334,7 +277,7 @@ function renderDashboard(container, partners, opportunities, events) {
 
   const content = el('div', {},
     // Type filter bar (above KPI cards, below heading)
-    buildTypeFilterBar(),
+    typeFilterBar,
 
     // Top zone: 2×2 stat cards on left, Opportunity Source chart on right
     el('div', { class: 'dashboard-top' },
@@ -704,20 +647,6 @@ function buildPartnersView(container, partnerList, partnerStats, typeData, uniqu
       }
     });
   }
-}
-
-function computeTypeData(partnerList, opportunities) {
-  const data = {};
-  partnerList.forEach(p => {
-    const type = p.partner_type || 'Other';
-    if (!data[type]) data[type] = { count: 0, pipeline: 0 };
-    data[type].count++;
-    const partnerPipeline = opportunities
-      .filter(o => o.partner_id === p.partner_id)
-      .reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
-    data[type].pipeline += partnerPipeline;
-  });
-  return data;
 }
 
 function buildDonut(partnerList, typeData) {

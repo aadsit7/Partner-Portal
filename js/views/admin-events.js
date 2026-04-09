@@ -14,12 +14,16 @@ import { setTopbarTitle } from '../components/sidebar.js';
 import { statCard } from '../components/card.js';
 import { parseChecklist, renderChecklist } from '../components/checklist.js';
 import { filterPartners, filterEvents } from '../utils/filters.js';
+import { loadTypeFilter, computeTypeData, buildTypeFilterBar, applyTypeFilter } from '../components/type-filter.js';
 
 export const title = 'Events';
 
 let cachedPartners = null;
 let cachedEvents = null;
 let cachedOpps = null;
+let allBasePartners = null;
+let allBaseEvents = null;
+let allBaseOpps = null;
 
 const EVENT_STATUSES = ['Upcoming', 'In Progress', 'Completed', 'Cancelled'];
 const EVENT_TYPES = ['Webinar', 'Workshop', 'Conference', 'Campaign', 'Other'];
@@ -57,10 +61,10 @@ export async function render(container) {
       readSheetAsObjects(CONFIG.SHEET_PARTNERS),
       readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES),
     ]);
-    cachedPartners = filterPartners(partners);
-    cachedEvents = filterEvents(events);
-    cachedOpps = opportunities || [];
-    renderView(container, cachedEvents, cachedOpps);
+    allBasePartners = filterPartners(partners);
+    allBaseEvents = filterEvents(events);
+    allBaseOpps = opportunities || [];
+    renderWithTypeFilter(container);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },
       el('div', { class: 'empty-state__title' }, 'Error loading events'),
@@ -69,9 +73,31 @@ export async function render(container) {
   }
 }
 
+function renderWithTypeFilter(container) {
+  const selectedTypes = loadTypeFilter();
+  const allTypeData = computeTypeData(allBasePartners, allBaseOpps);
+  const allUniqueTypes = Object.keys(allTypeData);
+  const allTotalPipeline = allBaseOpps.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
+  const validSelected = selectedTypes.filter(t => allUniqueTypes.includes(t));
+
+  const { partners: tfPartners, events: tfEvents } = applyTypeFilter({
+    partners: allBasePartners, events: allBaseEvents, selected: validSelected,
+  });
+  cachedPartners = tfPartners;
+  cachedEvents = tfEvents;
+  cachedOpps = allBaseOpps;
+
+  const filterBar = buildTypeFilterBar({
+    allUniqueTypes, allTypeData, allTotalPipeline, validSelected,
+    onChanged: () => renderWithTypeFilter(container),
+  });
+
+  renderView(container, cachedEvents, cachedOpps, filterBar);
+}
+
 function reRender() {
   const viewContainer = document.getElementById('view-container');
-  render(viewContainer);
+  renderWithTypeFilter(viewContainer);
 }
 
 function getPartnerName(partnerId) {
@@ -145,7 +171,7 @@ function buildEventRevenueChart(events, opportunities) {
 // Main View
 // ============================================
 
-function renderView(container, events, opportunities) {
+function renderView(container, events, opportunities, filterBar) {
   let activeView = 'board';
   let filters = { search: '', partners: new Set(), type: '', status: '' };
 
@@ -324,6 +350,7 @@ function renderView(container, events, opportunities) {
   const viewContainer = el('div', { id: 'events-view-container' });
 
   const content = el('div', {},
+    filterBar,
     el('div', { class: 'section-header' },
       el('div', {},
         el('h2', { class: 'section-header__title' }, 'Demand Gen Events'),
