@@ -145,6 +145,8 @@ let voiceEnabled = false;
 let isProcessing = false;
 let isDragging = false;
 let accumulatedTranscript = '';
+let autoSendTimer = null;
+let speechChainCancelled = false;
 let dragOffset = { x: 0, y: 0 };
 let currentConvId = null;
 let currentConvRow = null;
@@ -204,6 +206,38 @@ function isEchoTail(transcript) {
   if (words.length === 0) return true; // empty/short = likely noise
   const matchCount = words.filter(w => spokenLower.includes(w)).length;
   return (matchCount / words.length) > 0.5;
+}
+
+// ── Transcript Classification (auto-send vs manual) ─────────────
+function classifyTranscript(text) {
+  const lower = text.toLowerCase().trim();
+  const words = lower.split(/\s+/);
+
+  // Question patterns — check first (more specific)
+  const questionStarts = ['what', 'when', 'where', 'who', 'how', 'why', 'which',
+    'tell me', 'give me', 'explain', 'summarize', 'describe', 'compare', 'list'];
+  for (const q of questionStarts) {
+    if (lower.startsWith(q)) return 'question';
+  }
+
+  // Longer than 8 words → question (user is still composing)
+  if (words.length > 8) return 'question';
+
+  // Action patterns — starts with
+  const actionStarts = ['open', 'go to', 'show me', 'navigate', 'take me to',
+    'switch to', 'close', 'update', 'change', 'add', 'create', 'remove', 'move',
+    'set', 'mark', 'push', 'log', 'record'];
+  for (const a of actionStarts) {
+    if (lower.startsWith(a)) return 'action';
+  }
+
+  // Action patterns — contains
+  if (/\b(open up|pull up|bring up)\b/.test(lower)) return 'action';
+
+  // Very short (under 8 words) → action
+  if (words.length < 8) return 'action';
+
+  return 'unknown';
 }
 
 // ── Feature Detection ─────────────────────────────────────────────
@@ -270,6 +304,8 @@ function stopAll() {
     try { recognition.abort(); } catch { /* ok */ }
   }
   if (synth.speaking) synth.cancel();
+  speechChainCancelled = true;
+  if (autoSendTimer) { clearTimeout(autoSendTimer); autoSendTimer = null; }
   if (abortController) { abortController.abort(); abortController = null; }
   if (confirmTimeout) { clearTimeout(confirmTimeout); confirmTimeout = null; }
   isRandySpeaking = false;
@@ -321,6 +357,7 @@ function initRecognition() {
     if (isRandySpeaking) {
       if (isInterrupt(transcript)) {
         synth.cancel();
+        speechChainCancelled = true;
         isRandySpeaking = false;
         currentSpokenText = '';
         currentSpeechOnComplete = null;
@@ -341,12 +378,35 @@ function initRecognition() {
       return;
     }
 
-    // In ACTIVE_LISTENING: accumulate transcript, don't send yet
+    // In ACTIVE_LISTENING: accumulate transcript, then classify
     if (currentState === STATES.ACTIVE_LISTENING) {
       accumulatedTranscript = accumulatedTranscript
         ? accumulatedTranscript + ' ' + transcript
         : transcript;
       updateInterimBubble(accumulatedTranscript);
+
+      // Cancel any pending auto-send (user is still speaking)
+      if (autoSendTimer) { clearTimeout(autoSendTimer); autoSendTimer = null; }
+
+      const classification = classifyTranscript(accumulatedTranscript);
+      if (classification === 'action') {
+        // Auto-send after 0.5s of silence
+        const status = document.getElementById('randy-status');
+        if (status) status.textContent = 'Sending...';
+        autoSendTimer = setTimeout(() => {
+          autoSendTimer = null;
+          removeInterimBubble();
+          if (accumulatedTranscript.trim()) {
+            const text = accumulatedTranscript.trim();
+            accumulatedTranscript = '';
+            processUserInput(text);
+          }
+        }, 500);
+      } else {
+        // Question or unknown — manual send, keep listening
+        const status = document.getElementById('randy-status');
+        if (status) status.textContent = 'Tap when done';
+      }
       return;
     }
 
@@ -731,6 +791,7 @@ function speakText(text, onComplete) {
   isRandySpeaking = true;
   currentSpokenText = clean;
   currentSpeechOnComplete = onComplete || null;
+  speechChainCancelled = false;
 
   if (currentState !== STATES.CONFIRMING && currentState !== STATES.PASSIVE) {
     if (currentState === STATES.PROCESSING || currentState === STATES.ACTIVE_LISTENING) {
@@ -740,13 +801,23 @@ function speakText(text, onComplete) {
 
   if (synth.speaking) synth.cancel();
 
-  const utterance = new SpeechSynthesisUtterance(clean);
-  if (selectedVoice) utterance.voice = selectedVoice;
-  utterance.pitch = 0.7;
-  utterance.rate = 0.95;
+  // Split into sentences at . ? ! boundaries
+  const sentences = clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g);
+  if (!sentences || sentences.length === 0) {
+    if (onComplete) onComplete();
+    return;
+  }
+  const parts = sentences.map(s => s.trim()).filter(s => s.length > 0);
+  if (parts.length === 0) {
+    if (onComplete) onComplete();
+    return;
+  }
 
-  utterance.onend = () => {
-    // 1000ms buffer to let audio fully clear from mic/speakers
+  // Short confirmation (under 6 words) — single fast utterance
+  const wordCount = clean.split(/\s+/).length;
+  const isShort = wordCount < 6;
+
+  function finishSpeaking() {
     clearSpeakingHighlight();
     setTimeout(() => {
       lastSpokenText = currentSpokenText;
@@ -761,11 +832,12 @@ function speakText(text, onComplete) {
         transition(STATES.ACTIVE_LISTENING);
       }
     }, 1000);
-  };
+  }
 
-  utterance.onerror = (e) => {
+  function handleError(e) {
     clearSpeakingHighlight();
     if (e.error === 'canceled') {
+      speechChainCancelled = true;
       lastSpokenText = currentSpokenText;
       lastSpeechEndTime = Date.now();
       isRandySpeaking = false;
@@ -774,22 +846,43 @@ function speakText(text, onComplete) {
       return;
     }
     console.error('Randy speech error:', e.error);
-    setTimeout(() => {
-      lastSpokenText = currentSpokenText;
-      lastSpeechEndTime = Date.now();
-      isRandySpeaking = false;
-      currentSpokenText = '';
-      const cb = currentSpeechOnComplete;
-      currentSpeechOnComplete = null;
-      if (cb) {
-        cb();
-      } else if (currentState === STATES.SPEAKING) {
-        transition(STATES.ACTIVE_LISTENING);
-      }
-    }, 1000);
-  };
+    speechChainCancelled = true;
+    finishSpeaking();
+  }
 
-  synth.speak(utterance);
+  function getRateForIndex(i, total) {
+    if (isShort) return 1.0;
+    if (i === 0) return 0.92;           // first — confident opener
+    if (i === total - 1) return 0.90;   // last — closing
+    return 0.88;                         // middle — informational
+  }
+
+  function speakPart(i) {
+    if (speechChainCancelled || i >= parts.length) return;
+
+    const utterance = new SpeechSynthesisUtterance(parts[i]);
+    if (selectedVoice) utterance.voice = selectedVoice;
+    utterance.pitch = 0.85;
+    utterance.volume = 0.9;
+    utterance.rate = getRateForIndex(i, parts.length);
+
+    const isLast = i === parts.length - 1;
+
+    utterance.onend = () => {
+      if (isLast) {
+        finishSpeaking();
+      } else if (!speechChainCancelled) {
+        // 150ms gap between sentences for natural pacing
+        setTimeout(() => speakPart(i + 1), 150);
+      }
+    };
+
+    utterance.onerror = handleError;
+
+    synth.speak(utterance);
+  }
+
+  speakPart(0);
 
   // Start recognition for barge-in if not already running
   startRecognition();
@@ -866,6 +959,12 @@ function cleanForSpeech(text) {
     .replace(/%/g, ' percent')
     // K after numbers → thousand
     .replace(/(\d)K\b/g, '$1 thousand')
+    // M after numbers → million
+    .replace(/(\d)M\b/g, '$1 million')
+    // Dashes → pauses
+    .replace(/--|—/g, ', ')
+    // Commas before conjunctions for micro-pauses (only if no comma already)
+    .replace(/(?<!,)\s+(and|but)\s+/g, ', $1 ')
     // Newlines → pauses
     .replace(/\n{2,}/g, '. ')
     .replace(/\n/g, ' ')
@@ -1146,6 +1245,8 @@ function createWidget() {
     saveRandyConversation();
     if (recognition) { try { recognition.abort(); } catch { /* ok */ } }
     if (synth.speaking) synth.cancel();
+    speechChainCancelled = true;
+    if (autoSendTimer) { clearTimeout(autoSendTimer); autoSendTimer = null; }
     if (abortController) { abortController.abort(); abortController = null; }
     isRandySpeaking = false;
     currentSpokenText = '';
@@ -1215,6 +1316,8 @@ function handleVoiceBtnClick() {
       transition(STATES.ACTIVE_LISTENING);
       break;
     case STATES.ACTIVE_LISTENING:
+      // Clear any pending auto-send
+      if (autoSendTimer) { clearTimeout(autoSendTimer); autoSendTimer = null; }
       // Listening → send accumulated transcript or pause
       removeInterimBubble();
       if (accumulatedTranscript.trim()) {
@@ -1229,6 +1332,7 @@ function handleVoiceBtnClick() {
     case STATES.SPEAKING:
       // Speaking → interrupt and listen
       synth.cancel();
+      speechChainCancelled = true;
       isRandySpeaking = false;
       currentSpokenText = '';
       currentSpeechOnComplete = null;
