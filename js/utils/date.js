@@ -32,9 +32,20 @@ export function dayNames() {
 /** Format an ISO date string to "Mar 15, 2026" */
 export function formatDate(isoString) {
   if (!isoString) return '—';
-  const d = new Date(isoString);
-  if (isNaN(d.getTime())) return '—';
-  return `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  // Strip any time portion and parse as local date parts to avoid
+  // timezone shift (new Date('YYYY-MM-DD') parses as UTC midnight,
+  // which displays as the previous day in western timezones).
+  const parts = String(isoString).split('T')[0].split('-');
+  if (parts.length < 3) {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return '—';
+    return `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  }
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1; // 0-indexed
+  const day = parseInt(parts[2], 10);
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return '—';
+  return `${MONTHS_SHORT[month]} ${day}, ${year}`;
 }
 
 /** Format to "March 2026" */

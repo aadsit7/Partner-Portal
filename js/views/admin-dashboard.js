@@ -497,7 +497,7 @@ function buildActivityView(container, partnerStats, upcomingEvents, allEvents, o
           new Date(evt.event_date).toLocaleDateString('en-US', { month: 'short' })
         ),
         el('div', { class: 'timeline-card__day' },
-          String(new Date(evt.event_date).getDate())
+          String(parseInt((evt.event_date || '').split('-')[2], 10) || new Date(evt.event_date).getDate())
         )
       ),
       el('div', { class: 'timeline-card__content' },
