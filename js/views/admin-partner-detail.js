@@ -15,24 +15,9 @@ import { openOppModal } from './admin-opportunities.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { showToast } from '../components/toast.js';
 import { filterOpportunities, filterEvents } from '../utils/filters.js';
+import { stripHtml, ensureHtml, initQuillEditor } from '../components/quill-editor.js';
 
 export const title = 'Partner Detail';
-
-// ============================================
-// HTML Helpers for Rich Text Transcripts
-// ============================================
-
-function stripHtml(html) {
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  return tmp.textContent || tmp.innerText || '';
-}
-
-function ensureHtml(text) {
-  if (!text) return '';
-  if (/<[a-z][\s\S]*>/i.test(text)) return text;
-  return text.replace(/\n/g, '<br>');
-}
 
 export async function render(container, params) {
   const partnerId = params?.id;
@@ -277,15 +262,11 @@ function openTranscriptModal(partner, existingTranscript, previousTranscripts, o
     value: isEdit ? (existingTranscript.conversation_date || '') : todayISO(),
   });
 
-  const editorContainer = el('div', { id: 'transcript-editor' });
-  const fullscreenBtn = el('button', {
-    class: 'transcript-editor-expand-btn',
-    type: 'button',
-    title: 'Expand editor',
-    html: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 10v4h4M14 6V2h-4M2 6V2h4M14 10v4h-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  const editor = initQuillEditor({
+    placeholder: 'Paste or type the call transcript here...',
+    initialHtml: isEdit ? existingTranscript.transcript_text : '',
+    title: 'Edit Transcript',
   });
-  const editorWrapper = el('div', { class: 'transcript-editor-wrapper' }, editorContainer, fullscreenBtn);
-  let quillInstance = null;
 
   const formContent = el('div', {},
     el('div', { class: 'form-group' },
@@ -304,7 +285,7 @@ function openTranscriptModal(partner, existingTranscript, previousTranscripts, o
     ),
     el('div', { class: 'form-group' },
       el('label', { class: 'form-label' }, 'Transcript'),
-      editorWrapper
+      editor.wrapper
     ),
   );
 
@@ -328,11 +309,11 @@ function openTranscriptModal(partner, existingTranscript, previousTranscripts, o
     class: 'btn btn--primary',
     onClick: async () => {
       const date = dateInput.value;
-      const text = quillInstance ? quillInstance.root.innerHTML.trim() : '';
-      const isEmpty = !quillInstance || !quillInstance.getText().trim();
+      const text = editor.getHtml();
+      const editorEmpty = editor.isEmpty();
 
       if (!date) { showToast('Please enter a date', 'error'); return; }
-      if (isEmpty) { showToast('Please enter the transcript text', 'error'); return; }
+      if (editorEmpty) { showToast('Please enter the transcript text', 'error'); return; }
 
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving...';
@@ -390,58 +371,7 @@ function openTranscriptModal(partner, existingTranscript, previousTranscripts, o
   });
 
   // Initialize Quill after modal is in the DOM
-  requestAnimationFrame(() => {
-    if (window.Quill && editorContainer.isConnected) {
-      quillInstance = new Quill(editorContainer, {
-        theme: 'snow',
-        placeholder: 'Paste or type the call transcript here...',
-        modules: {
-          toolbar: [
-            ['bold', 'italic', 'underline'],
-            [{ header: [1, 2, 3, false] }],
-            [{ list: 'ordered' }, { list: 'bullet' }, { list: 'check' }],
-            ['link'],
-            ['clean'],
-          ],
-        },
-      });
-      if (isEdit && existingTranscript.transcript_text) {
-        const content = ensureHtml(existingTranscript.transcript_text);
-        quillInstance.clipboard.dangerouslyPasteHTML(content);
-      }
-
-      // Fullscreen toggle
-      let isFullscreen = false;
-      const overlay = el('div', { class: 'transcript-editor-fullscreen' });
-      const collapseBtn = el('button', {
-        class: 'transcript-editor-collapse-btn',
-        type: 'button',
-        html: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4.5 4.5l9 9M13.5 4.5l-9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Close fullscreen',
-        onClick: () => toggleFullscreen(),
-      });
-      const fullscreenHeader = el('div', { class: 'transcript-editor-fullscreen__header' },
-        el('span', { class: 'transcript-editor-fullscreen__title' }, 'Edit Transcript'),
-        collapseBtn,
-      );
-      overlay.appendChild(fullscreenHeader);
-
-      function toggleFullscreen() {
-        isFullscreen = !isFullscreen;
-        if (isFullscreen) {
-          overlay.appendChild(editorContainer);
-          document.body.appendChild(overlay);
-          fullscreenBtn.style.display = 'none';
-        } else {
-          editorWrapper.insertBefore(editorContainer, fullscreenBtn);
-          overlay.remove();
-          fullscreenBtn.style.display = '';
-        }
-        quillInstance.focus();
-      }
-
-      fullscreenBtn.addEventListener('click', toggleFullscreen);
-    }
-  });
+  editor.mount();
 }
 
 async function handleDeleteTranscript(transcript, partner) {

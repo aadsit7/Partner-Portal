@@ -13,6 +13,7 @@ import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { filterOpportunities } from '../utils/filters.js';
+import { initQuillEditor } from '../components/quill-editor.js';
 
 export const title = 'Opportunities';
 
@@ -174,6 +175,19 @@ function openNewDealModal(user, container) {
       }, 'Register Deal'),
     ],
   });
+
+  // Replace description textarea with Quill rich text editor
+  const descTextarea = form.querySelector('[name="description"]');
+  if (descTextarea) {
+    const descEditor = initQuillEditor({
+      placeholder: 'Brief description of the opportunity...',
+      title: 'Edit Description',
+      onTextChange: () => { descTextarea.value = descEditor.getHtml(); },
+    });
+    descTextarea.style.display = 'none';
+    descTextarea.parentNode.appendChild(descEditor.wrapper);
+    descEditor.mount();
+  }
 }
 
 export function cleanup() {}

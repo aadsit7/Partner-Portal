@@ -13,6 +13,7 @@ import { showToast } from '../components/toast.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { statCard } from '../components/card.js';
 import { filterPartners, filterOpportunities } from '../utils/filters.js';
+import { initQuillEditor, ensureHtml } from '../components/quill-editor.js';
 
 export const title = 'Opportunities';
 
@@ -715,6 +716,20 @@ export async function openOppModal(opp, container, onSaved) {
       }, isEdit ? 'Save Changes' : 'Create Opportunity'),
     ],
   });
+
+  // Replace description textarea with Quill rich text editor
+  const descTextarea = form.querySelector('[name="description"]');
+  if (descTextarea) {
+    const descEditor = initQuillEditor({
+      placeholder: 'Brief description of the opportunity...',
+      initialHtml: isEdit ? opp.description : '',
+      title: 'Edit Description',
+      onTextChange: () => { descTextarea.value = descEditor.getHtml(); },
+    });
+    descTextarea.style.display = 'none';
+    descTextarea.parentNode.appendChild(descEditor.wrapper);
+    descEditor.mount();
+  }
 }
 
 // ============================================

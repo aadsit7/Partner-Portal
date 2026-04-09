@@ -5,6 +5,7 @@
 
 import { CONFIG, getRuntimeConfig } from '../config.js';
 import { readSheetAsObjects } from '../sheets.js';
+import { stripHtml } from '../components/quill-editor.js';
 
 // ── Cache State ────────────────────────────────────────────────────
 let cachedSheetData = null;
@@ -223,10 +224,11 @@ export function buildDataContext(data, userMessage) {
   const needsFullDescriptions = /environment|platform|citrix|intune|sccm|avd|technical|architecture|current state|migration/i.test(userMessage);
 
   const opps = data.opportunities.map(o => {
+    const plain = stripHtml(o.description || '');
     if (needsFullDescriptions) {
-      return { ...o, description: (o.description || '').substring(0, 4000) };
+      return { ...o, description: plain.substring(0, 4000) };
     }
-    return { ...o, description: (o.description || '').substring(0, 500) + '...' };
+    return { ...o, description: plain.substring(0, 500) + '...' };
   });
 
   return `DATA CONTEXT:

@@ -1426,26 +1426,26 @@
 }
 
 /* ---------- Quill Editor in Modal ---------- */
-#transcript-editor {
+.quill-editor {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
 }
 
-#transcript-editor .ql-toolbar {
+.quill-editor .ql-toolbar {
   border: none;
   border-bottom: 1px solid var(--color-border-light);
   background: var(--color-bg);
   border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
-#transcript-editor .ql-container {
+.quill-editor .ql-container {
   border: none;
   font-family: var(--font-family);
   font-size: var(--text-sm);
 }
 
-#transcript-editor .ql-editor {
+.quill-editor .ql-editor {
   min-height: 200px;
   max-height: 400px;
   overflow-y: auto;
@@ -1453,17 +1453,17 @@
   color: var(--color-text-primary);
 }
 
-#transcript-editor .ql-editor.ql-blank::before {
+.quill-editor .ql-editor.ql-blank::before {
   color: var(--color-text-muted);
   font-style: normal;
 }
 
 /* Quill Editor Wrapper & Fullscreen */
-.transcript-editor-wrapper {
+.quill-editor-wrapper {
   position: relative;
 }
 
-.transcript-editor-expand-btn {
+.quill-editor-expand-btn {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -1481,13 +1481,13 @@
   transition: all var(--transition-fast);
 }
 
-.transcript-editor-expand-btn:hover {
+.quill-editor-expand-btn:hover {
   background: var(--color-bg);
   color: var(--color-text-primary);
   border-color: var(--color-border);
 }
 
-.transcript-editor-fullscreen {
+.quill-editor-fullscreen {
   position: fixed;
   top: 0;
   left: 0;
@@ -1505,7 +1505,7 @@
   to { opacity: 1; }
 }
 
-.transcript-editor-fullscreen__header {
+.quill-editor-fullscreen__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1515,13 +1515,13 @@
   flex-shrink: 0;
 }
 
-.transcript-editor-fullscreen__title {
+.quill-editor-fullscreen__title {
   font-size: var(--text-lg);
   font-weight: var(--font-semibold);
   color: var(--color-text-primary);
 }
 
-.transcript-editor-collapse-btn {
+.quill-editor-collapse-btn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -1536,12 +1536,12 @@
   transition: all var(--transition-fast);
 }
 
-.transcript-editor-collapse-btn:hover {
+.quill-editor-collapse-btn:hover {
   background: var(--color-bg);
   color: var(--color-text-primary);
 }
 
-.transcript-editor-fullscreen #transcript-editor {
+.quill-editor-fullscreen .quill-editor {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -1549,16 +1549,16 @@
   border-radius: 0;
 }
 
-.transcript-editor-fullscreen #transcript-editor .ql-toolbar {
+.quill-editor-fullscreen .quill-editor .ql-toolbar {
   border-radius: 0;
   padding: var(--space-3) var(--space-6);
 }
 
-.transcript-editor-fullscreen #transcript-editor .ql-container {
+.quill-editor-fullscreen .quill-editor .ql-container {
   flex: 1;
 }
 
-.transcript-editor-fullscreen #transcript-editor .ql-editor {
+.quill-editor-fullscreen .quill-editor .ql-editor {
   min-height: unset;
   max-height: unset;
   height: 100%;
