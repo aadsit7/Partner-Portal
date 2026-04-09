@@ -39,8 +39,12 @@ export async function render(container) {
     partnerRevenue = {};
     for (const opp of opportunities) {
       const pid = opp.partner_id;
-      if (!partnerRevenue[pid]) partnerRevenue[pid] = { totalPipeline: 0, oppCount: 0 };
-      partnerRevenue[pid].totalPipeline += parseFloat(opp.deal_value) || 0;
+      if (!partnerRevenue[pid]) partnerRevenue[pid] = { totalPipeline: 0, wonValue: 0, oppCount: 0 };
+      if (opp.status === 'Won') {
+        partnerRevenue[pid].wonValue += parseFloat(opp.deal_value) || 0;
+      } else {
+        partnerRevenue[pid].totalPipeline += parseFloat(opp.deal_value) || 0;
+      }
       partnerRevenue[pid].oppCount += 1;
     }
 
@@ -58,7 +62,7 @@ function renderWithTypeFilter(container) {
   const selectedTypes = loadTypeFilter();
   const allTypeData = computeTypeData(partnerList, allOpportunities);
   const allUniqueTypes = Object.keys(allTypeData);
-  const allTotalPipeline = allOpportunities.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
+  const allTotalPipeline = allOpportunities.filter(o => o.status !== 'Won').reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
   const validSelected = selectedTypes.filter(t => allUniqueTypes.includes(t));
 
   const { partners: tfPartners } = applyTypeFilter({ partners: partnerList, selected: validSelected });
@@ -176,6 +180,7 @@ function renderCards(partners) {
     const initials = partnerInitials(p.display_name);
     const rev = partnerRevenue[p.partner_id];
     const pipeline = rev ? rev.totalPipeline : 0;
+    const wonValue = rev ? rev.wonValue : 0;
     const oppCount = rev ? rev.oppCount : 0;
 
     const card = el('div', { class: 'partner-mgmt-card' },
@@ -192,6 +197,7 @@ function renderCards(partners) {
       // Card details
       el('div', { class: 'partner-mgmt-card__details' },
         detailRow('Pipeline', formatCurrency(pipeline)),
+        wonValue > 0 ? detailRow('Won', formatCurrency(wonValue)) : null,
         detailRow('Opportunities', String(oppCount)),
         detailRow('Type', p.partner_type || '—'),
         detailRow('Status', null, el('span', { class: `badge badge--xs badge--${p.status?.toLowerCase() || 'active'}` }, p.status || 'active')),

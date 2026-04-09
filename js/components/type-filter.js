@@ -47,7 +47,7 @@ export function computeTypeData(partnerList, opportunities) {
     if (!data[type]) data[type] = { count: 0, pipeline: 0 };
     data[type].count++;
     const partnerPipeline = opportunities
-      .filter(o => o.partner_id === p.partner_id)
+      .filter(o => o.partner_id === p.partner_id && o.status !== 'Won')
       .reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
     data[type].pipeline += partnerPipeline;
   });
