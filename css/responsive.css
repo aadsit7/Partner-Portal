@@ -368,28 +368,3 @@
     padding: 0;
   }
 }
-
-/* Dashboard redesign responsive */
-@media (max-width: 1024px) {
-  .db-content {
-    grid-template-columns: 1fr;
-  }
-  .db-deal-modal {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 768px) {
-  .db-kpi-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .db-deals-table {
-    font-size: var(--text-xs);
-  }
-  .db-deals-table td {
-    max-width: 100px;
-  }
-  .db-timeline {
-    height: 100px;
-  }
-}
