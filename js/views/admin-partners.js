@@ -39,8 +39,12 @@ export async function render(container) {
     partnerRevenue = {};
     for (const opp of opportunities) {
       const pid = opp.partner_id;
-      if (!partnerRevenue[pid]) partnerRevenue[pid] = { totalPipeline: 0, oppCount: 0 };
-      partnerRevenue[pid].totalPipeline += parseFloat(opp.deal_value) || 0;
+      if (!partnerRevenue[pid]) partnerRevenue[pid] = { totalPipeline: 0, wonValue: 0, oppCount: 0 };
+      if (opp.status === 'Won') {
+        partnerRevenue[pid].wonValue += parseFloat(opp.deal_value) || 0;
+      } else {
+        partnerRevenue[pid].totalPipeline += parseFloat(opp.deal_value) || 0;
+      }
       partnerRevenue[pid].oppCount += 1;
     }
 
@@ -58,7 +62,7 @@ function renderWithTypeFilter(container) {
   const selectedTypes = loadTypeFilter();
   const allTypeData = computeTypeData(partnerList, allOpportunities);
   const allUniqueTypes = Object.keys(allTypeData);
-  const allTotalPipeline = allOpportunities.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
+  const allTotalPipeline = allOpportunities.filter(o => o.status !== 'Won').reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
   const validSelected = selectedTypes.filter(t => allUniqueTypes.includes(t));
 
   const { partners: tfPartners } = applyTypeFilter({ partners: partnerList, selected: validSelected });
@@ -84,71 +88,12 @@ function partnerInitials(name) {
 // Bento Dashboard
 // ============================================
 
-const TYPE_COLORS = {
-  'Technology':                'var(--color-primary-lighter)',
-  'OEM':                       'var(--color-warning)',
-  'MSP/SI':                    'var(--color-accent)',
-  'MENA Regional Distributor': 'var(--color-danger)',
-};
-
-function renderBentoDashboard(partners, onFilter) {
-  return el('div', { class: 'bento-grid--partners stagger' },
-    buildHeroStat(partners),
-    buildTypeBars(partners, onFilter),
-  );
-}
-
-function buildHeroStat(partners) {
-  const activeCount = partners.filter(p => (p.status || 'active').toLowerCase() === 'active').length;
-  return el('div', { class: 'bento-cell bento-cell--accent-primary' },
-    el('div', { class: 'bento-cell__title' }, 'Total Partners'),
-    el('div', { class: 'bento-cell__value' }, String(partners.length)),
-    el('div', { class: 'bento-cell__subtitle' }, `${activeCount} active`),
-  );
-}
-
-function buildTypeBars(partners, onFilter) {
-  const typeCounts = {};
-  partners.forEach(p => {
-    const t = p.partner_type || 'Other';
-    typeCounts[t] = (typeCounts[t] || 0) + 1;
-  });
-
-  const sorted = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
-  const maxCount = sorted.length > 0 ? sorted[0][1] : 1;
-
-  const rows = sorted.map(([type, count]) => {
-    const pct = (count / maxCount) * 100;
-    const color = TYPE_COLORS[type] || 'var(--color-text-muted)';
-
-    return el('div', {
-      class: 'bento-bar-row bento-bar-row--clickable',
-      dataset: { filterKey: 'type', filterValue: type },
-      onClick: () => onFilter && onFilter('type', type),
-    },
-      el('div', { class: 'bento-bar-row__label' }, type),
-      el('div', { class: 'bento-bar-row__track' },
-        el('div', { class: 'bento-bar-row__fill', style: { width: pct + '%', background: color } })
-      ),
-      el('div', { class: 'bento-bar-row__count' }, String(count)),
-    );
-  });
-
-  return el('div', { class: 'bento-cell' },
-    el('div', { class: 'bento-cell__title' }, 'By Type'),
-    ...rows,
-  );
-}
-
 // ============================================
 // Main View
 // ============================================
 
 function renderView(container, partners, filterBar) {
   let searchQuery = '';
-  let bentoFilter = { key: null, value: null };
-
-  const premierCount = partners.filter(p => (p.tier || '').toLowerCase().includes('premier')).length;
 
   function applyFilters() {
     let result = [...partners];
@@ -162,23 +107,7 @@ function renderView(container, partners, filterBar) {
         p.hq_location?.toLowerCase().includes(q)
       );
     }
-    if (bentoFilter.key === 'type') result = result.filter(p => p.partner_type === bentoFilter.value);
     return result;
-  }
-
-  function onBentoFilter(key, value) {
-    // Toggle: clicking same bar again clears the filter
-    if (bentoFilter.key === key && bentoFilter.value === value) {
-      bentoFilter = { key: null, value: null };
-    } else {
-      bentoFilter = { key, value };
-    }
-    // Update active states on all bar rows
-    document.querySelectorAll('.bento-bar-row--clickable').forEach(row => {
-      const isActive = bentoFilter.key === row.dataset.filterKey && bentoFilter.value === row.dataset.filterValue;
-      row.classList.toggle('bento-bar-row--active', isActive);
-    });
-    renderCards(applyFilters());
   }
 
   const content = el('div', {},
@@ -210,17 +139,6 @@ function renderView(container, partners, filterBar) {
         ),
       )
     ),
-
-    // Bento dashboard (collapsible)
-    collapsibleSection({
-      id: 'admin-partners-bento',
-      title: 'Partner Overview',
-      summaryItems: [
-        { value: String(partners.length), label: 'Partners' },
-        { value: String(premierCount), label: 'Premier' },
-      ],
-      content: renderBentoDashboard(partners, onBentoFilter),
-    }),
 
     el('div', { id: 'partners-grid' })
   );
@@ -262,6 +180,7 @@ function renderCards(partners) {
     const initials = partnerInitials(p.display_name);
     const rev = partnerRevenue[p.partner_id];
     const pipeline = rev ? rev.totalPipeline : 0;
+    const wonValue = rev ? rev.wonValue : 0;
     const oppCount = rev ? rev.oppCount : 0;
 
     const card = el('div', { class: 'partner-mgmt-card' },
@@ -278,6 +197,7 @@ function renderCards(partners) {
       // Card details
       el('div', { class: 'partner-mgmt-card__details' },
         detailRow('Pipeline', formatCurrency(pipeline)),
+        wonValue > 0 ? detailRow('Won', formatCurrency(wonValue)) : null,
         detailRow('Opportunities', String(oppCount)),
         detailRow('Type', p.partner_type || '—'),
         detailRow('Status', null, el('span', { class: `badge badge--xs badge--${p.status?.toLowerCase() || 'active'}` }, p.status || 'active')),

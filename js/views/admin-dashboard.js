@@ -169,7 +169,9 @@ function renderDashboard(container, partners, opportunities, events) {
   });
   const tfUpcoming = tfEvents.filter(e => e.status === 'Upcoming' || e.status === 'In Progress');
 
-  const tfTotalPipeline = tfOpps.reduce((sum, o) => sum + (parseFloat(o.deal_value) || 0), 0);
+  const tfTotalPipeline = tfOpps
+    .filter(o => o.status !== 'Won')
+    .reduce((sum, o) => sum + (parseFloat(o.deal_value) || 0), 0);
   const tfWonValue = tfOpps
     .filter(o => o.status === 'Won')
     .reduce((sum, o) => sum + (parseFloat(o.deal_value) || 0), 0);
@@ -180,11 +182,11 @@ function renderDashboard(container, partners, opportunities, events) {
     const partnerEvents = tfEvents.filter(e => e.partner_id === partner.partner_id);
     const upcomingPartnerEvents = partnerEvents.filter(e => e.status === 'Upcoming' || e.status === 'In Progress');
     const total = partnerOpps.length;
-    const totalVal = partnerOpps.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
+    const pipelineVal = partnerOpps.filter(o => o.status !== 'Won').reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
     const wonVal = partnerOpps.filter(o => o.status === 'Won').reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
     return {
       partner,
-      stats: { totalDeals: total, totalValue: totalVal, wonValue: wonVal },
+      stats: { totalDeals: total, totalValue: pipelineVal, wonValue: wonVal },
       events: partnerEvents,
       upcomingEvents: upcomingPartnerEvents,
     };
@@ -386,6 +388,10 @@ function buildActivityView(container, partnerStats, upcomingEvents, allEvents, o
             el('div', { class: 'activity-card__metric-value' }, formatCurrency(stats.totalValue)),
             el('div', { class: 'activity-card__metric-label' }, 'Pipeline')
           ),
+          stats.wonValue > 0 ? el('div', { class: 'activity-card__metric' },
+            el('div', { class: 'activity-card__metric-value' }, formatCurrency(stats.wonValue)),
+            el('div', { class: 'activity-card__metric-label' }, 'Won')
+          ) : null,
           el('div', { class: 'activity-card__metric' },
             el('div', { class: 'activity-card__metric-value' }, String(partnerUpcoming.length)),
             el('div', { class: 'activity-card__metric-label' }, 'Events')

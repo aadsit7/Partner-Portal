@@ -69,7 +69,7 @@ function reRender(partnerId) {
 
 function renderDetail(container, partner, opportunities, partnerEvents, transcripts) {
   const tierClass = tierSlug(partner.tier);
-  const totalValue = opportunities.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
+  const pipelineValue = opportunities.filter(o => o.status !== 'Won').reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
   const wonDeals = opportunities.filter(o => o.status === 'Won');
   const wonValue = wonDeals.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
   const sortedEvents = [...partnerEvents].sort((a, b) => new Date(b.event_date) - new Date(a.event_date));
@@ -111,7 +111,7 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
             el('div', { class: 'detail-header__stat-label' }, 'Deals')
           ),
           el('div', { class: 'detail-header__stat' },
-            el('div', { class: 'detail-header__stat-value' }, formatCurrency(totalValue)),
+            el('div', { class: 'detail-header__stat-value' }, formatCurrency(pipelineValue)),
             el('div', { class: 'detail-header__stat-label' }, 'Pipeline')
           ),
           el('div', { class: 'detail-header__stat' },

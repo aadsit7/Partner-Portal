@@ -55,7 +55,7 @@ function renderWithTypeFilter(container) {
   const selectedTypes = loadTypeFilter();
   const allTypeData = computeTypeData(allBasePartners, allBaseOpps);
   const allUniqueTypes = Object.keys(allTypeData);
-  const allTotalPipeline = allBaseOpps.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
+  const allTotalPipeline = allBaseOpps.filter(o => o.status !== 'Won').reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
   const validSelected = selectedTypes.filter(t => allUniqueTypes.includes(t));
 
   const { partners: tfPartners, opportunities: tfOpps } = applyTypeFilter({
