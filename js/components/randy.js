@@ -66,6 +66,7 @@ let windowState = 'collapsed'; // 'collapsed' | 'open' | 'fullscreen'
 let voiceEnabled = false;
 let isProcessing = false;
 let isDragging = false;
+let accumulatedTranscript = '';
 let dragOffset = { x: 0, y: 0 };
 let currentConvId = null;
 let currentConvRow = null;
@@ -167,6 +168,7 @@ function onStateEnter(state, prevState) {
       startRecognition();
       break;
     case STATES.ACTIVE_LISTENING:
+      accumulatedTranscript = '';
       if (prevState === STATES.PASSIVE || prevState === STATES.SPEAKING || prevState === STATES.CONFIRMING) {
         startRecognition();
       }
@@ -200,6 +202,7 @@ function stopAll() {
   conversationHistory = [];
   pendingActions = null;
   confirmAttempts = 0;
+  accumulatedTranscript = '';
   voiceEnabled = false;
   isDragging = false;
 }
@@ -210,7 +213,7 @@ function initRecognition() {
   if (!SR) return null;
 
   const rec = new SR();
-  rec.continuous = false;
+  rec.continuous = true;
   rec.interimResults = true;
   rec.lang = 'en-US';
 
@@ -222,7 +225,10 @@ function initRecognition() {
     // Show live interim transcription in chat
     if (!result.isFinal) {
       if (currentState === STATES.ACTIVE_LISTENING && !isRandySpeaking) {
-        updateInterimBubble(transcript);
+        const preview = accumulatedTranscript
+          ? accumulatedTranscript + ' ' + transcript
+          : transcript;
+        updateInterimBubble(preview);
       }
       return;
     }
@@ -243,6 +249,7 @@ function initRecognition() {
         console.log('Randy: interrupted by user');
         if (currentState === STATES.SPEAKING) {
           currentState = STATES.ACTIVE_LISTENING;
+          accumulatedTranscript = '';
           updateWidgetUI();
         }
         handleTranscript(transcript);
@@ -253,6 +260,15 @@ function initRecognition() {
     // After Randy just finished speaking: catch echo tails
     if (isEchoTail(transcript)) {
       console.log('Randy: discarded echo tail:', transcript.substring(0, 40));
+      return;
+    }
+
+    // In ACTIVE_LISTENING: accumulate transcript, don't send yet
+    if (currentState === STATES.ACTIVE_LISTENING) {
+      accumulatedTranscript = accumulatedTranscript
+        ? accumulatedTranscript + ' ' + transcript
+        : transcript;
+      updateInterimBubble(accumulatedTranscript);
       return;
     }
 
@@ -1006,9 +1022,16 @@ function handleVoiceBtnClick() {
       transition(STATES.ACTIVE_LISTENING);
       break;
     case STATES.ACTIVE_LISTENING:
-      // Listening → pause
-      voiceEnabled = false;
-      transition(STATES.PASSIVE, true);
+      // Listening → send accumulated transcript or pause
+      removeInterimBubble();
+      if (accumulatedTranscript.trim()) {
+        const text = accumulatedTranscript.trim();
+        accumulatedTranscript = '';
+        processUserInput(text);
+      } else {
+        voiceEnabled = false;
+        transition(STATES.PASSIVE, true);
+      }
       break;
     case STATES.SPEAKING:
       // Speaking → interrupt and listen
@@ -1018,6 +1041,7 @@ function handleVoiceBtnClick() {
       currentSpeechOnComplete = null;
       voiceEnabled = true;
       currentState = STATES.ACTIVE_LISTENING;
+      accumulatedTranscript = '';
       updateWidgetUI();
       startRecognition();
       break;
@@ -1054,8 +1078,8 @@ function updateVoiceButton() {
       btn.classList.add('randy-voice-btn--listening');
       btn.innerHTML = MIC_SVG;
       // Status shows live transcript (updated by updateInterimBubble) or default
-      if (!status.textContent || status.textContent === 'Tap to talk' || status.textContent === 'Thinking...' || status.textContent === 'Randy is speaking...') {
-        status.textContent = 'Listening...';
+      if (!status.textContent || status.textContent === 'Tap to talk' || status.textContent === 'Thinking...' || status.textContent === 'Randy is speaking...' || status.textContent === 'Listening...') {
+        status.textContent = 'Tap when done';
       }
       break;
     case STATES.PROCESSING:
