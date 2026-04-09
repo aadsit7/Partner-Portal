@@ -249,6 +249,7 @@ function initRecognition() {
         console.log('Randy: interrupted by user');
         if (currentState === STATES.SPEAKING) {
           currentState = STATES.ACTIVE_LISTENING;
+          accumulatedTranscript = '';
           updateWidgetUI();
         }
         handleTranscript(transcript);
@@ -1040,6 +1041,7 @@ function handleVoiceBtnClick() {
       currentSpeechOnComplete = null;
       voiceEnabled = true;
       currentState = STATES.ACTIVE_LISTENING;
+      accumulatedTranscript = '';
       updateWidgetUI();
       startRecognition();
       break;
