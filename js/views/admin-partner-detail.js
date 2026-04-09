@@ -72,6 +72,7 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
   const pipelineValue = opportunities.filter(o => o.status !== 'Won').reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
   const wonDeals = opportunities.filter(o => o.status === 'Won');
   const wonValue = wonDeals.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
+  const totalValue = pipelineValue + wonValue;
   const sortedEvents = [...partnerEvents].sort((a, b) => new Date(b.event_date) - new Date(a.event_date));
 
   const content = el('div', {},
