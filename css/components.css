@@ -1458,6 +1458,114 @@
   font-style: normal;
 }
 
+/* Quill Editor Wrapper & Fullscreen */
+.transcript-editor-wrapper {
+  position: relative;
+}
+
+.transcript-editor-expand-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  z-index: 5;
+  transition: all var(--transition-fast);
+}
+
+.transcript-editor-expand-btn:hover {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  border-color: var(--color-border);
+}
+
+.transcript-editor-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 500;
+  background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 200ms ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.transcript-editor-fullscreen__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-6);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border-light);
+  flex-shrink: 0;
+}
+
+.transcript-editor-fullscreen__title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+}
+
+.transcript-editor-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.transcript-editor-collapse-btn:hover {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+.transcript-editor-fullscreen #transcript-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border: none;
+  border-radius: 0;
+}
+
+.transcript-editor-fullscreen #transcript-editor .ql-toolbar {
+  border-radius: 0;
+  padding: var(--space-3) var(--space-6);
+}
+
+.transcript-editor-fullscreen #transcript-editor .ql-container {
+  flex: 1;
+}
+
+.transcript-editor-fullscreen #transcript-editor .ql-editor {
+  min-height: unset;
+  max-height: unset;
+  height: 100%;
+  padding: var(--space-5) var(--space-6);
+  font-size: var(--text-base);
+}
+
 /* ---------- Type Distribution ---------- */
 .type-distribution {
   display: flex;
