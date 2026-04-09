@@ -18,6 +18,22 @@ import { filterOpportunities, filterEvents } from '../utils/filters.js';
 
 export const title = 'Partner Detail';
 
+// ============================================
+// HTML Helpers for Rich Text Transcripts
+// ============================================
+
+function stripHtml(html) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return tmp.textContent || tmp.innerText || '';
+}
+
+function ensureHtml(text) {
+  if (!text) return '';
+  if (/<[a-z][\s\S]*>/i.test(text)) return text;
+  return text.replace(/\n/g, '<br>');
+}
+
 export async function render(container, params) {
   const partnerId = params?.id;
 
@@ -205,7 +221,8 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
 
 function transcriptCard(transcript, partner) {
   const dateStr = formatDate(transcript.conversation_date) || formatDate(transcript.created_at);
-  const preview = (transcript.transcript_text || '').slice(0, 120) + ((transcript.transcript_text || '').length > 120 ? '...' : '');
+  const plainText = stripHtml(transcript.transcript_text || '');
+  const preview = plainText.slice(0, 120) + (plainText.length > 120 ? '...' : '');
 
   const toggleIcon = el('span', {
     class: 'transcript-card__toggle',
@@ -213,7 +230,7 @@ function transcriptCard(transcript, partner) {
   });
 
   const body = el('div', { class: 'transcript-card__body' },
-    el('div', { class: 'transcript-card__text' }, transcript.transcript_text || ''),
+    el('div', { class: 'transcript-card__text', html: ensureHtml(transcript.transcript_text || '') }),
     el('div', { class: 'transcript-card__actions' },
       el('button', {
         class: 'btn btn--ghost btn--sm',
@@ -260,17 +277,8 @@ function openTranscriptModal(partner, existingTranscript, previousTranscripts, o
     value: isEdit ? (existingTranscript.conversation_date || '') : todayISO(),
   });
 
-  const textArea = el('textarea', {
-    class: 'form-textarea',
-    id: 'transcript-text',
-    placeholder: 'Paste or type the call transcript here...',
-    style: { minHeight: '200px' },
-    value: isEdit ? (existingTranscript.transcript_text || '') : '',
-  });
-  // textarea value must be set after creation
-  if (isEdit && existingTranscript.transcript_text) {
-    textArea.value = existingTranscript.transcript_text;
-  }
+  const editorContainer = el('div', { id: 'transcript-editor' });
+  let quillInstance = null;
 
   const formContent = el('div', {},
     el('div', { class: 'form-group' },
@@ -289,7 +297,7 @@ function openTranscriptModal(partner, existingTranscript, previousTranscripts, o
     ),
     el('div', { class: 'form-group' },
       el('label', { class: 'form-label' }, 'Transcript'),
-      textArea
+      editorContainer
     ),
   );
 
@@ -301,7 +309,7 @@ function openTranscriptModal(partner, existingTranscript, previousTranscripts, o
         el('div', { class: 'transcript-form__history-item' },
           el('div', { class: 'transcript-form__history-date' }, formatDate(t.conversation_date) || formatDate(t.created_at)),
           el('div', { class: 'transcript-form__history-preview' },
-            (t.transcript_text || '').slice(0, 200) + ((t.transcript_text || '').length > 200 ? '...' : '')
+            (() => { const p = stripHtml(t.transcript_text || ''); return p.slice(0, 200) + (p.length > 200 ? '...' : ''); })()
           )
         )
       )
@@ -313,10 +321,11 @@ function openTranscriptModal(partner, existingTranscript, previousTranscripts, o
     class: 'btn btn--primary',
     onClick: async () => {
       const date = dateInput.value;
-      const text = textArea.value.trim();
+      const text = quillInstance ? quillInstance.root.innerHTML.trim() : '';
+      const isEmpty = !quillInstance || !quillInstance.getText().trim();
 
       if (!date) { showToast('Please enter a date', 'error'); return; }
-      if (!text) { showToast('Please enter the transcript text', 'error'); return; }
+      if (isEmpty) { showToast('Please enter the transcript text', 'error'); return; }
 
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving...';
@@ -372,6 +381,29 @@ function openTranscriptModal(partner, existingTranscript, previousTranscripts, o
       saveBtn,
     ],
   });
+
+  // Initialize Quill after modal is in the DOM
+  requestAnimationFrame(() => {
+    if (window.Quill && editorContainer.isConnected) {
+      quillInstance = new Quill(editorContainer, {
+        theme: 'snow',
+        placeholder: 'Paste or type the call transcript here...',
+        modules: {
+          toolbar: [
+            ['bold', 'italic', 'underline'],
+            [{ header: [1, 2, 3, false] }],
+            [{ list: 'ordered' }, { list: 'bullet' }, { list: 'check' }],
+            ['link'],
+            ['clean'],
+          ],
+        },
+      });
+      if (isEdit && existingTranscript.transcript_text) {
+        const content = ensureHtml(existingTranscript.transcript_text);
+        quillInstance.clipboard.dangerouslyPasteHTML(content);
+      }
+    }
+  });
 }
 
 async function handleDeleteTranscript(transcript, partner) {
@@ -399,7 +431,8 @@ async function handleDeleteTranscript(transcript, partner) {
 // ============================================
 
 function copyTranscriptText(transcript) {
-  const text = `Partner: ${transcript.partner_name}\nDate: ${transcript.conversation_date}\n\n${transcript.transcript_text}`;
+  const body = stripHtml(transcript.transcript_text || '');
+  const text = `Partner: ${transcript.partner_name}\nDate: ${transcript.conversation_date}\n\n${body}`;
   navigator.clipboard.writeText(text).then(
     () => showToast('Transcript copied to clipboard', 'success'),
     () => showToast('Failed to copy', 'error')
@@ -426,7 +459,7 @@ function downloadTranscriptPDF(transcript) {
 
   doc.setFontSize(10);
   doc.setTextColor(40);
-  const lines = doc.splitTextToSize(transcript.transcript_text || '', 170);
+  const lines = doc.splitTextToSize(stripHtml(transcript.transcript_text || ''), 170);
   doc.text(lines, 20, 42);
 
   const fileName = `${(transcript.partner_name || 'transcript').replace(/\s+/g, '_')}_${transcript.conversation_date || 'undated'}.pdf`;
@@ -471,7 +504,7 @@ function downloadAllTranscriptsPDF(partner, transcripts) {
 
     doc.setFontSize(10);
     doc.setTextColor(40);
-    const lines = doc.splitTextToSize(t.transcript_text || '', 170);
+    const lines = doc.splitTextToSize(stripHtml(t.transcript_text || ''), 170);
     lines.forEach(line => {
       if (y > 280) { doc.addPage(); y = 20; }
       doc.text(line, 20, y);

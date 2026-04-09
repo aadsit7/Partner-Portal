@@ -1349,10 +1349,40 @@
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
   line-height: var(--leading-relaxed);
-  white-space: pre-wrap;
   max-height: 300px;
   overflow-y: auto;
   padding: var(--space-3) 0;
+}
+
+.transcript-card__text h1,
+.transcript-card__text h2,
+.transcript-card__text h3 {
+  margin: 0.5em 0 0.25em;
+  color: var(--color-text-primary);
+}
+
+.transcript-card__text h1 { font-size: 1.25em; }
+.transcript-card__text h2 { font-size: 1.1em; }
+.transcript-card__text h3 { font-size: 1em; }
+
+.transcript-card__text ul,
+.transcript-card__text ol {
+  padding-left: 1.5em;
+  margin: 0.25em 0;
+}
+
+.transcript-card__text a {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.transcript-card__text ul[data-checked="true"] > li,
+.transcript-card__text ul[data-checked="false"] > li {
+  list-style: none;
+}
+
+.transcript-card__text p {
+  margin: 0.25em 0;
 }
 
 .transcript-card__actions {
@@ -1393,6 +1423,39 @@
   font-size: var(--text-xs);
   color: var(--color-text-muted);
   line-height: var(--leading-relaxed);
+}
+
+/* ---------- Quill Editor in Modal ---------- */
+#transcript-editor {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+#transcript-editor .ql-toolbar {
+  border: none;
+  border-bottom: 1px solid var(--color-border-light);
+  background: var(--color-bg);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+#transcript-editor .ql-container {
+  border: none;
+  font-family: var(--font-family);
+  font-size: var(--text-sm);
+}
+
+#transcript-editor .ql-editor {
+  min-height: 200px;
+  max-height: 400px;
+  overflow-y: auto;
+  line-height: var(--leading-relaxed);
+  color: var(--color-text-primary);
+}
+
+#transcript-editor .ql-editor.ql-blank::before {
+  color: var(--color-text-muted);
+  font-style: normal;
 }
 
 /* ---------- Type Distribution ---------- */
