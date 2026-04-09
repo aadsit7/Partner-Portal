@@ -10,6 +10,7 @@ import { CONFIG } from '../config.js';
 import { getCurrentUser } from '../auth.js';
 import { appendRow, updateRow, readSheetAsObjects } from '../sheets.js';
 import { isVoiceModeActive } from './voice-widget.js';
+import { openOppModal } from '../views/admin-opportunities.js';
 
 // ── Randy Personality Prompt ──────────────────────────────────────
 const RANDY_PERSONALITY = `
@@ -30,9 +31,53 @@ CRITICAL RULES FOR VOICE RESPONSES:
 - Keep numbers conversational: say '120 grand' not '$120,000'
 - Keep partner names natural: say 'Nerdio' not 'Nerdio (partner_id 6)'
 - If there's a lot of data to share, give the highlights and say 'want me to go deeper on any of those?'
-- Never start with 'Based on the data' or 'According to the database' — just answer naturally`;
+- Never start with 'Based on the data' or 'According to the database' — just answer naturally
+
+NAVIGATION COMMANDS:
+When the user asks you to open, show, go to, or navigate to something in the portal, include a :::NAV block in your response:
+
+:::NAV
+{"action": "navigate", "target": "/admin/dashboard"}
+:::
+
+Action types:
+- "navigate" — go to a portal page. Target is the route path.
+- "open_detail" — open a specific record. Target format is "type:name" (e.g. "partner:Nerdio" or "opportunity:Greenshield").
+- "click" — trigger a UI element (reserved for future use).
+
+Route mapping:
+- 'Open the dashboard' → action: navigate, target: /admin/dashboard
+- 'Show me partners' → action: navigate, target: /admin/partners
+- 'Go to opportunities' → action: navigate, target: /admin/opportunities
+- 'Show me events' → action: navigate, target: /admin/events
+- 'Open the AI Assistant' → action: navigate, target: /admin/ai-assistant
+- 'Go to setup' → action: navigate, target: /admin/setup
+
+Detail navigation:
+- 'Show me Nerdio' → action: open_detail, target: partner:Nerdio
+- 'Open the Greenshield deal' → action: open_detail, target: opportunity:Greenshield
+
+You can combine navigation with information. Example:
+User: 'Show me the Nerdio partnership'
+Response: 'Opening Nerdio for you — they're Premier tier, North America, with 120 grand in pipeline and four upcoming events.'
+:::NAV
+{"action": "open_detail", "target": "partner:Nerdio"}
+:::
+
+A response CAN contain BOTH :::ACTION and :::NAV blocks if the user asks to change data AND navigate.`;
 
 const RANDY_SYSTEM_PROMPT = SYSTEM_PROMPT + RANDY_PERSONALITY;
+
+// ── Portal Route Map ─────────────────────────────────────────────
+const PORTAL_ROUTES = {
+  'dashboard': '/admin/dashboard',
+  'partners': '/admin/partners',
+  'events': '/admin/events',
+  'opportunities': '/admin/opportunities',
+  'ai assistant': '/admin/ai-assistant',
+  'ai': '/admin/ai-assistant',
+  'setup': '/admin/setup',
+};
 
 // ── State Machine ─────────────────────────────────────────────────
 const STATES = { OFF: 'OFF', PASSIVE: 'PASSIVE', ACTIVE_LISTENING: 'ACTIVE_LISTENING', PROCESSING: 'PROCESSING', SPEAKING: 'SPEAKING', CONFIRMING: 'CONFIRMING' };
@@ -399,6 +444,91 @@ function isDeactivationPhrase(lower) {
   return DEACTIVATION_PHRASES.some(phrase => lower.includes(phrase));
 }
 
+// ── NAV Block Parser ─────────────────────────────────────────────
+function parseNavCommands(text) {
+  const navs = [];
+  const cleaned = text.replace(/:::NAV\n([\s\S]*?)\n:::/g, (_, json) => {
+    try { navs.push(JSON.parse(json)); } catch (e) { console.error('Failed to parse NAV:', e); }
+    return '';
+  }).trim();
+  return { cleaned, navs };
+}
+
+// ── NAV Execution ────────────────────────────────────────────────
+async function executeNavCommand(nav) {
+  if (!nav || !nav.action) return;
+
+  switch (nav.action) {
+    case 'navigate': {
+      let route = nav.target;
+      // Fallback: check PORTAL_ROUTES if target isn't a full path
+      if (route && !route.startsWith('/')) {
+        const key = route.toLowerCase().replace(/[^a-z\s]/g, '').trim();
+        route = PORTAL_ROUTES[key] || route;
+      }
+      if (route) {
+        console.log('Randy NAV: navigating to', route);
+        window.location.hash = '#' + route;
+      }
+      break;
+    }
+
+    case 'open_detail': {
+      if (!nav.target || !nav.target.includes(':')) {
+        console.warn('Randy NAV: invalid open_detail target', nav.target);
+        break;
+      }
+      const [type, ...nameParts] = nav.target.split(':');
+      const name = nameParts.join(':').trim().toLowerCase();
+
+      if (type === 'partner') {
+        try {
+          const data = await loadSheetData();
+          const partner = data.partners.find(p =>
+            p.display_name && p.display_name.toLowerCase().includes(name)
+          );
+          if (partner) {
+            console.log('Randy NAV: opening partner', partner.display_name, partner.partner_id);
+            window.location.hash = '#/admin/partner-detail?id=' + encodeURIComponent(partner.partner_id);
+          } else {
+            console.warn('Randy NAV: partner not found:', name);
+            window.location.hash = '#/admin/partners';
+          }
+        } catch (e) {
+          console.error('Randy NAV: partner lookup failed', e);
+        }
+      } else if (type === 'opportunity') {
+        try {
+          const data = await loadSheetData();
+          const opp = data.opportunities.find(o =>
+            (o.deal_name && o.deal_name.toLowerCase().includes(name)) ||
+            (o.customer_name && o.customer_name.toLowerCase().includes(name))
+          );
+          // Navigate to opportunities page first
+          window.location.hash = '#/admin/opportunities';
+          if (opp) {
+            console.log('Randy NAV: opening opportunity', opp.deal_name, opp.opportunity_id);
+            // Wait for the view to render, then open the modal
+            setTimeout(() => {
+              openOppModal(opp, document.getElementById('view-container'));
+            }, 300);
+          }
+        } catch (e) {
+          console.error('Randy NAV: opportunity lookup failed', e);
+        }
+      }
+      break;
+    }
+
+    case 'click':
+      console.log('Randy NAV: click action (not implemented)', nav.target);
+      break;
+
+    default:
+      console.warn('Randy NAV: unknown action', nav.action);
+  }
+}
+
 // ── Process User Input (voice-only) ───────────────────────────────
 async function processUserInput(text) {
   transition(STATES.PROCESSING);
@@ -420,9 +550,17 @@ async function processUserInput(text) {
       conversationHistory = conversationHistory.slice(-20);
     }
 
-    const { cleanText, actions } = parseActions(response);
+    const { cleanText: afterActions, actions } = parseActions(response);
+    const { cleaned: cleanText, navs } = parseNavCommands(afterActions);
     removeTypingIndicator();
     const assistantMsg = renderMessage('assistant', cleanText);
+
+    // Schedule navigation after a short delay so user hears context first
+    if (navs.length > 0) {
+      setTimeout(() => {
+        navs.forEach(nav => executeNavCommand(nav));
+      }, 500);
+    }
 
     if (actions.length > 0) {
       pendingActions = [...actions];
@@ -639,8 +777,9 @@ function selectVoice() {
 // ── Text Cleaning for Speech ──────────────────────────────────────
 function cleanForSpeech(text) {
   return text
-    // Strip :::ACTION blocks
+    // Strip :::ACTION and :::NAV blocks
     .replace(/:::ACTION[\s\S]*?:::/g, '')
+    .replace(/:::NAV[\s\S]*?:::/g, '')
     // Strip code blocks
     .replace(/```[\s\S]*?```/g, '')
     .replace(/`([^`]+)`/g, '$1')
