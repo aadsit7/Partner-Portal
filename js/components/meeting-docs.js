@@ -300,13 +300,32 @@ function buildTranscriptContextMessage(partner, transcripts) {
   } else {
     sorted.forEach((t, i) => {
       const date = formatDate(t.conversation_date) || formatDate(t.created_at) || 'Undated';
-      const text = stripHtml(t.transcript_text || '').trim();
+      const text = htmlToPlainText(t.transcript_text || '').trim();
       ctx += `## Transcript ${i + 1} — ${date}\n\n${text}\n\n---\n\n`;
     });
   }
 
   ctx += `\n_The above is background context. I'll send my actual request in the next message._`;
   return ctx;
+}
+
+/**
+ * Convert rich HTML (e.g. Quill output) to plain text while preserving
+ * paragraph and line breaks. `stripHtml` uses textContent which concatenates
+ * block elements without whitespace, so "<p>A</p><p>B</p>" becomes "AB" —
+ * unusable as LLM context. This helper injects line breaks at block
+ * boundaries first, then strips remaining tags.
+ */
+function htmlToPlainText(html) {
+  if (!html) return '';
+  const withBreaks = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6]|tr)>/gi, '\n')
+    .replace(/<\/ul>|<\/ol>/gi, '\n');
+  // Now strip remaining tags and decode entities via a detached element.
+  const text = stripHtml(withBreaks);
+  // Collapse runs of 3+ newlines to 2 for readability.
+  return text.replace(/\n{3,}/g, '\n\n');
 }
 
 async function handleSend() {
@@ -579,19 +598,31 @@ function extractTitle(html) {
 }
 
 function inferDocType(history, html) {
-  // Scan the user's most recent requests and the generated HTML for keywords
+  // Strategy: the user's recent request is the authoritative signal. Only
+  // fall back to HTML-content keywords when the user said nothing specific,
+  // because HTML content for any doc type is likely to contain generic
+  // words like "agenda" or "recap" in headers that would cause misclassification.
   const recentUserText = history
     .filter(m => m.role === 'user')
     .slice(-3)
     .map(m => m.content.toLowerCase())
     .join(' ');
-  const htmlLower = html.toLowerCase();
-  const combined = recentUserText + ' ' + htmlLower;
 
-  if (/\bpre[-\s]?meeting\b|\bagenda\b/.test(combined)) return 'pre-meeting';
-  if (/\bbiweekly\b|\bbi-weekly\b|\bbi weekly\b/.test(combined)) return 'biweekly';
-  if (/\brecap\s*\+\s*map\b|\brecap and map\b/.test(combined)) return 'map';
-  if (/\bmutual action plan\b|\bmap\b/.test(combined)) return 'map';
-  if (/\brecap\b|\bmeeting recap\b/.test(combined)) return 'recap';
+  // Priority 1: explicit user intent (check most specific patterns first)
+  if (/\brecap\s*\+\s*map\b|\brecap and map\b/.test(recentUserText)) return 'map';
+  if (/\bpre[-\s]?meeting\b|\bpre[-\s]?meeting\s+agenda\b/.test(recentUserText)) return 'pre-meeting';
+  if (/\bbiweekly\b|\bbi-weekly\b|\bbi weekly\b/.test(recentUserText)) return 'biweekly';
+  if (/\bmutual action plan\b|\bmap\b/.test(recentUserText)) return 'map';
+  if (/\bagenda\b/.test(recentUserText)) return 'pre-meeting';
+  if (/\brecap\b|\bmeeting recap\b/.test(recentUserText)) return 'recap';
+
+  // Priority 2: only unambiguous phrases in HTML content as fallback.
+  // Using multi-word phrases avoids false positives from generic header text.
+  const htmlLower = (html || '').toLowerCase();
+  if (/\bmutual action plan\b/.test(htmlLower)) return 'map';
+  if (/\bbiweekly update\b/.test(htmlLower)) return 'biweekly';
+  if (/\bpre[-\s]?meeting agenda\b/.test(htmlLower)) return 'pre-meeting';
+  if (/\bmeeting recap\b/.test(htmlLower)) return 'recap';
+
   return 'recap';
 }
