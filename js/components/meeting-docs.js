@@ -5,12 +5,12 @@
 // (Meeting Recaps, MAPs, Biweekly Updates, Pre-Meeting Agendas) from
 // partner call transcripts via Claude API.
 
-import { el, uuid } from '../utils/dom.js';
-import { CONFIG, getRuntimeConfig } from '../config.js';
-import { appendRow, updateRow, isConfigured, addDemoRow, updateDemoRow } from '../sheets.js';
+import { el } from '../utils/dom.js';
+import { getRuntimeConfig } from '../config.js';
 import { stripHtml } from './quill-editor.js';
-import { formatDate, nowISO } from '../utils/date.js';
+import { formatDate } from '../utils/date.js';
 import { showToast } from './toast.js';
+import { openMapEditorModal, docTypeClass, docTypeLabel } from './map-editor.js';
 
 // ============================================
 // System Prompt
@@ -300,13 +300,32 @@ function buildTranscriptContextMessage(partner, transcripts) {
   } else {
     sorted.forEach((t, i) => {
       const date = formatDate(t.conversation_date) || formatDate(t.created_at) || 'Undated';
-      const text = stripHtml(t.transcript_text || '').trim();
+      const text = htmlToPlainText(t.transcript_text || '').trim();
       ctx += `## Transcript ${i + 1} — ${date}\n\n${text}\n\n---\n\n`;
     });
   }
 
   ctx += `\n_The above is background context. I'll send my actual request in the next message._`;
   return ctx;
+}
+
+/**
+ * Convert rich HTML (e.g. Quill output) to plain text while preserving
+ * paragraph and line breaks. `stripHtml` uses textContent which concatenates
+ * block elements without whitespace, so "<p>A</p><p>B</p>" becomes "AB" —
+ * unusable as LLM context. This helper injects line breaks at block
+ * boundaries first, then strips remaining tags.
+ */
+function htmlToPlainText(html) {
+  if (!html) return '';
+  const withBreaks = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6]|tr)>/gi, '\n')
+    .replace(/<\/ul>|<\/ol>/gi, '\n');
+  // Now strip remaining tags and decode entities via a detached element.
+  const text = stripHtml(withBreaks);
+  // Collapse runs of 3+ newlines to 2 for readability.
+  return text.replace(/\n{3,}/g, '\n\n');
 }
 
 async function handleSend() {
@@ -464,37 +483,75 @@ function renderTypingIndicator() {
 }
 
 function renderDocCard(html) {
-  const iframe = el('iframe', {
-    class: 'meeting-docs-doc-card__iframe',
-    sandbox: 'allow-same-origin',
-  });
-  // srcdoc must be set after creation
-  iframe.srcdoc = html;
+  // Compact clickable card (like a transcript header). Clicking opens the
+  // shared editable pop-out (map-editor.js). Save happens inside the pop-out,
+  // so there is exactly one canonical save path.
+  const title = extractTitle(html) || 'Generated Document';
+  const docType = inferDocType(state.conversationHistory, html);
+  const plain = stripHtml(html).replace(/\s+/g, ' ').trim();
+  const preview = plain.slice(0, 140) + (plain.length > 140 ? '…' : '');
 
-  const saveBtn = el('button', {
-    class: 'btn btn--primary btn--sm',
-    onClick: () => handleSaveDoc(html, saveBtn),
-  }, state.currentMode === 'update' ? 'Update Document' : 'Save to Partner');
-
-  const copyBtn = el('button', {
-    class: 'btn btn--secondary btn--sm',
-    onClick: () => {
-      navigator.clipboard.writeText(html).then(
-        () => showToast('HTML copied to clipboard', 'success'),
-        () => showToast('Failed to copy', 'error'),
-      );
-    },
-  }, 'Copy HTML');
-
-  const card = el('div', { class: 'meeting-docs-doc-card' },
-    el('div', { class: 'meeting-docs-doc-card__header' }, 'Generated Document Preview'),
-    iframe,
-    el('div', { class: 'meeting-docs-doc-card__actions' }, saveBtn, copyBtn),
+  const card = el('div', {
+    class: 'meeting-docs-doc-card meeting-docs-doc-card--compact',
+    onClick: () => openCompactCardInEditor(html, title, docType),
+  },
+    el('div', { class: 'meeting-docs-doc-card__row' },
+      el('span', { class: `doc-type-badge doc-type-badge--${docTypeClass(docType)}` }, docTypeLabel(docType)),
+      el('div', { class: 'meeting-docs-doc-card__title' }, title),
+    ),
+    preview ? el('div', { class: 'meeting-docs-doc-card__preview' }, preview) : null,
+    el('div', { class: 'meeting-docs-doc-card__hint' },
+      el('span', { html: '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6h7M6 2.5l3.5 3.5L6 9.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
+      'Click to view or edit',
+    ),
   );
 
   state.chatEl.appendChild(card);
   scrollChatToBottom();
   return card;
+}
+
+function openCompactCardInEditor(html, title, docType) {
+  if (!state.currentPartner) return;
+
+  // Build a doc object matching what openMapEditorModal expects. In update
+  // mode we carry the existing row info so Save updates that row; in create
+  // mode we omit _rowIndex so Save appends.
+  const partner = state.currentPartner;
+  const baseDoc = {
+    partner_id: partner.partner_id,
+    partner_name: partner.display_name,
+    title,
+    doc_type: docType,
+    html_content: html,
+  };
+
+  const doc = (state.currentMode === 'update' && state.currentDoc)
+    ? {
+        ...baseDoc,
+        document_id: state.currentDoc.document_id,
+        _rowIndex: state.currentDoc._rowIndex,
+        status: state.currentDoc.status,
+        created_at: state.currentDoc.created_at,
+        updated_at: state.currentDoc.updated_at,
+      }
+    : baseDoc;
+
+  openMapEditorModal({
+    partner,
+    doc,
+    transcripts: state.currentTranscripts,
+    onSaved: () => {
+      // In update mode, keep state.currentDoc in sync so subsequent saves
+      // target the same row without requiring a full page reRender.
+      if (state.currentMode === 'update' && state.currentDoc) {
+        state.currentDoc = { ...state.currentDoc, html_content: html, title };
+      }
+      if (state.onSavedCb) { try { state.onSavedCb(); } catch { /* ignore */ } }
+    },
+    // No onAskAssistant here — user is already chatting with the assistant.
+    // Leaving it undefined hides the "Ask Assistant" button in the pop-out.
+  });
 }
 
 function scrollChatToBottom() {
@@ -504,70 +561,10 @@ function scrollChatToBottom() {
 }
 
 // ============================================
-// Save to Sheet
+// Title / Type Inference
 // ============================================
-
-async function handleSaveDoc(html, btn) {
-  if (!state.currentPartner) return;
-  btn.disabled = true;
-  btn.textContent = 'Saving…';
-
-  try {
-    const partner = state.currentPartner;
-    const title = extractTitle(html) || `${partner.display_name} Document`;
-    const docType = inferDocType(state.conversationHistory, html);
-
-    if (state.currentMode === 'update' && state.currentDoc) {
-      const values = [
-        state.currentDoc.document_id,
-        partner.partner_id,
-        partner.display_name,
-        title,
-        docType || state.currentDoc.doc_type || 'recap',
-        html,
-        state.currentDoc.status || 'active',
-        state.currentDoc.created_at || nowISO(),
-        nowISO(),
-      ];
-      if (isConfigured()) {
-        await updateRow(CONFIG.SHEET_PARTNER_DOCUMENTS, state.currentDoc._rowIndex, values);
-      } else {
-        updateDemoRow(CONFIG.SHEET_PARTNER_DOCUMENTS, state.currentDoc._rowIndex, values);
-      }
-      // Refresh local reference
-      state.currentDoc = { ...state.currentDoc, html_content: html, title, doc_type: values[4], updated_at: values[8] };
-      showToast('Document updated', 'success');
-    } else {
-      const now = nowISO();
-      const values = [
-        uuid('doc'),
-        partner.partner_id,
-        partner.display_name,
-        title,
-        docType || 'recap',
-        html,
-        'active',
-        now,
-        now,
-      ];
-      if (isConfigured()) {
-        await appendRow(CONFIG.SHEET_PARTNER_DOCUMENTS, values);
-      } else {
-        addDemoRow(CONFIG.SHEET_PARTNER_DOCUMENTS, values);
-      }
-      showToast('Document saved to partner', 'success');
-    }
-
-    btn.textContent = 'Saved ✓';
-    if (state.onSavedCb) {
-      try { state.onSavedCb(); } catch { /* ignore */ }
-    }
-  } catch (err) {
-    showToast(err.message || 'Failed to save', 'error');
-    btn.disabled = false;
-    btn.textContent = state.currentMode === 'update' ? 'Update Document' : 'Save to Partner';
-  }
-}
+// Saving is handled inside openMapEditorModal, not here. The chatbot just
+// renders a compact card that hands off to the editor pop-out on click.
 
 function extractTitle(html) {
   // Try <h1> first, then <h2>, then fall back to first heading-ish line
@@ -579,19 +576,31 @@ function extractTitle(html) {
 }
 
 function inferDocType(history, html) {
-  // Scan the user's most recent requests and the generated HTML for keywords
+  // Strategy: the user's recent request is the authoritative signal. Only
+  // fall back to HTML-content keywords when the user said nothing specific,
+  // because HTML content for any doc type is likely to contain generic
+  // words like "agenda" or "recap" in headers that would cause misclassification.
   const recentUserText = history
     .filter(m => m.role === 'user')
     .slice(-3)
     .map(m => m.content.toLowerCase())
     .join(' ');
-  const htmlLower = html.toLowerCase();
-  const combined = recentUserText + ' ' + htmlLower;
 
-  if (/\bpre[-\s]?meeting\b|\bagenda\b/.test(combined)) return 'pre-meeting';
-  if (/\bbiweekly\b|\bbi-weekly\b|\bbi weekly\b/.test(combined)) return 'biweekly';
-  if (/\brecap\s*\+\s*map\b|\brecap and map\b/.test(combined)) return 'map';
-  if (/\bmutual action plan\b|\bmap\b/.test(combined)) return 'map';
-  if (/\brecap\b|\bmeeting recap\b/.test(combined)) return 'recap';
+  // Priority 1: explicit user intent (check most specific patterns first)
+  if (/\brecap\s*\+\s*map\b|\brecap and map\b/.test(recentUserText)) return 'map';
+  if (/\bpre[-\s]?meeting\b|\bpre[-\s]?meeting\s+agenda\b/.test(recentUserText)) return 'pre-meeting';
+  if (/\bbiweekly\b|\bbi-weekly\b|\bbi weekly\b/.test(recentUserText)) return 'biweekly';
+  if (/\bmutual action plan\b|\bmap\b/.test(recentUserText)) return 'map';
+  if (/\bagenda\b/.test(recentUserText)) return 'pre-meeting';
+  if (/\brecap\b|\bmeeting recap\b/.test(recentUserText)) return 'recap';
+
+  // Priority 2: only unambiguous phrases in HTML content as fallback.
+  // Using multi-word phrases avoids false positives from generic header text.
+  const htmlLower = (html || '').toLowerCase();
+  if (/\bmutual action plan\b/.test(htmlLower)) return 'map';
+  if (/\bbiweekly update\b/.test(htmlLower)) return 'biweekly';
+  if (/\bpre[-\s]?meeting agenda\b/.test(htmlLower)) return 'pre-meeting';
+  if (/\bmeeting recap\b/.test(htmlLower)) return 'recap';
+
   return 'recap';
 }
