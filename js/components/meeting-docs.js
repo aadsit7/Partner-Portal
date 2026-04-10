@@ -165,6 +165,11 @@ export function openMeetingDocs({ partner, transcripts = [], mode = 'create', ex
   state.chatEl.innerHTML = '';
   state.conversationHistory = [];
 
+  // Reset textarea state so stale text / expanded height from a previous
+  // session doesn't carry over.
+  state.textareaEl.value = '';
+  state.textareaEl.style.height = 'auto';
+
   // Seed context: first message is a hidden user turn with all transcripts
   const contextMessage = buildTranscriptContextMessage(partner, transcripts);
   state.conversationHistory.push({ role: 'user', content: contextMessage });
