@@ -16,6 +16,7 @@ import { setTopbarTitle } from '../components/sidebar.js';
 import { showToast } from '../components/toast.js';
 import { filterOpportunities, filterEvents } from '../utils/filters.js';
 import { stripHtml, ensureHtml, initQuillEditor } from '../components/quill-editor.js';
+import { openMeetingDocs } from '../components/meeting-docs.js';
 
 export const title = 'Partner Detail';
 
@@ -31,11 +32,12 @@ export async function render(container, params) {
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
 
   try {
-    const [partners, opportunities, events, transcripts] = await Promise.all([
+    const [partners, opportunities, events, transcripts, documents] = await Promise.all([
       readSheetAsObjects(CONFIG.SHEET_PARTNERS),
       readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES),
       readSheetAsObjects(CONFIG.SHEET_EVENTS),
       readSheetAsObjects(CONFIG.SHEET_TRANSCRIPTS),
+      readSheetAsObjects(CONFIG.SHEET_PARTNER_DOCUMENTS).catch(() => []),
     ]);
 
     const partner = partners.find(p => p.partner_id === partnerId);
@@ -52,8 +54,11 @@ export async function render(container, params) {
     const partnerTranscripts = transcripts
       .filter(t => t.partner_id === partnerId)
       .sort((a, b) => new Date(b.conversation_date || b.created_at) - new Date(a.conversation_date || a.created_at));
+    const partnerDocs = documents
+      .filter(d => d.partner_id === partnerId && d.status !== 'deleted')
+      .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
 
-    renderDetail(container, partner, partnerOpps, partnerEvents, partnerTranscripts);
+    renderDetail(container, partner, partnerOpps, partnerEvents, partnerTranscripts, partnerDocs);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },
       el('div', { class: 'empty-state__title' }, 'Error loading data'),
@@ -67,7 +72,7 @@ function reRender(partnerId) {
   render(viewContainer, { id: partnerId });
 }
 
-function renderDetail(container, partner, opportunities, partnerEvents, transcripts) {
+function renderDetail(container, partner, opportunities, partnerEvents, transcripts, documents = []) {
   const tierClass = tierSlug(partner.tier);
   const pipelineValue = opportunities.filter(o => o.status !== 'Won').reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
   const wonDeals = opportunities.filter(o => o.status === 'Won');
@@ -167,35 +172,8 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
           )
     ),
 
-    // Section 3: Call Transcripts
-    el('div', { class: 'detail-section' },
-      el('div', { class: 'detail-section__header' },
-        el('h3', { class: 'detail-section__title' }, 'Call Transcripts'),
-        el('div', { style: { display: 'flex', gap: 'var(--space-2)' } },
-          transcripts.length > 0
-            ? el('button', {
-                class: 'btn btn--secondary btn--sm',
-                onClick: () => downloadAllTranscriptsPDF(partner, transcripts),
-              }, 'Export All PDF')
-            : null,
-          el('button', {
-            class: 'btn btn--primary btn--sm',
-            onClick: () => openTranscriptModal(partner, null, transcripts, () => reRender(partner.partner_id)),
-          },
-            el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-            'Add Transcript'
-          ),
-        )
-      ),
-      transcripts.length > 0
-        ? el('div', { class: 'transcript-list' },
-            ...transcripts.map(t => transcriptCard(t, partner))
-          )
-        : el('div', { class: 'empty-state', style: { padding: 'var(--space-8) var(--space-4)' } },
-            el('div', { class: 'empty-state__title' }, 'No transcripts yet'),
-            el('div', { class: 'empty-state__description' }, 'Click "Add Transcript" to log a call with this partner.')
-          )
-    ),
+    // Section 3: Call Transcripts + Mutual Action Plans (50/50 split)
+    buildBottomSplitSection(partner, transcripts, documents),
   );
 
   mount(container, content);
@@ -488,6 +466,218 @@ function downloadAllTranscriptsPDF(partner, transcripts) {
   const fileName = `${partner.display_name.replace(/\s+/g, '_')}_All_Transcripts.pdf`;
   doc.save(fileName);
   showToast('All transcripts exported as PDF', 'success');
+}
+
+// ============================================
+// Bottom 50/50 Split: Transcripts + MAPs
+// ============================================
+
+function buildBottomSplitSection(partner, transcripts, documents) {
+  return el('div', { class: 'detail-section' },
+    el('div', { class: 'partner-bottom-grid' },
+      buildTranscriptsPanel(partner, transcripts),
+      buildMapPanel(partner, transcripts, documents),
+    )
+  );
+}
+
+function buildTranscriptsPanel(partner, transcripts) {
+  const actions = el('div', { class: 'partner-bottom-panel__actions' },
+    transcripts.length > 0
+      ? el('button', {
+          class: 'btn btn--secondary btn--sm',
+          onClick: () => downloadAllTranscriptsPDF(partner, transcripts),
+        }, 'Export PDF')
+      : null,
+    el('button', {
+      class: 'btn btn--primary btn--sm',
+      onClick: () => openTranscriptModal(partner, null, transcripts, () => reRender(partner.partner_id)),
+    },
+      el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
+      'Add Transcript'
+    ),
+  );
+
+  const body = transcripts.length > 0
+    ? el('div', { class: 'transcript-list' },
+        ...transcripts.map(t => transcriptCard(t, partner))
+      )
+    : el('div', { class: 'empty-state', style: { padding: 'var(--space-6) var(--space-2)' } },
+        el('div', { class: 'empty-state__title' }, 'No transcripts yet'),
+        el('div', { class: 'empty-state__description' }, 'Click "Add Transcript" to log a call with this partner.')
+      );
+
+  return el('div', { class: 'partner-bottom-panel' },
+    el('div', { class: 'partner-bottom-panel__header' },
+      el('div', { class: 'partner-bottom-panel__title-group' },
+        el('h3', { class: 'partner-bottom-panel__title' }, 'Call Transcripts'),
+        el('span', { class: 'partner-bottom-panel__count' }, String(transcripts.length)),
+      ),
+      actions,
+    ),
+    el('div', { class: 'partner-bottom-panel__body' }, body),
+  );
+}
+
+function buildMapPanel(partner, transcripts, documents) {
+  const activeDocs = documents.filter(d => d.status !== 'archived' && d.status !== 'deleted');
+
+  const actions = el('div', { class: 'partner-bottom-panel__actions' },
+    el('button', {
+      class: 'btn btn--primary btn--sm',
+      onClick: () => openMeetingDocs({
+        partner,
+        transcripts,
+        mode: 'create',
+        onSaved: () => reRender(partner.partner_id),
+      }),
+    },
+      el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
+      'Create New'
+    ),
+  );
+
+  const body = activeDocs.length > 0
+    ? el('div', { class: 'map-list' }, ...activeDocs.map(d => mapCard(d, partner, transcripts)))
+    : el('div', { class: 'empty-state', style: { padding: 'var(--space-6) var(--space-2)' } },
+        el('div', { class: 'empty-state__title' }, 'No mutual action plans yet'),
+        el('div', { class: 'empty-state__description' }, 'Click "Create New" and tell the assistant what you want — e.g., "Build a MAP from the last two meetings".')
+      );
+
+  return el('div', { class: 'partner-bottom-panel' },
+    el('div', { class: 'partner-bottom-panel__header' },
+      el('div', { class: 'partner-bottom-panel__title-group' },
+        el('h3', { class: 'partner-bottom-panel__title' }, 'Mutual Action Plans'),
+        el('span', { class: 'partner-bottom-panel__count' }, String(activeDocs.length)),
+      ),
+      actions,
+    ),
+    el('div', { class: 'partner-bottom-panel__body' }, body),
+  );
+}
+
+function mapCard(doc, partner, transcripts) {
+  const typeSlug = docTypeClass(doc.doc_type);
+  const typeLabel = docTypeLabel(doc.doc_type);
+  const createdDate = formatDate(doc.created_at);
+  const updatedDate = formatDate(doc.updated_at);
+  const showUpdated = updatedDate && updatedDate !== createdDate;
+
+  return el('div', {
+    class: 'map-card',
+    onClick: () => openDocumentViewerModal(doc, partner, transcripts),
+  },
+    el('div', { class: 'map-card__row' },
+      el('div', { class: 'map-card__title' }, doc.title || 'Untitled Document'),
+      el('span', { class: `doc-type-badge doc-type-badge--${typeSlug}` }, typeLabel),
+    ),
+    el('div', { class: 'map-card__meta' },
+      el('span', { class: 'map-card__meta-item' }, `Created ${createdDate || '—'}`),
+      showUpdated ? el('span', { class: 'map-card__meta-item' }, `Updated ${updatedDate}`) : null,
+      el('span', { class: `map-status-badge map-status-badge--${doc.status || 'active'}` }, doc.status === 'archived' ? 'Archived' : 'Active'),
+    ),
+  );
+}
+
+function docTypeClass(docType) {
+  const t = (docType || '').toLowerCase().trim();
+  if (t === 'pre-meeting' || t === 'premeeting') return 'pre-meeting';
+  if (t === 'biweekly') return 'biweekly';
+  if (t === 'map' || t === 'mutual action plan') return 'map';
+  if (t === 'recap' || t === 'meeting recap') return 'recap';
+  return 'default';
+}
+
+function docTypeLabel(docType) {
+  const t = (docType || '').toLowerCase().trim();
+  if (t === 'pre-meeting' || t === 'premeeting') return 'Pre-Meeting';
+  if (t === 'biweekly') return 'Biweekly';
+  if (t === 'map' || t === 'mutual action plan') return 'MAP';
+  if (t === 'recap' || t === 'meeting recap') return 'Recap';
+  return docType || 'Document';
+}
+
+function openDocumentViewerModal(doc, partner, transcripts) {
+  const iframe = el('iframe', { class: 'doc-viewer-iframe', sandbox: 'allow-same-origin' });
+  iframe.srcdoc = doc.html_content || '<p style="font-family: sans-serif; padding: 24px; color: #888;">No content</p>';
+
+  const meta = el('div', { class: 'doc-viewer-meta' },
+    el('span', { class: `doc-type-badge doc-type-badge--${docTypeClass(doc.doc_type)}` }, docTypeLabel(doc.doc_type)),
+    el('span', {}, `Created ${formatDate(doc.created_at) || '—'}`),
+    (doc.updated_at && doc.updated_at !== doc.created_at) ? el('span', {}, `Updated ${formatDate(doc.updated_at)}`) : null,
+    el('span', { class: `map-status-badge map-status-badge--${doc.status || 'active'}` }, doc.status === 'archived' ? 'Archived' : 'Active'),
+  );
+
+  const body = el('div', {}, meta, iframe);
+
+  const closeBtn = el('button', { class: 'btn btn--secondary', onClick: closeModal }, 'Close');
+
+  const archiveBtn = el('button', {
+    class: 'btn btn--ghost',
+    onClick: async () => {
+      const confirmed = await confirmDialog('Archive Document', `Archive "${doc.title}"? It will be hidden from the active list but not deleted.`);
+      if (!confirmed) return;
+      try {
+        const values = [
+          doc.document_id, doc.partner_id, doc.partner_name,
+          doc.title, doc.doc_type, doc.html_content,
+          'archived', doc.created_at, nowISO(),
+        ];
+        if (isConfigured()) {
+          await updateRow(CONFIG.SHEET_PARTNER_DOCUMENTS, doc._rowIndex, values);
+        } else {
+          updateDemoRow(CONFIG.SHEET_PARTNER_DOCUMENTS, doc._rowIndex, values);
+        }
+        showToast('Document archived', 'success');
+        closeModal();
+        reRender(partner.partner_id);
+      } catch (err) {
+        showToast(err.message || 'Failed to archive', 'error');
+      }
+    },
+  }, 'Archive');
+
+  const deleteBtn = el('button', {
+    class: 'btn btn--ghost',
+    style: { color: 'var(--color-danger, #CC2222)' },
+    onClick: async () => {
+      const confirmed = await confirmDialog('Delete Document', `Permanently delete "${doc.title}"? This cannot be undone.`);
+      if (!confirmed) return;
+      try {
+        if (isConfigured()) {
+          await deleteRow(CONFIG.SHEET_PARTNER_DOCUMENTS, doc._rowIndex);
+        } else {
+          deleteDemoRow(CONFIG.SHEET_PARTNER_DOCUMENTS, doc._rowIndex);
+        }
+        showToast('Document deleted', 'success');
+        closeModal();
+        reRender(partner.partner_id);
+      } catch (err) {
+        showToast(err.message || 'Failed to delete', 'error');
+      }
+    },
+  }, 'Delete');
+
+  const updateBtn = el('button', {
+    class: 'btn btn--primary',
+    onClick: () => {
+      closeModal();
+      openMeetingDocs({
+        partner,
+        transcripts,
+        mode: 'update',
+        existingDoc: doc,
+        onSaved: () => reRender(partner.partner_id),
+      });
+    },
+  }, 'Update');
+
+  openModal({
+    title: doc.title || 'Document',
+    content: body,
+    className: 'modal--wide',
+    footer: [closeBtn, archiveBtn, deleteBtn, updateBtn],
+  });
 }
 
 // ============================================

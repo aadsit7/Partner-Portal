@@ -63,6 +63,7 @@ export const CONFIG = {
   SHEET_TRANSCRIPTS: 'Transcripts',
   SHEET_MEETING_INDEX: 'Meeting_Index',
   SHEET_AI_CONVERSATIONS: 'AI_Conversations',
+  SHEET_PARTNER_DOCUMENTS: 'Partner_Documents',
 
   // Support & Resources iframe URL
   SUPPORT_URL: 'https://partnerprogram.github.io/Application-Workspace/',
