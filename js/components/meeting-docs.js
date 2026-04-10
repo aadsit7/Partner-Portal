@@ -110,6 +110,7 @@ const state = {
   abortController: null,
   isBusy: false,
   isOpen: false,
+  sessionId: 0, // Bumped on open/close so in-flight responses from a prior session can be discarded
 };
 
 // ============================================
@@ -135,6 +136,19 @@ export function openMeetingDocs({ partner, transcripts = [], mode = 'create', ex
     return;
   }
 
+  // Invalidate any in-flight request from a previous session (e.g. the user
+  // opened the chatbot for another partner without closing it first).
+  state.sessionId++;
+  if (state.abortController) {
+    try { state.abortController.abort(); } catch { /* ignore */ }
+    state.abortController = null;
+  }
+  state.isBusy = false;
+  if (state.sendBtnEl) {
+    state.sendBtnEl.disabled = false;
+    state.sendBtnEl.textContent = 'Send';
+  }
+
   state.currentPartner = partner;
   state.currentTranscripts = transcripts;
   state.currentMode = mode;
@@ -150,6 +164,11 @@ export function openMeetingDocs({ partner, transcripts = [], mode = 'create', ex
   // Reset chat UI and conversation
   state.chatEl.innerHTML = '';
   state.conversationHistory = [];
+
+  // Reset textarea state so stale text / expanded height from a previous
+  // session doesn't carry over.
+  state.textareaEl.value = '';
+  state.textareaEl.style.height = 'auto';
 
   // Seed context: first message is a hidden user turn with all transcripts
   const contextMessage = buildTranscriptContextMessage(partner, transcripts);
@@ -246,10 +265,14 @@ function openPopup() {
 }
 
 function closePopup() {
+  // Invalidate any in-flight request so its late-arriving response is discarded.
+  state.sessionId++;
   if (state.abortController) {
     try { state.abortController.abort(); } catch { /* ignore */ }
     state.abortController = null;
-    state.isBusy = false;
+  }
+  state.isBusy = false;
+  if (state.sendBtnEl) {
     state.sendBtnEl.disabled = false;
     state.sendBtnEl.textContent = 'Send';
   }
@@ -300,6 +323,10 @@ async function handleSend() {
   // Append to history
   state.conversationHistory.push({ role: 'user', content: text });
 
+  // Capture the session ID so we can discard a response that arrives after
+  // the popup has been closed or reopened for a different partner.
+  const mySessionId = state.sessionId;
+
   // Call API
   state.isBusy = true;
   state.sendBtnEl.disabled = true;
@@ -309,6 +336,7 @@ async function handleSend() {
   try {
     state.abortController = new AbortController();
     const response = await callMeetingDocsAPI(state.conversationHistory, state.abortController.signal);
+    if (mySessionId !== state.sessionId) return; // Stale — ignore
     typingEl.remove();
 
     state.conversationHistory.push({ role: 'assistant', content: response });
@@ -319,6 +347,7 @@ async function handleSend() {
 
     scrollChatToBottom();
   } catch (err) {
+    if (mySessionId !== state.sessionId) return; // Stale — ignore (popup closed / reopened)
     typingEl.remove();
     if (err.name === 'AbortError') {
       // Silent — user closed popup
@@ -326,10 +355,14 @@ async function handleSend() {
       renderErrorBubble(err.message || 'Request failed');
     }
   } finally {
-    state.abortController = null;
-    state.isBusy = false;
-    state.sendBtnEl.disabled = false;
-    state.sendBtnEl.textContent = 'Send';
+    // Only reset busy/controller state if we're still the current session.
+    // A stale handleSend must NOT wipe out a newer session's abortController.
+    if (mySessionId === state.sessionId) {
+      state.abortController = null;
+      state.isBusy = false;
+      state.sendBtnEl.disabled = false;
+      state.sendBtnEl.textContent = 'Send';
+    }
   }
 }
 
@@ -380,8 +413,10 @@ async function callMeetingDocsAPI(messages, signal) {
 // ============================================
 
 function parseHtmlBlocks(text) {
+  // Tolerate any (or no) whitespace between the fence and the HTML so that
+  // responses like "</div>:::" or "</div> :::" still match.
   const htmlBlocks = [];
-  const prose = text.replace(/:::HTML\s*\n([\s\S]*?)\n:::/g, (_, html) => {
+  const prose = text.replace(/:::HTML\s*([\s\S]*?)\s*:::/g, (_, html) => {
     htmlBlocks.push(html.trim());
     return '';
   }).trim();
