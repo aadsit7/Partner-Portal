@@ -17,6 +17,7 @@ import { showToast } from '../components/toast.js';
 import { filterOpportunities, filterEvents } from '../utils/filters.js';
 import { stripHtml, ensureHtml, initQuillEditor } from '../components/quill-editor.js';
 import { openMeetingDocs } from '../components/meeting-docs.js';
+import { openMapEditorModal, docTypeClass, docTypeLabel } from '../components/map-editor.js';
 
 export const title = 'Partner Detail';
 
@@ -565,7 +566,23 @@ function mapCard(doc, partner, transcripts) {
 
   return el('div', {
     class: 'map-card',
-    onClick: () => openDocumentViewerModal(doc, partner, transcripts),
+    onClick: () => openMapEditorModal({
+      partner,
+      doc,
+      transcripts,
+      onSaved: () => reRender(partner.partner_id),
+      onDeleted: () => reRender(partner.partner_id),
+      onAskAssistant: ({ html, doc: editedDoc }) => {
+        // Hand the (possibly unsaved) edited HTML to the chatbot in update mode.
+        openMeetingDocs({
+          partner,
+          transcripts,
+          mode: 'update',
+          existingDoc: { ...editedDoc, html_content: html },
+          onSaved: () => reRender(partner.partner_id),
+        });
+      },
+    }),
   },
     el('div', { class: 'map-card__row' },
       el('div', { class: 'map-card__title' }, doc.title || 'Untitled Document'),
@@ -577,107 +594,6 @@ function mapCard(doc, partner, transcripts) {
       el('span', { class: `map-status-badge map-status-badge--${doc.status || 'active'}` }, doc.status === 'archived' ? 'Archived' : 'Active'),
     ),
   );
-}
-
-function docTypeClass(docType) {
-  const t = (docType || '').toLowerCase().trim();
-  if (t === 'pre-meeting' || t === 'premeeting') return 'pre-meeting';
-  if (t === 'biweekly') return 'biweekly';
-  if (t === 'map' || t === 'mutual action plan') return 'map';
-  if (t === 'recap' || t === 'meeting recap') return 'recap';
-  return 'default';
-}
-
-function docTypeLabel(docType) {
-  const t = (docType || '').toLowerCase().trim();
-  if (t === 'pre-meeting' || t === 'premeeting') return 'Pre-Meeting';
-  if (t === 'biweekly') return 'Biweekly';
-  if (t === 'map' || t === 'mutual action plan') return 'MAP';
-  if (t === 'recap' || t === 'meeting recap') return 'Recap';
-  return docType || 'Document';
-}
-
-function openDocumentViewerModal(doc, partner, transcripts) {
-  const iframe = el('iframe', { class: 'doc-viewer-iframe', sandbox: 'allow-same-origin' });
-  iframe.srcdoc = doc.html_content || '<p style="font-family: sans-serif; padding: 24px; color: #888;">No content</p>';
-
-  const meta = el('div', { class: 'doc-viewer-meta' },
-    el('span', { class: `doc-type-badge doc-type-badge--${docTypeClass(doc.doc_type)}` }, docTypeLabel(doc.doc_type)),
-    el('span', {}, `Created ${formatDate(doc.created_at) || '—'}`),
-    (doc.updated_at && doc.updated_at !== doc.created_at) ? el('span', {}, `Updated ${formatDate(doc.updated_at)}`) : null,
-    el('span', { class: `map-status-badge map-status-badge--${doc.status || 'active'}` }, doc.status === 'archived' ? 'Archived' : 'Active'),
-  );
-
-  const body = el('div', {}, meta, iframe);
-
-  const closeBtn = el('button', { class: 'btn btn--secondary', onClick: closeModal }, 'Close');
-
-  const archiveBtn = el('button', {
-    class: 'btn btn--ghost',
-    onClick: async () => {
-      const confirmed = await confirmDialog('Archive Document', `Archive "${doc.title}"? It will be hidden from the active list but not deleted.`);
-      if (!confirmed) return;
-      try {
-        const values = [
-          doc.document_id, doc.partner_id, doc.partner_name,
-          doc.title, doc.doc_type, doc.html_content,
-          'archived', doc.created_at, nowISO(),
-        ];
-        if (isConfigured()) {
-          await updateRow(CONFIG.SHEET_PARTNER_DOCUMENTS, doc._rowIndex, values);
-        } else {
-          updateDemoRow(CONFIG.SHEET_PARTNER_DOCUMENTS, doc._rowIndex, values);
-        }
-        showToast('Document archived', 'success');
-        closeModal();
-        reRender(partner.partner_id);
-      } catch (err) {
-        showToast(err.message || 'Failed to archive', 'error');
-      }
-    },
-  }, 'Archive');
-
-  const deleteBtn = el('button', {
-    class: 'btn btn--ghost',
-    style: { color: 'var(--color-danger, #CC2222)' },
-    onClick: async () => {
-      const confirmed = await confirmDialog('Delete Document', `Permanently delete "${doc.title}"? This cannot be undone.`);
-      if (!confirmed) return;
-      try {
-        if (isConfigured()) {
-          await deleteRow(CONFIG.SHEET_PARTNER_DOCUMENTS, doc._rowIndex);
-        } else {
-          deleteDemoRow(CONFIG.SHEET_PARTNER_DOCUMENTS, doc._rowIndex);
-        }
-        showToast('Document deleted', 'success');
-        closeModal();
-        reRender(partner.partner_id);
-      } catch (err) {
-        showToast(err.message || 'Failed to delete', 'error');
-      }
-    },
-  }, 'Delete');
-
-  const updateBtn = el('button', {
-    class: 'btn btn--primary',
-    onClick: () => {
-      closeModal();
-      openMeetingDocs({
-        partner,
-        transcripts,
-        mode: 'update',
-        existingDoc: doc,
-        onSaved: () => reRender(partner.partner_id),
-      });
-    },
-  }, 'Update');
-
-  openModal({
-    title: doc.title || 'Document',
-    content: body,
-    className: 'modal--wide',
-    footer: [closeBtn, archiveBtn, deleteBtn, updateBtn],
-  });
 }
 
 // ============================================
