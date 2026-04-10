@@ -224,6 +224,7 @@ const SHEET_HEADERS = {
   [CONFIG.SHEET_OPPORTUNITIES]: ['opportunity_id', 'partner_id', 'deal_name', 'customer_name', 'deal_value', 'status', 'stage', 'expected_close', 'description', 'created_at', 'updated_at', 'notes', 'lead_source'],
   [CONFIG.SHEET_EVENTS]: ['event_id', 'title', 'description', 'event_date', 'end_date', 'event_type', 'location', 'url', 'created_by', 'created_at', 'status', 'partner_id', 'checklist'],
   [CONFIG.SHEET_TRANSCRIPTS]: ['transcript_id', 'partner_id', 'partner_name', 'conversation_date', 'transcript_text', 'created_at'],
+  [CONFIG.SHEET_PARTNER_DOCUMENTS]: ['document_id', 'partner_id', 'partner_name', 'title', 'doc_type', 'html_content', 'status', 'created_at', 'updated_at'],
 };
 
 /**
@@ -248,7 +249,7 @@ export async function initializeSheet() {
 
   // 2. Build batchUpdate requests to add missing tabs
   const requests = [];
-  const tabsToCreate = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS, CONFIG.SHEET_TRANSCRIPTS];
+  const tabsToCreate = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS, CONFIG.SHEET_TRANSCRIPTS, CONFIG.SHEET_PARTNER_DOCUMENTS];
 
   for (const tabName of tabsToCreate) {
     if (!existingSheets.includes(tabName)) {
@@ -292,7 +293,7 @@ export async function syncHeaders() {
   if (!token) throw new Error('OAuth token required — please log in with Google SSO first.');
 
   const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
-  const tabs = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS, CONFIG.SHEET_TRANSCRIPTS];
+  const tabs = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS, CONFIG.SHEET_TRANSCRIPTS, CONFIG.SHEET_PARTNER_DOCUMENTS];
 
   for (const tabName of tabs) {
     const headerRow = SHEET_HEADERS[tabName];
@@ -426,12 +427,16 @@ let demoTranscripts = [
   ['transcript_id', 'partner_id', 'partner_name', 'conversation_date', 'transcript_text', 'created_at'],
 ];
 
+let demoPartnerDocuments = [
+  ['document_id', 'partner_id', 'partner_name', 'title', 'doc_type', 'html_content', 'status', 'created_at', 'updated_at'],
+];
+
 // ============================================
 // Demo data localStorage persistence
 // ============================================
 
 const DEMO_STORAGE_KEY = 'pp_demo_data';
-const DEMO_SCHEMA_VERSION = 11; // Bump when demo data structure changes
+const DEMO_SCHEMA_VERSION = 12; // Bump when demo data structure changes
 
 function persistDemoData() {
   try {
@@ -441,6 +446,7 @@ function persistDemoData() {
       opportunities: demoOpportunities,
       events: demoEvents,
       transcripts: demoTranscripts,
+      partnerDocuments: demoPartnerDocuments,
     }));
   } catch { /* quota exceeded — silently ignore */ }
 }
@@ -459,6 +465,7 @@ function loadPersistedDemoData() {
     if (data.opportunities) demoOpportunities = data.opportunities;
     if (data.events) demoEvents = data.events;
     if (data.transcripts) demoTranscripts = data.transcripts;
+    if (data.partnerDocuments) demoPartnerDocuments = data.partnerDocuments;
     return true;
   } catch {
     return false;
@@ -481,6 +488,7 @@ function getDemoData(sheetName) {
     case CONFIG.SHEET_OPPORTUNITIES: return [...demoOpportunities.map(r => [...r])];
     case CONFIG.SHEET_EVENTS: return [...demoEvents.map(r => [...r])];
     case CONFIG.SHEET_TRANSCRIPTS: return [...demoTranscripts.map(r => [...r])];
+    case CONFIG.SHEET_PARTNER_DOCUMENTS: return [...demoPartnerDocuments.map(r => [...r])];
     default: return [];
   }
 }
@@ -494,6 +502,7 @@ export function addDemoRow(sheetName, values) {
     case CONFIG.SHEET_OPPORTUNITIES: demoOpportunities.push(values); break;
     case CONFIG.SHEET_EVENTS: demoEvents.push(values); break;
     case CONFIG.SHEET_TRANSCRIPTS: demoTranscripts.push(values); break;
+    case CONFIG.SHEET_PARTNER_DOCUMENTS: demoPartnerDocuments.push(values); break;
   }
   persistDemoData();
 }
@@ -508,6 +517,7 @@ export function updateDemoRow(sheetName, rowIndex, values) {
     case CONFIG.SHEET_OPPORTUNITIES: data = demoOpportunities; break;
     case CONFIG.SHEET_EVENTS: data = demoEvents; break;
     case CONFIG.SHEET_TRANSCRIPTS: data = demoTranscripts; break;
+    case CONFIG.SHEET_PARTNER_DOCUMENTS: data = demoPartnerDocuments; break;
     default: return;
   }
   if (data[rowIndex - 1]) {
@@ -526,6 +536,7 @@ export function deleteDemoRow(sheetName, rowIndex) {
     case CONFIG.SHEET_OPPORTUNITIES: data = demoOpportunities; break;
     case CONFIG.SHEET_EVENTS: data = demoEvents; break;
     case CONFIG.SHEET_TRANSCRIPTS: data = demoTranscripts; break;
+    case CONFIG.SHEET_PARTNER_DOCUMENTS: data = demoPartnerDocuments; break;
     default: return;
   }
   data.splice(rowIndex - 1, 1);
