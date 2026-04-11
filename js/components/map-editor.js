@@ -48,6 +48,67 @@ export function docTypeLabel(docType) {
 }
 
 // ============================================
+// Save Helper (shared)
+// ============================================
+
+/**
+ * Persist a meeting doc to the Partner_Documents sheet. Branches on
+ * `doc._rowIndex`: if absent, appends a new row; if present, updates that
+ * row. Pure data I/O — no UI side effects. Callers are responsible for
+ * showing toasts and closing modals.
+ *
+ * @param {Object} opts
+ * @param {Object} opts.partner - Partner object with partner_id, display_name
+ * @param {Object} opts.doc - Doc object (see openMapEditorModal for shape).
+ *   If `_rowIndex` is present, the row at that index is updated.
+ * @param {string} opts.html - HTML content to save
+ * @param {string} [opts.title] - Title override (falls back to doc.title)
+ * @returns {Promise<{ isNew: boolean }>}
+ */
+export async function saveMapDoc({ partner, doc, html, title }) {
+  const isNew = !doc._rowIndex;
+  const finalTitle = (title || doc.title || '').trim() || `${partner.display_name} Document`;
+  const now = nowISO();
+
+  if (isNew) {
+    const values = [
+      uuid('doc'),
+      partner.partner_id,
+      partner.display_name,
+      finalTitle,
+      doc.doc_type || 'recap',
+      html,
+      'active',
+      now,
+      now,
+    ];
+    if (isConfigured()) {
+      await appendRow(CONFIG.SHEET_PARTNER_DOCUMENTS, values);
+    } else {
+      addDemoRow(CONFIG.SHEET_PARTNER_DOCUMENTS, values);
+    }
+  } else {
+    const values = [
+      doc.document_id,
+      partner.partner_id,
+      partner.display_name,
+      finalTitle,
+      doc.doc_type || 'recap',
+      html,
+      doc.status || 'active',
+      doc.created_at || now,
+      now,
+    ];
+    if (isConfigured()) {
+      await updateRow(CONFIG.SHEET_PARTNER_DOCUMENTS, doc._rowIndex, values);
+    } else {
+      updateDemoRow(CONFIG.SHEET_PARTNER_DOCUMENTS, doc._rowIndex, values);
+    }
+  }
+  return { isNew };
+}
+
+// ============================================
 // Editable Pop-out Modal
 // ============================================
 
@@ -230,46 +291,13 @@ export function openMapEditorModal({
       const originalLabel = isNew ? 'Save to Partner' : 'Save Changes';
       saveBtn.textContent = 'Saving…';
       try {
-        const title = (currentTitle || '').trim() || `${partner.display_name} Document`;
-        const now = nowISO();
-
-        if (isNew) {
-          const values = [
-            uuid('doc'),
-            partner.partner_id,
-            partner.display_name,
-            title,
-            doc.doc_type || 'recap',
-            currentHtml,
-            'active',
-            now,
-            now,
-          ];
-          if (isConfigured()) {
-            await appendRow(CONFIG.SHEET_PARTNER_DOCUMENTS, values);
-          } else {
-            addDemoRow(CONFIG.SHEET_PARTNER_DOCUMENTS, values);
-          }
-          showToast('Document saved to partner', 'success');
-        } else {
-          const values = [
-            doc.document_id,
-            partner.partner_id,
-            partner.display_name,
-            title,
-            doc.doc_type || 'recap',
-            currentHtml,
-            doc.status || 'active',
-            doc.created_at || now,
-            now,
-          ];
-          if (isConfigured()) {
-            await updateRow(CONFIG.SHEET_PARTNER_DOCUMENTS, doc._rowIndex, values);
-          } else {
-            updateDemoRow(CONFIG.SHEET_PARTNER_DOCUMENTS, doc._rowIndex, values);
-          }
-          showToast('Document updated', 'success');
-        }
+        await saveMapDoc({
+          partner,
+          doc,
+          html: currentHtml,
+          title: currentTitle,
+        });
+        showToast(isNew ? 'Document saved to partner' : 'Document updated', 'success');
         closeModal();
         if (onSaved) { try { onSaved(); } catch { /* ignore */ } }
       } catch (err) {
