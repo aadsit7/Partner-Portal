@@ -581,6 +581,24 @@ body.meeting-docs-open .randy {
   color: var(--color-primary) !important;
 }
 
+.map-editor__fullscreen-btn {
+  margin-left: auto;
+  display: inline-flex !important;
+  align-items: center;
+}
+
+/* When the preview iframe enters fullscreen, give it a neutral backdrop
+   so the MAP content (which uses max-width: 720px) sits centered on a
+   clean surface instead of the browser's default black. */
+.map-editor__iframe:fullscreen,
+.map-editor__iframe:-webkit-full-screen {
+  background: #f4f4f8;
+  width: 100vw;
+  height: 100vh;
+  border: 0;
+  border-radius: 0;
+}
+
 .map-editor__body {
   flex: 1;
   min-height: 0;
