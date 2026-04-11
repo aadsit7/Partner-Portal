@@ -183,6 +183,7 @@ export function openMapEditorModal({
   const previewIframe = el('iframe', {
     class: 'map-editor__iframe',
     sandbox: 'allow-same-origin',
+    allow: 'fullscreen',
   });
   previewIframe.srcdoc = currentHtml || '<p style="font-family: sans-serif; padding: 24px; color: #888;">No content</p>';
 
@@ -230,7 +231,45 @@ export function openMapEditorModal({
     setTimeout(() => sourceTextarea.focus(), 50);
   });
 
-  const toolbar = el('div', { class: 'map-editor__toolbar' }, previewBtn, editBtn);
+  // Fullscreen popout button — pushes to the right edge of the toolbar
+  // and expands the preview iframe to fill the screen via the Fullscreen
+  // API. The iframe's `allow: 'fullscreen'` attribute above grants the
+  // needed permission even though the sandbox omits `allow-scripts`.
+  const fullscreenBtn = el('button', {
+    class: 'btn btn--ghost btn--sm map-editor__fullscreen-btn',
+    type: 'button',
+    title: 'Open preview in fullscreen',
+    'aria-label': 'Open preview in fullscreen',
+    html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"><path d="M2 5V2h3M9 2h3v3M12 9v3H9M5 12H2V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Fullscreen',
+  });
+
+  fullscreenBtn.addEventListener('click', async () => {
+    // If the user is mid-edit, commit their changes back into the iframe
+    // and switch to preview before going fullscreen. Otherwise fullscreen
+    // would show stale content.
+    if (isEditing) {
+      isEditing = false;
+      previewIframe.srcdoc = currentHtml || '<p style="font-family: sans-serif; padding: 24px; color: #888;">No content</p>';
+      bodyContainer.innerHTML = '';
+      bodyContainer.appendChild(previewIframe);
+      previewBtn.classList.add('map-editor__tab--active');
+      editBtn.classList.remove('map-editor__tab--active');
+    }
+    const req = previewIframe.requestFullscreen
+      || previewIframe.webkitRequestFullscreen
+      || previewIframe.msRequestFullscreen;
+    if (!req) {
+      showToast('Fullscreen not supported in this browser', 'error');
+      return;
+    }
+    try {
+      await req.call(previewIframe);
+    } catch (err) {
+      showToast(`Could not enter fullscreen: ${err?.message || 'unknown error'}`, 'error');
+    }
+  });
+
+  const toolbar = el('div', { class: 'map-editor__toolbar' }, previewBtn, editBtn, fullscreenBtn);
 
   // ---- Modal body ----
   const modalBody = el('div', { class: 'map-editor' },
