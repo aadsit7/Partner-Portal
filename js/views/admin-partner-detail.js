@@ -6,7 +6,7 @@ import { readSheetAsObjects, appendRow, updateRow, deleteRow, isConfigured, addD
 import { CONFIG } from '../config.js';
 import { el, mount, formatCurrency, uuid } from '../utils/dom.js';
 import { formatDate, todayISO, nowISO } from '../utils/date.js';
-import { navigate } from '../router.js';
+import { navigate, getCurrentPath, getQueryParams } from '../router.js';
 import { tierSlug, TIER_ICONS } from '../utils/tiers.js';
 import { dealCard, statCard } from '../components/card.js';
 import { openModal, closeModal, confirmDialog } from '../components/modal.js';
@@ -80,6 +80,18 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
   const wonValue = wonDeals.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
   const totalValue = pipelineValue + wonValue;
   const sortedEvents = [...partnerEvents].sort((a, b) => new Date(b.event_date) - new Date(a.event_date));
+
+  // Background MAP saves (triggered by closing the Meeting Docs popup while
+  // a generation is in-flight) can fire their onSaved callback long after
+  // the user has navigated away from this page. reRender() blindly
+  // overwrites #view-container, so we guard with the current route before
+  // re-rendering to avoid clobbering a different view.
+  const safeReRender = () => {
+    const params = getQueryParams();
+    if (getCurrentPath() === '/admin/partner-detail' && params.id === partner.partner_id) {
+      reRender(partner.partner_id);
+    }
+  };
 
   const content = el('div', {},
     // Back button
@@ -174,7 +186,7 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
     ),
 
     // Section 3: Call Transcripts + Mutual Action Plans (50/50 split)
-    buildBottomSplitSection(partner, transcripts, documents),
+    buildBottomSplitSection(partner, transcripts, documents, safeReRender),
   );
 
   mount(container, content);
@@ -473,11 +485,11 @@ function downloadAllTranscriptsPDF(partner, transcripts) {
 // Bottom 50/50 Split: Transcripts + MAPs
 // ============================================
 
-function buildBottomSplitSection(partner, transcripts, documents) {
+function buildBottomSplitSection(partner, transcripts, documents, safeReRender) {
   return el('div', { class: 'detail-section' },
     el('div', { class: 'partner-bottom-grid' },
       buildTranscriptsPanel(partner, transcripts),
-      buildMapPanel(partner, transcripts, documents),
+      buildMapPanel(partner, transcripts, documents, safeReRender),
     )
   );
 }
@@ -520,7 +532,7 @@ function buildTranscriptsPanel(partner, transcripts) {
   );
 }
 
-function buildMapPanel(partner, transcripts, documents) {
+function buildMapPanel(partner, transcripts, documents, safeReRender) {
   const activeDocs = documents.filter(d => d.status !== 'archived' && d.status !== 'deleted');
 
   const actions = el('div', { class: 'partner-bottom-panel__actions' },
@@ -530,7 +542,9 @@ function buildMapPanel(partner, transcripts, documents) {
         partner,
         transcripts,
         mode: 'create',
-        onSaved: () => reRender(partner.partner_id),
+        // Route-guarded: if the user has navigated away by the time a
+        // background MAP save fires, skip the re-render.
+        onSaved: safeReRender,
       }),
     },
       el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
@@ -539,7 +553,7 @@ function buildMapPanel(partner, transcripts, documents) {
   );
 
   const body = activeDocs.length > 0
-    ? el('div', { class: 'map-list' }, ...activeDocs.map(d => mapCard(d, partner, transcripts)))
+    ? el('div', { class: 'map-list' }, ...activeDocs.map(d => mapCard(d, partner, transcripts, safeReRender)))
     : el('div', { class: 'empty-state', style: { padding: 'var(--space-6) var(--space-2)' } },
         el('div', { class: 'empty-state__title' }, 'No mutual action plans yet'),
         el('div', { class: 'empty-state__description' }, 'Click "Create New" and tell the assistant what you want — e.g., "Build a MAP from the last two meetings".')
@@ -557,7 +571,7 @@ function buildMapPanel(partner, transcripts, documents) {
   );
 }
 
-function mapCard(doc, partner, transcripts) {
+function mapCard(doc, partner, transcripts, safeReRender) {
   const typeSlug = docTypeClass(doc.doc_type);
   const typeLabel = docTypeLabel(doc.doc_type);
   const createdDate = formatDate(doc.created_at);
@@ -570,8 +584,8 @@ function mapCard(doc, partner, transcripts) {
       partner,
       doc,
       transcripts,
-      onSaved: () => reRender(partner.partner_id),
-      onDeleted: () => reRender(partner.partner_id),
+      onSaved: safeReRender,
+      onDeleted: safeReRender,
       onAskAssistant: ({ html, doc: editedDoc }) => {
         // Hand the (possibly unsaved) edited HTML to the chatbot in update mode.
         openMeetingDocs({
@@ -579,7 +593,8 @@ function mapCard(doc, partner, transcripts) {
           transcripts,
           mode: 'update',
           existingDoc: { ...editedDoc, html_content: html },
-          onSaved: () => reRender(partner.partner_id),
+          // Route-guarded for the same reason as Create New above.
+          onSaved: safeReRender,
         });
       },
     }),

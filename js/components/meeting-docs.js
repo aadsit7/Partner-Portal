@@ -10,7 +10,7 @@ import { getRuntimeConfig } from '../config.js';
 import { stripHtml } from './quill-editor.js';
 import { formatDate } from '../utils/date.js';
 import { showToast } from './toast.js';
-import { openMapEditorModal, docTypeClass, docTypeLabel } from './map-editor.js';
+import { openMapEditorModal, docTypeClass, docTypeLabel, saveMapDoc } from './map-editor.js';
 
 // ============================================
 // System Prompt
@@ -112,6 +112,13 @@ const state = {
   isOpen: false,
   sessionId: 0, // Bumped on open/close so in-flight responses from a prior session can be discarded
 };
+
+// Background generation jobs whose owning popup has been closed before the
+// response arrived. Each job carries its own captured context (partner,
+// mode, onSaved callback, history snapshot) so a fresh openMeetingDocs()
+// call for a different partner cannot disturb it. The job's promise keeps
+// running until the API responds, then auto-saves to Partner_Documents.
+const backgroundJobs = new Set();
 
 // ============================================
 // Public API
@@ -265,7 +272,36 @@ function openPopup() {
 }
 
 function closePopup() {
-  // Invalidate any in-flight request so its late-arriving response is discarded.
+  // If a request is in flight, hand it off to run in the background instead
+  // of aborting. The job was created in handleSend() and already captured
+  // all the context it needs; here we just flip a sentinel on the controller
+  // so handleSend knows to take the background-save path when the API
+  // responds. See `backgroundJobs` for lifecycle.
+  if (state.isBusy && state.abortController) {
+    const detaching = state.abortController;
+    detaching._detachRequested = true;
+    backgroundJobs.add(detaching);
+    showToast(
+      `Generating document in background — it'll appear on ${state.currentPartner?.display_name || 'the partner'} shortly.`,
+      'success',
+      5000,
+    );
+    // Detach from foreground state without aborting. A subsequent
+    // openMeetingDocs() will reset state.sessionId/abortController cleanly
+    // without clobbering the background promise because it no longer
+    // references these fields.
+    state.abortController = null;
+    state.isBusy = false;
+    if (state.sendBtnEl) {
+      state.sendBtnEl.disabled = false;
+      state.sendBtnEl.textContent = 'Send';
+    }
+    state.containerEl.classList.add('meeting-docs--hidden');
+    state.isOpen = false;
+    return;
+  }
+
+  // Not busy: invalidate any in-flight request so its late-arriving response is discarded.
   state.sessionId++;
   if (state.abortController) {
     try { state.abortController.abort(); } catch { /* ignore */ }
@@ -342,20 +378,45 @@ async function handleSend() {
   // Append to history
   state.conversationHistory.push({ role: 'user', content: text });
 
-  // Capture the session ID so we can discard a response that arrives after
-  // the popup has been closed or reopened for a different partner.
-  const mySessionId = state.sessionId;
+  // Capture everything we might need if the user closes the popup before
+  // the response arrives. On close-while-busy, closePopup() marks the
+  // abortController's `_detachRequested` sentinel; this handler then takes
+  // the background-save path instead of rendering into a (possibly reset)
+  // popup. The job owns its own context so a fresh openMeetingDocs() call
+  // for another partner cannot corrupt it.
+  const job = {
+    partner: state.currentPartner,
+    mode: state.currentMode,
+    existingDoc: state.currentDoc,
+    onSavedCb: state.onSavedCb,
+    historySnapshot: state.conversationHistory.slice(),
+    sessionId: state.sessionId,
+    abortController: new AbortController(),
+    detached: false,
+  };
 
-  // Call API
+  state.abortController = job.abortController;
   state.isBusy = true;
   state.sendBtnEl.disabled = true;
   state.sendBtnEl.textContent = '…';
   const typingEl = renderTypingIndicator();
 
   try {
-    state.abortController = new AbortController();
-    const response = await callMeetingDocsAPI(state.conversationHistory, state.abortController.signal);
-    if (mySessionId !== state.sessionId) return; // Stale — ignore
+    const response = await callMeetingDocsAPI(job.historySnapshot, job.abortController.signal);
+
+    // Did the user close the popup while we were waiting? If so, take the
+    // background-save path rather than rendering into the popup.
+    if (job.abortController._detachRequested) {
+      job.detached = true;
+      backgroundJobs.delete(job.abortController);
+      await handleBackgroundResponse(job, response);
+      return;
+    }
+
+    // Foreground: stale-session check still applies (e.g. user reopened
+    // the popup for a different partner without closing first — rare, but
+    // the original sessionId guard remains).
+    if (job.sessionId !== state.sessionId) return;
     typingEl.remove();
 
     state.conversationHistory.push({ role: 'assistant', content: response });
@@ -366,7 +427,13 @@ async function handleSend() {
 
     scrollChatToBottom();
   } catch (err) {
-    if (mySessionId !== state.sessionId) return; // Stale — ignore (popup closed / reopened)
+    if (job.abortController._detachRequested) {
+      job.detached = true;
+      backgroundJobs.delete(job.abortController);
+      handleBackgroundError(job, err);
+      return;
+    }
+    if (job.sessionId !== state.sessionId) return; // Stale — ignore (popup closed / reopened)
     typingEl.remove();
     if (err.name === 'AbortError') {
       // Silent — user closed popup
@@ -374,15 +441,92 @@ async function handleSend() {
       renderErrorBubble(err.message || 'Request failed');
     }
   } finally {
-    // Only reset busy/controller state if we're still the current session.
-    // A stale handleSend must NOT wipe out a newer session's abortController.
-    if (mySessionId === state.sessionId) {
+    // Only reset busy/controller state if we're still the current session
+    // AND the job wasn't detached into the background. A detached job has
+    // already released ownership of state.abortController in closePopup(),
+    // so we must not touch it here.
+    if (!job.detached && job.sessionId === state.sessionId) {
       state.abortController = null;
       state.isBusy = false;
       state.sendBtnEl.disabled = false;
       state.sendBtnEl.textContent = 'Send';
     }
   }
+}
+
+// ============================================
+// Background Job Handlers
+// ============================================
+
+async function handleBackgroundResponse(job, response) {
+  const { prose, htmlBlocks } = parseHtmlBlocks(response);
+
+  if (htmlBlocks.length === 0) {
+    // Clarifying question — no HTML to save. User must reopen the chat to
+    // continue the conversation. We don't restore state because the user
+    // may have moved on to a different partner.
+    showToast(
+      `Assistant asked a follow-up for ${job.partner?.display_name || 'the partner'}. Reopen Meeting Docs to continue.`,
+      'warning',
+      6000,
+    );
+    return;
+  }
+
+  const latestHtml = htmlBlocks[htmlBlocks.length - 1];
+  const title = extractTitle(latestHtml) || 'Generated Document';
+  // Use the captured history snapshot (plus the new assistant turn) for
+  // doc-type inference so a concurrent openMeetingDocs() can't poison it.
+  const docType = inferDocType(
+    [...job.historySnapshot, { role: 'assistant', content: prose || '' }],
+    latestHtml,
+  );
+
+  // Build the doc object the same way openCompactCardInEditor does so
+  // create-mode appends a new row and update-mode updates the existing row.
+  const baseDoc = {
+    partner_id: job.partner.partner_id,
+    partner_name: job.partner.display_name,
+    title,
+    doc_type: docType,
+    html_content: latestHtml,
+  };
+  const docForSave = (job.mode === 'update' && job.existingDoc)
+    ? {
+        ...baseDoc,
+        document_id: job.existingDoc.document_id,
+        _rowIndex: job.existingDoc._rowIndex,
+        status: job.existingDoc.status,
+        created_at: job.existingDoc.created_at,
+        updated_at: job.existingDoc.updated_at,
+      }
+    : baseDoc;
+
+  try {
+    await saveMapDoc({ partner: job.partner, doc: docForSave, html: latestHtml, title });
+    showToast(
+      job.mode === 'update'
+        ? `Updated MAP for ${job.partner.display_name}`
+        : `MAP saved to ${job.partner.display_name}`,
+      'success',
+    );
+    if (job.onSavedCb) { try { job.onSavedCb(); } catch { /* ignore */ } }
+  } catch (err) {
+    showToast(
+      `Failed to auto-save MAP for ${job.partner?.display_name || 'partner'}: ${err.message || 'unknown error'}`,
+      'error',
+      8000,
+    );
+  }
+}
+
+function handleBackgroundError(job, err) {
+  if (err.name === 'AbortError') return; // silent (shouldn't normally hit this path for background jobs)
+  showToast(
+    `MAP generation failed for ${job.partner?.display_name || 'partner'}: ${err.message || 'unknown error'}`,
+    'error',
+    8000,
+  );
 }
 
 // ============================================
