@@ -587,23 +587,64 @@ body.meeting-docs-open .randy {
   align-items: center;
 }
 
-/* When the preview iframe enters fullscreen, give it a neutral backdrop
-   so the MAP content (which uses max-width: 720px) sits centered on a
-   clean surface instead of the browser's default black. */
-.map-editor__iframe:fullscreen,
-.map-editor__iframe:-webkit-full-screen {
-  background: #f4f4f8;
-  width: 100vw;
-  height: 100vh;
-  border: 0;
-  border-radius: 0;
-}
-
 .map-editor__body {
   flex: 1;
   min-height: 0;
   display: flex;
 }
+
+/* ---------- Fullscreen-expanded preview ----------
+   Replaces the native Fullscreen API approach (which discarded all
+   modal chrome and stranded the 720px-wide MAP content in a wide,
+   empty viewport). Toggled from map-editor.js via a class on the
+   `.modal` element plus a matching class on `.map-editor`. Mirrors
+   the pattern used by the Randy widget (`.randy--fullscreen`). */
+.modal.modal--fullscreen-preview {
+  position: fixed;
+  inset: 24px;
+  max-width: none;       /* beats .modal--wide's 720px */
+  max-height: none;      /* beats .modal's 90vh */
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: hidden;      /* inner iframe handles its own scroll */
+  display: flex;
+  flex-direction: column;
+  transform: none;       /* beats .modal's base scale/translate */
+  transition: none;      /* avoid scale+fixed animation wobble */
+}
+
+.modal.modal--fullscreen-preview .modal__body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  padding: 0;            /* let the editor own the spacing */
+}
+
+/* Let .map-editor fill the available height, beating the base
+   `height: min(70vh, 640px)` via selector specificity. */
+.modal--fullscreen-preview .map-editor {
+  height: auto;
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-4) var(--space-5);
+}
+
+/* Reframe the 720px-wide document content as a centered card on a
+   subtle neutral backdrop so the empty gutters read as intentional
+   padding rather than a broken layout. */
+.map-editor--fullscreen .map-editor__body {
+  background: var(--color-bg, #f4f4f8);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.map-editor--fullscreen .map-editor__iframe {
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+}
+/* -------------------------------------------------- */
 
 .map-editor__iframe,
 .map-editor__source {
@@ -636,6 +677,15 @@ body.meeting-docs-open .randy {
 @media (max-width: 640px) {
   .map-editor {
     height: min(60vh, 500px);
+  }
+
+  .modal.modal--fullscreen-preview {
+    inset: 0;
+    border-radius: 0;
+  }
+
+  .map-editor--fullscreen .map-editor__body {
+    padding: var(--space-2);
   }
 }
 

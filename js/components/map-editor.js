@@ -148,6 +148,9 @@ export function openMapEditorModal({
   let currentHtml = doc.html_content || '';
   let currentTitle = doc.title || '';
   let isEditing = false;
+  let isFullscreen = false;
+  let modalEl = null;
+  let escCaptureHandler = null;
 
   // ---- Header: editable title + metadata ----
   const titleInput = el('input', {
@@ -183,7 +186,6 @@ export function openMapEditorModal({
   const previewIframe = el('iframe', {
     class: 'map-editor__iframe',
     sandbox: 'allow-same-origin',
-    allow: 'fullscreen',
   });
   previewIframe.srcdoc = currentHtml || '<p style="font-family: sans-serif; padding: 24px; color: #888;">No content</p>';
 
@@ -231,19 +233,32 @@ export function openMapEditorModal({
     setTimeout(() => sourceTextarea.focus(), 50);
   });
 
-  // Fullscreen popout button — pushes to the right edge of the toolbar
-  // and expands the preview iframe to fill the screen via the Fullscreen
-  // API. The iframe's `allow: 'fullscreen'` attribute above grants the
-  // needed permission even though the sandbox omits `allow-scripts`.
+  // Fullscreen button — pushes to the right edge of the toolbar and
+  // expands the modal itself (via a CSS class toggle) to fill the
+  // viewport while preserving all chrome: tabs, title, iframe body,
+  // and footer buttons. This mirrors the pattern used by the Randy
+  // widget (`.randy--fullscreen` in css/randy.css) instead of the
+  // native Fullscreen API, which would discard the surrounding UI and
+  // leave the 720px content stranded in a wide empty viewport.
+  const EXPAND_ICON_HTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"><path d="M2 5V2h3M9 2h3v3M12 9v3H9M5 12H2V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const COLLAPSE_ICON_HTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"><path d="M5 2v3H2M9 2v3h3M9 12V9h3M5 12V9H2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
   const fullscreenBtn = el('button', {
     class: 'btn btn--ghost btn--sm map-editor__fullscreen-btn',
     type: 'button',
-    title: 'Open preview in fullscreen',
-    'aria-label': 'Open preview in fullscreen',
-    html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" style="vertical-align:-2px;margin-right:6px;"><path d="M2 5V2h3M9 2h3v3M12 9v3H9M5 12H2V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Fullscreen',
   });
 
-  fullscreenBtn.addEventListener('click', async () => {
+  function renderFullscreenBtn() {
+    const label = isFullscreen ? 'Exit Fullscreen' : 'Fullscreen';
+    const tip = isFullscreen ? 'Exit fullscreen' : 'Open preview in fullscreen';
+    fullscreenBtn.innerHTML = (isFullscreen ? COLLAPSE_ICON_HTML : EXPAND_ICON_HTML) + label;
+    fullscreenBtn.title = tip;
+    fullscreenBtn.setAttribute('aria-label', tip);
+    fullscreenBtn.setAttribute('aria-pressed', isFullscreen ? 'true' : 'false');
+  }
+  renderFullscreenBtn();
+
+  fullscreenBtn.addEventListener('click', () => {
     // If the user is mid-edit, commit their changes back into the iframe
     // and switch to preview before going fullscreen. Otherwise fullscreen
     // would show stale content.
@@ -255,18 +270,16 @@ export function openMapEditorModal({
       previewBtn.classList.add('map-editor__tab--active');
       editBtn.classList.remove('map-editor__tab--active');
     }
-    const req = previewIframe.requestFullscreen
-      || previewIframe.webkitRequestFullscreen
-      || previewIframe.msRequestFullscreen;
-    if (!req) {
-      showToast('Fullscreen not supported in this browser', 'error');
-      return;
-    }
-    try {
-      await req.call(previewIframe);
-    } catch (err) {
-      showToast(`Could not enter fullscreen: ${err?.message || 'unknown error'}`, 'error');
-    }
+
+    // Lazy-resolve the modal element on first use — safe because this
+    // handler only fires after `openModal` has mounted the DOM.
+    if (!modalEl) modalEl = fullscreenBtn.closest('.modal');
+    if (!modalEl) return;
+
+    isFullscreen = !isFullscreen;
+    modalEl.classList.toggle('modal--fullscreen-preview', isFullscreen);
+    modalBody.classList.toggle('map-editor--fullscreen', isFullscreen);
+    renderFullscreenBtn();
   });
 
   const toolbar = el('div', { class: 'map-editor__toolbar' }, previewBtn, editBtn, fullscreenBtn);
@@ -354,5 +367,27 @@ export function openMapEditorModal({
     content: modalBody,
     className: 'modal--wide modal--tall',
     footer: footerButtons,
+    onClose: () => {
+      if (escCaptureHandler) {
+        document.removeEventListener('keydown', escCaptureHandler, true);
+      }
+      escCaptureHandler = null;
+      modalEl = null;
+      isFullscreen = false;
+    },
   });
+
+  // Capture-phase Escape handler: when the user presses Escape while
+  // in fullscreen, exit fullscreen instead of closing the modal. This
+  // listener runs BEFORE modal.js's own bubble-phase Escape handler,
+  // so calling stopImmediatePropagation prevents the modal from
+  // closing. When not in fullscreen, this is a no-op and modal.js's
+  // handler closes the modal normally.
+  escCaptureHandler = (e) => {
+    if (e.key !== 'Escape' || !isFullscreen) return;
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    fullscreenBtn.click();
+  };
+  document.addEventListener('keydown', escCaptureHandler, true);
 }
