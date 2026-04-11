@@ -269,6 +269,10 @@ function ensureMounted() {
 function openPopup() {
   state.containerEl.classList.remove('meeting-docs--hidden');
   state.isOpen = true;
+  // Hide Randy and any other bottom-right-anchored widgets while this
+  // popup is visible so they don't overlap the Send button (CSS rule in
+  // meeting-docs.css keys off body.meeting-docs-open).
+  document.body.classList.add('meeting-docs-open');
 }
 
 function closePopup() {
@@ -298,6 +302,7 @@ function closePopup() {
     }
     state.containerEl.classList.add('meeting-docs--hidden');
     state.isOpen = false;
+    document.body.classList.remove('meeting-docs-open');
     return;
   }
 
@@ -314,6 +319,7 @@ function closePopup() {
   }
   state.containerEl.classList.add('meeting-docs--hidden');
   state.isOpen = false;
+  document.body.classList.remove('meeting-docs-open');
 }
 
 // ============================================
@@ -393,7 +399,15 @@ async function handleSend() {
     sessionId: state.sessionId,
     abortController: new AbortController(),
     detached: false,
+    pendingCardEl: null,
   };
+
+  // Inject a "Generating…" placeholder into the partner detail page's MAP
+  // panel so the user sees immediate feedback. For background jobs the
+  // placeholder stays until the auto-save triggers safeReRender; for
+  // foreground jobs we remove it once the response arrives (user then sees
+  // the real card in the chat and saves manually).
+  job.pendingCardEl = injectPendingMapCard(job.partner, text, job.mode, job.existingDoc);
 
   state.abortController = job.abortController;
   state.isBusy = true;
@@ -416,7 +430,11 @@ async function handleSend() {
     // Foreground: stale-session check still applies (e.g. user reopened
     // the popup for a different partner without closing first — rare, but
     // the original sessionId guard remains).
-    if (job.sessionId !== state.sessionId) return;
+    if (job.sessionId !== state.sessionId) {
+      // Pending card is orphaned (user reopened for someone else); drop it.
+      removePendingMapCard(job.pendingCardEl);
+      return;
+    }
     typingEl.remove();
 
     state.conversationHistory.push({ role: 'assistant', content: response });
@@ -425,16 +443,27 @@ async function handleSend() {
     if (prose) renderAssistantBubble(prose);
     htmlBlocks.forEach(html => renderDocCard(html));
 
+    // Foreground generation is done — the user now sees the real card in
+    // the chat and will save manually. Drop the pending placeholder so the
+    // MAP panel reflects the "waiting on user" state truthfully.
+    removePendingMapCard(job.pendingCardEl);
+
     scrollChatToBottom();
   } catch (err) {
     if (job.abortController._detachRequested) {
       job.detached = true;
       backgroundJobs.delete(job.abortController);
+      // Error path for background jobs — pending card is stale.
+      removePendingMapCard(job.pendingCardEl);
       handleBackgroundError(job, err);
       return;
     }
-    if (job.sessionId !== state.sessionId) return; // Stale — ignore (popup closed / reopened)
+    if (job.sessionId !== state.sessionId) {
+      removePendingMapCard(job.pendingCardEl);
+      return; // Stale — ignore (popup closed / reopened)
+    }
     typingEl.remove();
+    removePendingMapCard(job.pendingCardEl);
     if (err.name === 'AbortError') {
       // Silent — user closed popup
     } else {
@@ -450,6 +479,80 @@ async function handleSend() {
       state.isBusy = false;
       state.sendBtnEl.disabled = false;
       state.sendBtnEl.textContent = 'Send';
+    }
+  }
+}
+
+// ============================================
+// Pending MAP Card Injection (partner detail page)
+// ============================================
+// These helpers reach directly into the partner detail DOM to show a
+// "Generating…" placeholder the instant the user clicks Send. The real
+// card replaces it when safeReRender runs after save; on error paths we
+// remove the placeholder explicitly.
+
+function injectPendingMapCard(partner, requestText, mode, existingDoc) {
+  if (!partner?.partner_id) return null;
+  const listEl = document.querySelector(`.map-list[data-partner-id="${partner.partner_id}"]`);
+  if (!listEl) return null;
+
+  const docType = mode === 'update' && existingDoc?.doc_type
+    ? existingDoc.doc_type
+    : inferDocType([{ role: 'user', content: requestText }], '');
+
+  const preview = requestText.length > 140 ? requestText.slice(0, 140) + '…' : requestText;
+  const label = mode === 'update' ? 'Updating…' : 'Generating…';
+
+  const card = el('div', { class: 'map-card map-card--pending' },
+    el('div', { class: 'map-card__row' },
+      el('div', { class: 'map-card__title' },
+        el('span', { class: 'map-card__spinner' }),
+        label,
+      ),
+      el('span', { class: `doc-type-badge doc-type-badge--${docTypeClass(docType)}` }, docTypeLabel(docType)),
+    ),
+    el('div', { class: 'map-card__meta' },
+      el('span', { class: 'map-card__meta-item' }, preview),
+    ),
+  );
+
+  listEl.insertBefore(card, listEl.firstChild);
+
+  // Hide the empty-state copy (if present) and bump the count badge so
+  // the panel header stays accurate while the placeholder is visible.
+  const panel = listEl.closest('.partner-bottom-panel--map');
+  if (panel) {
+    const emptyState = panel.querySelector('.map-list__empty');
+    if (emptyState) emptyState.style.display = 'none';
+
+    const countBadge = panel.querySelector('.partner-bottom-panel__count');
+    if (countBadge) {
+      const current = parseInt(countBadge.textContent, 10) || 0;
+      countBadge.textContent = String(current + 1);
+    }
+  }
+
+  return card;
+}
+
+function removePendingMapCard(cardEl) {
+  if (!cardEl || !cardEl.parentNode) return;
+  const panel = cardEl.closest('.partner-bottom-panel--map');
+  cardEl.remove();
+
+  if (panel) {
+    // If there are no more cards at all, show the empty state again.
+    const listEl = panel.querySelector('.map-list');
+    const emptyState = panel.querySelector('.map-list__empty');
+    if (listEl && emptyState && listEl.children.length === 0) {
+      emptyState.style.display = '';
+    }
+
+    // Decrement the count badge. Guard against negative values.
+    const countBadge = panel.querySelector('.partner-bottom-panel__count');
+    if (countBadge) {
+      const current = parseInt(countBadge.textContent, 10) || 0;
+      countBadge.textContent = String(Math.max(0, current - 1));
     }
   }
 }

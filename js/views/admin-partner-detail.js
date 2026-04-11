@@ -552,14 +552,25 @@ function buildMapPanel(partner, transcripts, documents, safeReRender) {
     ),
   );
 
-  const body = activeDocs.length > 0
-    ? el('div', { class: 'map-list' }, ...activeDocs.map(d => mapCard(d, partner, transcripts, safeReRender)))
-    : el('div', { class: 'empty-state', style: { padding: 'var(--space-6) var(--space-2)' } },
+  // Always render a stable .map-list container so meeting-docs.js can
+  // inject "Generating…" placeholder cards at submit time (via
+  // `.map-list[data-partner-id="…"]`).
+  const listEl = el('div', {
+    class: 'map-list',
+    'data-partner-id': partner.partner_id,
+  }, ...activeDocs.map(d => mapCard(d, partner, transcripts, safeReRender)));
+
+  const emptyStateEl = activeDocs.length === 0
+    ? el('div', { class: 'empty-state map-list__empty', style: { padding: 'var(--space-6) var(--space-2)' } },
         el('div', { class: 'empty-state__title' }, 'No mutual action plans yet'),
         el('div', { class: 'empty-state__description' }, 'Click "Create New" and tell the assistant what you want — e.g., "Build a MAP from the last two meetings".')
-      );
+      )
+    : null;
 
-  return el('div', { class: 'partner-bottom-panel' },
+  return el('div', {
+    class: 'partner-bottom-panel partner-bottom-panel--map',
+    'data-partner-id': partner.partner_id,
+  },
     el('div', { class: 'partner-bottom-panel__header' },
       el('div', { class: 'partner-bottom-panel__title-group' },
         el('h3', { class: 'partner-bottom-panel__title' }, 'Mutual Action Plans'),
@@ -567,7 +578,7 @@ function buildMapPanel(partner, transcripts, documents, safeReRender) {
       ),
       actions,
     ),
-    el('div', { class: 'partner-bottom-panel__body' }, body),
+    el('div', { class: 'partner-bottom-panel__body' }, listEl, emptyStateEl),
   );
 }
 

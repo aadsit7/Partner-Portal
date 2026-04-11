@@ -125,6 +125,43 @@
   transform: translateY(-1px);
 }
 
+/* Pending placeholder card — shown while a generation is in-flight after
+   the user clicks Send. Not clickable; disappears when the real row is
+   saved (via safeReRender) or when the job errors out. */
+.map-card--pending {
+  cursor: default;
+  background: var(--color-bg);
+  border-style: dashed;
+  opacity: 0.9;
+}
+
+.map-card--pending:hover {
+  border-color: var(--color-border-light, var(--color-border));
+  box-shadow: none;
+  transform: none;
+}
+
+.map-card--pending .map-card__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+}
+
+.map-card__spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  animation: map-card-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes map-card-spin {
+  to { transform: rotate(360deg); }
+}
+
 .map-card__row {
   display: flex;
   align-items: center;
@@ -258,11 +295,21 @@
   position: fixed;
   bottom: 24px;
   right: 24px;
-  z-index: 9998;
+  /* Above Randy (.randy = 9999) so nothing can hijack clicks on the
+     Send button. A body.meeting-docs-open rule below also hides Randy
+     entirely while this popup is visible. */
+  z-index: 10000;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 .meeting-docs--hidden {
+  display: none;
+}
+
+/* Hide Randy (bottom-right floating avatar) while Meeting Docs popup is
+   open — they share the same corner and Randy's z-index (9999) would
+   otherwise overlap the Send button and eat its click. */
+body.meeting-docs-open .randy {
   display: none;
 }
 
