@@ -9,6 +9,7 @@ import { setTopbarTitle } from '../components/sidebar.js';
 import { loadSheetData, callClaude, invalidateSheetCache } from '../utils/ai.js';
 import { parseActions, executeAction } from '../utils/ai-actions.js';
 import { activateVoiceMode, isVoiceModeActive, stopEverything as stopVoice } from '../components/voice-widget.js';
+import { attachSpeakerButton, autoSpeak, stopTTS, createSettingsButton, isTTSEnabled } from '../components/tts.js';
 import { getCurrentUser } from '../auth.js';
 import { appendRow, updateRow, deleteRow, readSheetAsObjects } from '../sheets.js';
 import { showToast } from '../components/toast.js';
@@ -60,7 +61,12 @@ function renderMessage(role, text, container) {
     ? `<p>${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`
     : renderMarkdown(text);
   if (isUser) { wrapper.appendChild(bubble); wrapper.appendChild(avatar); }
-  else { wrapper.appendChild(avatar); wrapper.appendChild(bubble); }
+  else {
+    wrapper.appendChild(avatar);
+    wrapper.appendChild(bubble);
+    // Attach TTS speaker button to assistant messages
+    if (isTTSEnabled()) attachSpeakerButton(bubble, text);
+  }
   container.appendChild(wrapper);
   container.scrollTop = container.scrollHeight;
   return bubble;
@@ -378,6 +384,13 @@ export function renderAdminAIAssistant(container) {
   const micBtn = document.getElementById('ai-mic');
   if (micBtn) micBtn.addEventListener('click', toggleVoice);
 
+  // Insert TTS settings gear next to the input buttons
+  const inputWrapper = document.querySelector('.ai-input-wrapper');
+  if (inputWrapper) {
+    const ttsSettings = createSettingsButton();
+    inputWrapper.insertBefore(ttsSettings, inputWrapper.querySelector('textarea'));
+  }
+
   document.addEventListener('keydown', handleKeyShortcut);
 
   document.getElementById('ai-clear').addEventListener('click', startNewChat);
@@ -460,8 +473,11 @@ async function handleSend() {
     // Parse actions from response
     const { cleanText, actions } = parseActions(response);
 
-    renderMessage('assistant', cleanText, chatArea);
+    const assistantBubble = renderMessage('assistant', cleanText, chatArea);
     conversationHistory.push({ role: 'assistant', content: response, timestamp: new Date().toISOString() });
+
+    // Auto-speak the response if enabled
+    autoSpeak(assistantBubble, cleanText);
 
     // Render confirmation cards for any actions
     actions.forEach(action => renderConfirmationCard(action, chatArea));
@@ -482,6 +498,7 @@ async function handleSend() {
 
 export function cleanupAdminAIAssistant() {
   if (abortController) abortController.abort();
+  stopTTS();
   document.removeEventListener('keydown', handleKeyShortcut);
   isStreaming = false;
 }
