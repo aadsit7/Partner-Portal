@@ -56,6 +56,11 @@ export const CONFIG = {
   // Anthropic API (for AI Assistant) — key stored in browser localStorage via runtime config
   ANTHROPIC_API_KEY: '',
 
+  // ElevenLabs TTS (for natural voice responses)
+  ELEVENLABS_API_KEY: 'sk_9add5313a8b57b9fed2f069e878fab1cfede03d04d378135',
+  ELEVENLABS_VOICE: 'JBFqnCBsd6RMkjVDRZzb',   // George — warm, natural male
+  ELEVENLABS_MODEL: 'eleven_turbo_v2_5',
+
   // Sheet names (must match your Google Spreadsheet tab names)
   SHEET_PARTNERS: 'Partners',
   SHEET_OPPORTUNITIES: 'Opportunities',
