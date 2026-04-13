@@ -7,8 +7,6 @@
 import { getRuntimeConfig, setRuntimeConfig } from '../config.js';
 
 // ── Configuration ─────────────────────────────────────────────────
-// ElevenLabs API key — stored in runtime config (localStorage)
-const ELEVENLABS_API_KEY = getRuntimeConfig('ELEVENLABS_API_KEY') || '';
 
 // ElevenLabs voice IDs — find more at https://elevenlabs.io/voice-library
 // or via API: GET https://api.elevenlabs.io/v1/voices
