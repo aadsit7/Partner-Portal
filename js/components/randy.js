@@ -156,6 +156,7 @@ let isSaving = false;
 let dragMoveHandler = null;
 let dragUpHandler = null;
 let escapeHandler = null;
+let isMuted = false;
 
 // Listening recovery
 let restartCount = 0;
@@ -865,6 +866,7 @@ function startConfirmTimeout() {
 
 // ── Speech Synthesis ──────────────────────────────────────────────
 function speakText(text, onComplete) {
+  if (isMuted) { if (onComplete) onComplete(); return; }
   // Clean text for speech
   const clean = cleanForSpeech(text);
   if (!clean) { if (onComplete) onComplete(); return; }
@@ -1374,6 +1376,9 @@ function createWidget() {
             <button class="randy-edit-btn" id="randy-edit-btn" title="Type a message" aria-label="Type a message">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
             </button>
+            <button class="randy-mute-btn" id="randy-mute-btn" title="Mute voice" aria-label="Mute voice">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+            </button>
           </div>
           <div class="randy-input-row" id="randy-input-row" hidden>
             <input type="text" class="randy-text-input" id="randy-text-input" placeholder="Type a message..." maxlength="500">
@@ -1448,6 +1453,21 @@ function createWidget() {
     const isVisible = !inputRow.hidden;
     inputRow.hidden = isVisible;
     if (!isVisible) textInput.focus();
+  });
+
+  // Mute toggle
+  const muteBtn = document.getElementById('randy-mute-btn');
+  muteBtn.addEventListener('click', () => {
+    isMuted = !isMuted;
+    muteBtn.classList.toggle('randy-mute-btn--active', isMuted);
+    muteBtn.title = isMuted ? 'Unmute voice' : 'Mute voice';
+    muteBtn.setAttribute('aria-label', isMuted ? 'Unmute voice' : 'Mute voice');
+    // Stop any current speech when muting
+    if (isMuted) {
+      if (currentElevenLabsHandle) { currentElevenLabsHandle.stop(); currentElevenLabsHandle = null; }
+      if (synth.speaking) synth.cancel();
+    }
+    try { localStorage.setItem('pp_randy_muted', isMuted ? '1' : ''); } catch { /* ok */ }
   });
 
   function sendTypedMessage() {
@@ -1770,6 +1790,17 @@ export function initRandy() {
   if (saved === 'passive') {
     currentState = STATES.PASSIVE;
     updateWidgetUI();
+  }
+
+  // Restore mute state
+  if (localStorage.getItem('pp_randy_muted') === '1') {
+    isMuted = true;
+    const muteBtn = document.getElementById('randy-mute-btn');
+    if (muteBtn) {
+      muteBtn.classList.add('randy-mute-btn--active');
+      muteBtn.title = 'Unmute voice';
+      muteBtn.setAttribute('aria-label', 'Unmute voice');
+    }
   }
 
   // Restore window position and size

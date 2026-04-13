@@ -463,6 +463,22 @@
   transition: all 150ms;
 }
 .randy-edit-btn:hover { background: #f3f4f6; color: #0000CC; border-color: #0000CC; }
+.randy-mute-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid #d1d5db;
+  background: white;
+  color: #4a4a5a;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 150ms;
+}
+.randy-mute-btn:hover { background: #f3f4f6; color: #0000CC; border-color: #0000CC; }
+.randy-mute-btn--active { background: #fee2e2; color: #dc2626; border-color: #dc2626; }
+.randy-mute-btn--active:hover { background: #fecaca; color: #dc2626; border-color: #dc2626; }
 .randy-input-row {
   display: flex;
   gap: 6px;
