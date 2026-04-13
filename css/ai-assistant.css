@@ -905,16 +905,15 @@
   word-wrap: break-word;
 }
 
-/* === RESPONSE CONTAINER — ADAPTIVE WIDTH === */
+/* === RESPONSE CONTAINER — NO FIXED WIDTHS === */
 .response-container {
-  max-width: 680px;       /* Cap width so text stays readable on full-screen */
-  width: 100%;            /* Fill small containers fully */
-  margin: 0 auto;         /* Center when container is wider than 680px */
+  max-width: 100%;
   box-sizing: border-box;
   overflow-wrap: break-word;
   word-wrap: break-word;
 }
 
+/* Summary card and details should not overflow */
 .response-container div,
 .response-container details {
   max-width: 100%;
@@ -949,24 +948,7 @@
   to { opacity: 1; max-height: 2000px; }
 }
 
-/* === FULL-SCREEN / WIDE MODE (600px+ container) === */
-/* Increase font sizes and spacing when there's room */
-@media (min-width: 600px) {
-  .response-container {
-    font-size: 15px;
-  }
-  .response-container summary {
-    font-size: 15px;
-    padding: 12px 16px;
-  }
-  .response-container details > div {
-    padding: 14px 18px;
-    font-size: 14px;
-  }
-}
-
 /* === COMPACT MODE (360px and below) === */
-/* Tighten everything for small widget */
 @media (max-width: 360px) {
   .response-container {
     font-size: 12px;

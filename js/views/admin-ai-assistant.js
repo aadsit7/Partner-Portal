@@ -48,49 +48,23 @@ function renderMarkdown(text) {
 }
 
 // ── HTML Response Detection & Sanitization ────────────────────────
-const SAFE_TAGS = new Set([
-  'div', 'details', 'summary', 'span', 'p', 'b', 'strong', 'em', 'i',
-  'ul', 'ol', 'li', 'br', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-  'table', 'thead', 'tbody', 'tr', 'th', 'td'
-]);
-
-const SAFE_ATTRS = new Set(['class', 'data-voice', 'open', 'style']);
-
 function containsHTMLResponse(text) {
   return text.includes('class="response-container"') || text.includes("class='response-container'");
 }
 
-function sanitizeNode(node) {
-  const children = Array.from(node.childNodes);
-  for (const child of children) {
-    if (child.nodeType === Node.ELEMENT_NODE) {
-      const tag = child.tagName.toLowerCase();
-      if (!SAFE_TAGS.has(tag)) {
-        child.replaceWith(document.createTextNode(child.textContent));
-        continue;
-      }
-      const attrs = Array.from(child.attributes);
-      for (const attr of attrs) {
-        if (!SAFE_ATTRS.has(attr.name)) {
-          child.removeAttribute(attr.name);
-        }
-      }
-      if (child.hasAttribute('style')) {
-        const style = child.getAttribute('style');
-        if (/expression|javascript|vbscript/i.test(style)) {
-          child.removeAttribute('style');
-        }
-      }
-      sanitizeNode(child);
-    }
-  }
-}
-
 function sanitizeHTML(html) {
-  const temp = document.createElement('div');
-  temp.innerHTML = html;
-  sanitizeNode(temp);
-  return temp.innerHTML;
+  return html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/<iframe\b[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<object\b[\s\S]*?<\/object>/gi, '')
+    .replace(/<embed\b[^>]*\/?>/gi, '')
+    .replace(/<link\b[^>]*\/?>/gi, '')
+    .replace(/<meta\b[^>]*\/?>/gi, '')
+    .replace(/<img\b[^>]*\/?>/gi, '')
+    .replace(/<form\b[\s\S]*?<\/form>/gi, '')
+    .replace(/<input\b[^>]*\/?>/gi, '')
+    .replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '')
+    .replace(/javascript\s*:/gi, '');
 }
 
 // ── Chat Message Rendering ─────────────────────────────────────────

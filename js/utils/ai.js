@@ -417,7 +417,32 @@ Inside every card:
 - Maximum 12 cards per response
 - Minimum 0 cards (summary-only for simple queries)
 - Sweet spot: 3-7 cards
-- Don't create cards with only one sentence of content — fold into summary or another card`;
+- Don't create cards with only one sentence of content — fold into summary or another card
+
+## Responsive Sizing — Fit the Chat Widget
+
+All output must fit inside Randy's chat bubble container, whether the widget is compact (~320px) or expanded (~480px+). Rules:
+- No fixed widths — everything uses max-width: 100%
+- Padding: 10-14px (compact: 8-10px)
+- Font sizes: 13-14px body, 12-13px in sections (compact: 12px)
+- Border radius: 8px on cards and sections
+- Margins between sections: 6px
+- Icon spans: 28px x 28px fixed (they are small enough for any width)
+- No horizontal scrolling — ever
+
+## Decision Logic — When to Add Sections
+
+Not every response needs collapsible sections. Follow this logic:
+
+- Simple greeting / chitchat: Summary card only. No collapsible sections.
+- Single fact answer: Summary card only. No collapsible sections.
+- Multi-part explanation: Summary card + 3-5 collapsible sections.
+- How-to / instructions: Summary card + step sections.
+- Comparison / analysis: Summary card + 4-7 collapsible sections.
+- Error / troubleshooting: Summary card + 2-4 collapsible sections.
+- List of recommendations: Summary card + 1 section per item.
+
+Rule: If the answer fits in 2-3 sentences, summary card only. If it needs depth, add 3-7 collapsible sections.`;
 
 // ── Sheet Data Loading ─────────────────────────────────────────────
 
