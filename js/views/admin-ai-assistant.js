@@ -9,7 +9,7 @@ import { setTopbarTitle } from '../components/sidebar.js';
 import { loadSheetData, callClaude, invalidateSheetCache } from '../utils/ai.js';
 import { parseActions, executeAction } from '../utils/ai-actions.js';
 import { activateVoiceMode, isVoiceModeActive, stopEverything as stopVoice } from '../components/voice-widget.js';
-import { attachSpeakerButton, autoSpeak, stopTTS, createSettingsButton, isTTSEnabled, extractVoiceText } from '../components/tts.js';
+import { attachSpeakerButton, autoSpeak, stopTTS, createSettingsButton, isTTSEnabled, extractVoiceText, extractVoiceTextFromString, isAutoSpeakEnabled, speakWithElevenLabs, cleanTextForSpeech } from '../components/tts.js';
 import { getCurrentUser } from '../auth.js';
 import { appendRow, updateRow, deleteRow, readSheetAsObjects } from '../sheets.js';
 import { showToast } from '../components/toast.js';
@@ -500,12 +500,14 @@ async function handleSend() {
     // Parse actions from response
     const { cleanText, actions } = parseActions(response);
 
+    // Speak summary immediately BEFORE rendering — don't wait for DOM
+    if (isTTSEnabled() && isAutoSpeakEnabled()) {
+      const earlyVoice = extractVoiceTextFromString(cleanText) || cleanTextForSpeech(cleanText);
+      if (earlyVoice) speakWithElevenLabs(earlyVoice);
+    }
+
     const assistantBubble = renderMessage('assistant', cleanText, chatArea);
     conversationHistory.push({ role: 'assistant', content: response, timestamp: new Date().toISOString() });
-
-    // Auto-speak the response if enabled — prefer voice-tagged summary text
-    const voiceText = extractVoiceText(assistantBubble) || cleanText;
-    autoSpeak(assistantBubble, voiceText);
 
     // Render confirmation cards for any actions
     actions.forEach(action => renderConfirmationCard(action, chatArea));

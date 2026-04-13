@@ -319,6 +319,23 @@ export function cleanTextForSpeech(text) {
 }
 
 /**
+ * Extract voice text from a raw HTML string without creating DOM elements first.
+ * Useful for starting TTS before the HTML is inserted into the page.
+ *
+ * @param {string} html - Raw HTML response string
+ * @returns {string|null} Extracted voice text, or null if no voice element found
+ */
+export function extractVoiceTextFromString(html) {
+  const match = html.match(/data-voice="true"[^>]*>([\s\S]*?)<\/div>\s*<(?:details|\/div)/);
+  if (match) {
+    const temp = document.createElement('div');
+    temp.innerHTML = match[1];
+    return temp.textContent.replace('Summary', '').trim();
+  }
+  return null;
+}
+
+/**
  * Extract text from elements marked with data-voice="true" in an HTML string or DOM element.
  * Returns the text content of the first voice-marked element, or null to fall back to full text.
  *
