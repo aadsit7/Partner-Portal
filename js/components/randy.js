@@ -1347,6 +1347,14 @@ function createWidget() {
       <div class="randy__backdrop" id="randy-backdrop"></div>
 
       <div class="randy-window" id="randy-window">
+        <div class="randy-resize randy-resize--n" data-dir="n"></div>
+        <div class="randy-resize randy-resize--s" data-dir="s"></div>
+        <div class="randy-resize randy-resize--w" data-dir="w"></div>
+        <div class="randy-resize randy-resize--e" data-dir="e"></div>
+        <div class="randy-resize randy-resize--nw" data-dir="nw"></div>
+        <div class="randy-resize randy-resize--ne" data-dir="ne"></div>
+        <div class="randy-resize randy-resize--sw" data-dir="sw"></div>
+        <div class="randy-resize randy-resize--se" data-dir="se"></div>
         <div class="randy-window__titlebar" id="randy-titlebar">
           <img src="assets/randy-avatar.png" alt="" class="randy-window__titlebar-avatar">
           <span class="randy-window__titlebar-name">Randy</span>
@@ -1464,6 +1472,7 @@ function createWidget() {
   document.addEventListener('keydown', escapeHandler);
 
   initDragging();
+  initResizing();
 }
 
 // ── Single Voice Button Logic ─────────────────────────────────────
@@ -1621,6 +1630,108 @@ function initDragging() {
   document.addEventListener('mouseup', dragUpHandler);
 }
 
+// ── Resize Handles ───────────────────────────────────────────────
+function initResizing() {
+  const win = document.getElementById('randy-window');
+  if (!win) return;
+
+  const MIN_W = 300, MIN_H = 400;
+  let isResizing = false;
+  let startX, startY, startW, startH, startLeft, startTop;
+  let resizeDir = '';
+
+  function onStart(e) {
+    if (windowState === 'fullscreen') return;
+    if (window.innerWidth <= 768) return;
+
+    const handle = e.target.closest('.randy-resize');
+    if (!handle) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    const pt = e.touches ? e.touches[0] : e;
+
+    // Ensure explicit fixed positioning before resizing
+    const rect = win.getBoundingClientRect();
+    win.style.position = 'fixed';
+    win.style.left = rect.left + 'px';
+    win.style.top = rect.top + 'px';
+    win.style.bottom = 'auto';
+    win.style.right = 'auto';
+    win.style.width = rect.width + 'px';
+    win.style.height = rect.height + 'px';
+
+    startX = pt.clientX;
+    startY = pt.clientY;
+    startW = rect.width;
+    startH = rect.height;
+    startLeft = rect.left;
+    startTop = rect.top;
+    resizeDir = handle.dataset.dir;
+    isResizing = true;
+
+    const widget = document.getElementById('randy-widget');
+    if (widget) widget.classList.add('randy--resizing');
+  }
+
+  function onMove(e) {
+    if (!isResizing) return;
+    e.preventDefault();
+    const pt = e.touches ? e.touches[0] : e;
+    const dx = pt.clientX - startX;
+    const dy = pt.clientY - startY;
+
+    let newW = startW, newH = startH, newLeft = startLeft, newTop = startTop;
+
+    if (resizeDir.includes('e')) newW = startW + dx;
+    if (resizeDir.includes('w')) { newW = startW - dx; newLeft = startLeft + dx; }
+    if (resizeDir.includes('s')) newH = startH + dy;
+    if (resizeDir.includes('n')) { newH = startH - dy; newTop = startTop + dy; }
+
+    // Clamp to constraints
+    newW = Math.max(MIN_W, Math.min(newW, window.innerWidth));
+    newH = Math.max(MIN_H, Math.min(newH, window.innerHeight));
+
+    // Adjust position when clamped on left/top edges
+    if (resizeDir.includes('w')) newLeft = startLeft + startW - newW;
+    if (resizeDir.includes('n')) newTop = startTop + startH - newH;
+
+    // Keep within viewport
+    newLeft = Math.max(0, newLeft);
+    newTop = Math.max(0, newTop);
+
+    win.style.width = newW + 'px';
+    win.style.height = newH + 'px';
+    win.style.left = newLeft + 'px';
+    win.style.top = newTop + 'px';
+  }
+
+  function onEnd() {
+    if (!isResizing) return;
+    isResizing = false;
+
+    const widget = document.getElementById('randy-widget');
+    if (widget) widget.classList.remove('randy--resizing');
+
+    // Persist size and position
+    try {
+      const stored = JSON.parse(localStorage.getItem('pp_randy_window') || '{}');
+      stored.width = win.style.width;
+      stored.height = win.style.height;
+      stored.left = win.style.left;
+      stored.top = win.style.top;
+      localStorage.setItem('pp_randy_window', JSON.stringify(stored));
+    } catch { /* ok */ }
+  }
+
+  win.addEventListener('mousedown', onStart);
+  win.addEventListener('touchstart', onStart, { passive: false });
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onEnd);
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('touchend', onEnd);
+}
+
 function flashWidget() {
   const widget = document.getElementById('randy-widget');
   if (!widget) return;
@@ -1661,7 +1772,7 @@ export function initRandy() {
     updateWidgetUI();
   }
 
-  // Restore window position
+  // Restore window position and size
   try {
     const winData = JSON.parse(localStorage.getItem('pp_randy_window') || '{}');
     const win = document.getElementById('randy-window');
@@ -1671,6 +1782,10 @@ export function initRandy() {
       win.style.top = winData.top;
       win.style.bottom = 'auto';
       win.style.right = 'auto';
+    }
+    if (win && winData.width) {
+      win.style.width = winData.width;
+      win.style.height = winData.height;
     }
   } catch { /* ok */ }
 
