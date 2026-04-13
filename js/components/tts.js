@@ -2,13 +2,13 @@
 // ElevenLabs TTS — Streaming Audio Playback
 // ============================================
 // Adds speaker buttons to assistant messages and
-// optional auto-speak. Uses Cloudflare Worker relay.
+// optional auto-speak. Calls ElevenLabs API directly.
 
 import { getRuntimeConfig, setRuntimeConfig } from '../config.js';
 
 // ── Configuration ─────────────────────────────────────────────────
-// Set this to your deployed Cloudflare Worker URL
-const TTS_WORKER_URL = getRuntimeConfig('TTS_WORKER_URL') || '';
+// ElevenLabs API key — stored in runtime config (localStorage)
+const ELEVENLABS_API_KEY = getRuntimeConfig('ELEVENLABS_API_KEY') || '';
 
 // ElevenLabs voice IDs — find more at https://elevenlabs.io/voice-library
 // or via API: GET https://api.elevenlabs.io/v1/voices
@@ -20,7 +20,9 @@ const VOICES = [
 ];
 
 const DEFAULT_VOICE = VOICES[0].id;
-const POST_THRESHOLD = 500; // chars — use POST for longer text
+const ELEVENLABS_BASE = 'https://api.elevenlabs.io/v1/text-to-speech';
+const DEFAULT_MODEL = 'eleven_multilingual_v2';
+const OUTPUT_FORMAT = 'mp3_44100_128';
 
 // ── State ─────────────────────────────────────────────────────────
 let audio = null;
@@ -48,8 +50,8 @@ export function getSelectedVoice() {
   return getRuntimeConfig('TTS_VOICE') || DEFAULT_VOICE;
 }
 
-export function getWorkerUrl() {
-  return getRuntimeConfig('TTS_WORKER_URL') || '';
+export function getApiKey() {
+  return getRuntimeConfig('ELEVENLABS_API_KEY') || '';
 }
 
 /**
@@ -78,7 +80,7 @@ export function attachSpeakerButton(bubble, text) {
  */
 export function autoSpeak(bubble, text) {
   if (!isTTSEnabled() || !isAutoSpeakEnabled()) return;
-  if (!getWorkerUrl()) return;
+  if (!getApiKey()) return;
 
   const btn = bubble.querySelector('.tts-speak-btn');
   if (btn) {
@@ -139,8 +141,8 @@ export function createSettingsButton() {
       </select>
     </label>
     <label class="tts-popover__row tts-popover__row--col">
-      <span>Worker URL</span>
-      <input type="text" id="tts-worker-url" value="${getWorkerUrl()}" placeholder="https://tts-relay.your-account.workers.dev">
+      <span>ElevenLabs API Key</span>
+      <input type="password" id="tts-api-key" value="${getApiKey()}" placeholder="Enter your ElevenLabs API key">
     </label>
   `;
 
@@ -169,8 +171,8 @@ export function createSettingsButton() {
   popover.querySelector('#tts-voice').addEventListener('change', (e) => {
     setRuntimeConfig('TTS_VOICE', e.target.value);
   });
-  popover.querySelector('#tts-worker-url').addEventListener('change', (e) => {
-    setRuntimeConfig('TTS_WORKER_URL', e.target.value.trim());
+  popover.querySelector('#tts-api-key').addEventListener('change', (e) => {
+    setRuntimeConfig('ELEVENLABS_API_KEY', e.target.value.trim());
   });
 
   return wrapper;
@@ -216,9 +218,9 @@ async function handleSpeakClick(btn, rawText) {
   // Stop any other playback
   stopTTS();
 
-  const workerUrl = getWorkerUrl();
-  if (!workerUrl) {
-    btn.title = 'Set Worker URL in TTS settings first';
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    btn.title = 'Set ElevenLabs API Key in TTS settings first';
     btn.classList.add('tts-error');
     setTimeout(() => btn.classList.remove('tts-error'), 2000);
     return;
@@ -236,28 +238,30 @@ async function handleSpeakClick(btn, rawText) {
   const audioEl = ensureAudio();
 
   try {
-    if (text.length <= POST_THRESHOLD) {
-      // GET approach — direct <audio> src for short text
-      const params = new URLSearchParams({ text, voiceId });
-      audioEl.src = `${workerUrl}/tts?${params}`;
-      await audioEl.play();
-    } else {
-      // POST approach — fetch blob for longer text
-      const res = await fetch(`${workerUrl}/tts`, {
+    const res = await fetch(
+      `${ELEVENLABS_BASE}/${voiceId}/stream?output_format=${OUTPUT_FORMAT}`,
+      {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voiceId }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'TTS request failed' }));
-        throw new Error(err.error || `HTTP ${res.status}`);
+        headers: {
+          'xi-api-key': apiKey,
+          'Content-Type': 'application/json',
+          'Accept': 'audio/mpeg',
+        },
+        body: JSON.stringify({
+          text,
+          model_id: DEFAULT_MODEL,
+        }),
       }
-      const blob = await res.blob();
-      if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-      currentObjectUrl = URL.createObjectURL(blob);
-      audioEl.src = currentObjectUrl;
-      await audioEl.play();
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: { message: 'TTS request failed' } }));
+      throw new Error(err.detail?.message || `HTTP ${res.status}`);
     }
+    const blob = await res.blob();
+    if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+    currentObjectUrl = URL.createObjectURL(blob);
+    audioEl.src = currentObjectUrl;
+    await audioEl.play();
 
     btn.innerHTML = STOP_ICON;
     btn.classList.remove('tts-loading');

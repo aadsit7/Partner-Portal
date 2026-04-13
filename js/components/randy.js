@@ -720,8 +720,33 @@ async function processUserInput(text) {
       conversationHistory.pop();
     }
     console.error('Randy API error:', err);
-    renderMessage('assistant', "Sorry boss, something went wrong. Try again in a sec.");
-    speakText("Sorry boss, something went wrong. Try again in a sec.");
+
+    let errorDisplay;
+    let errorSpeak;
+    const msg = err.message || '';
+
+    if (msg.includes('API key not set') || msg.includes('API key')) {
+      errorDisplay = "Heads up boss — no API key configured. Go to Setup and add your Anthropic API key.";
+      errorSpeak = "Heads up boss, no API key configured. Go to Setup and add your Anthropic key.";
+    } else if (msg.includes('Could not read Google Sheets') || msg.includes('Sheet')) {
+      errorDisplay = "Can't reach the Google Sheet right now. Check your connection on the Setup page.";
+      errorSpeak = "Can't reach the Google Sheet right now. Check your connection on the Setup page.";
+    } else if (msg.includes('401') || msg.includes('authentication')) {
+      errorDisplay = "API key looks invalid. Double-check it on the Setup page.";
+      errorSpeak = "API key looks invalid. Double-check it on the Setup page.";
+    } else if (msg.includes('429') || msg.includes('rate')) {
+      errorDisplay = "Hit the rate limit. Give it a minute and try again.";
+      errorSpeak = "Hit the rate limit. Give it a minute and try again.";
+    } else if (msg.includes('overloaded') || msg.includes('529')) {
+      errorDisplay = "Claude is overloaded right now. Try again in a bit.";
+      errorSpeak = "Claude is overloaded right now. Try again in a bit.";
+    } else {
+      errorDisplay = `Something went wrong: ${msg}`;
+      errorSpeak = "Sorry boss, something went wrong. Try again in a sec.";
+    }
+
+    renderMessage('assistant', errorDisplay);
+    speakText(errorSpeak);
   } finally {
     isProcessing = false;
   }
