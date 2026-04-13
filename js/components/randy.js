@@ -760,6 +760,7 @@ function handleConfirmation(lower) {
   if (confirmTimeout) { clearTimeout(confirmTimeout); confirmTimeout = null; }
 
   if (isConfirm && pendingActions) {
+    conversationHistory.push({ role: 'user', content: lower });
     executeConfirmedAction();
     return;
   }
@@ -823,14 +824,21 @@ async function executeConfirmedAction() {
       completed++;
       console.log(`[Randy Write] ${new Date().toISOString()}`, action);
     }
-    speakText("Done! Got it all updated.");
+    const msg = "Done! Got it all updated.";
+    conversationHistory.push({ role: 'assistant', content: msg });
+    saveRandyConversation();
+    speakText(msg);
   } catch (err) {
     console.error('Randy write error:', err);
+    let errMsg;
     if (err.message.includes('No matching row')) {
-      speakText("Couldn't find that record. Double-check the name and try again.");
+      errMsg = "Couldn't find that record. Double-check the name and try again.";
     } else {
-      speakText("That didn't go through. Try again or do it manually in the portal.");
+      errMsg = "That didn't go through. Try again or do it manually in the portal.";
     }
+    conversationHistory.push({ role: 'assistant', content: errMsg });
+    saveRandyConversation();
+    speakText(errMsg);
   }
 }
 
