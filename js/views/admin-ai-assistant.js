@@ -105,14 +105,10 @@ function renderMessage(role, text, container) {
   bubble.className = 'chat-bubble';
   if (isUser) {
     bubble.innerHTML = `<p>${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`;
+  } else if (containsHTMLResponse(text)) {
+    bubble.innerHTML = sanitizeHTML(text);
   } else {
-    const isHTML = containsHTMLResponse(text);
-    console.log('HTML detected:', isHTML, '| text starts with:', text.substring(0, 120));
-    if (isHTML) {
-      bubble.innerHTML = sanitizeHTML(text);
-    } else {
-      bubble.innerHTML = renderMarkdown(text);
-    }
+    bubble.innerHTML = renderMarkdown(text);
   }
   if (isUser) { wrapper.appendChild(bubble); wrapper.appendChild(avatar); }
   else {
