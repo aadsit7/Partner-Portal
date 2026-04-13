@@ -1123,6 +1123,25 @@ function renderMarkdown(text) {
     .replace(/^/, '<p>').replace(/$/, '</p>');
 }
 
+function containsHTMLResponse(text) {
+  return text.includes('class="response-container"') || text.includes("class='response-container'");
+}
+
+function sanitizeHTML(html) {
+  return html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/<iframe\b[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<object\b[\s\S]*?<\/object>/gi, '')
+    .replace(/<embed\b[^>]*\/?>/gi, '')
+    .replace(/<link\b[^>]*\/?>/gi, '')
+    .replace(/<meta\b[^>]*\/?>/gi, '')
+    .replace(/<img\b[^>]*\/?>/gi, '')
+    .replace(/<form\b[\s\S]*?<\/form>/gi, '')
+    .replace(/<input\b[^>]*\/?>/gi, '')
+    .replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '')
+    .replace(/javascript\s*:/gi, '');
+}
+
 function renderMessage(role, text) {
   const chat = document.getElementById('randy-chat');
   if (!chat) return;
@@ -1151,6 +1170,8 @@ function renderMessage(role, text) {
   bubble.className = 'randy-bubble';
   if (isUser) {
     bubble.textContent = text;
+  } else if (containsHTMLResponse(text)) {
+    bubble.innerHTML = sanitizeHTML(text);
   } else {
     bubble.innerHTML = renderMarkdown(text);
   }
