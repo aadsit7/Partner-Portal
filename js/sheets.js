@@ -110,7 +110,7 @@ export async function readSheetAsObjects(sheetName) {
  */
 export async function appendRow(sheetName, values) {
   if (!isConfigured()) {
-    console.log('[Demo] Would append to', sheetName, values);
+    addDemoRow(sheetName, values);
     return { updates: { updatedRows: 1 } };
   }
 
@@ -141,7 +141,7 @@ export async function appendRow(sheetName, values) {
  */
 export async function updateRow(sheetName, rowIndex, values) {
   if (!isConfigured()) {
-    console.log('[Demo] Would update', sheetName, `row ${rowIndex}`, values);
+    updateDemoRow(sheetName, rowIndex, values);
     return {};
   }
 
@@ -171,7 +171,7 @@ export async function updateRow(sheetName, rowIndex, values) {
  */
 export async function deleteRow(sheetName, rowIndex) {
   if (!isConfigured()) {
-    console.log('[Demo] Would delete', sheetName, `row ${rowIndex}`);
+    deleteDemoRow(sheetName, rowIndex);
     return {};
   }
 
