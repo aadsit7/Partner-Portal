@@ -896,3 +896,92 @@
   accent-color: #0000CC;
   cursor: pointer;
 }
+
+/* ── HTML Response Cards ──────────────────────────────────────────── */
+
+/* Chat bubble overflow handling for HTML responses */
+.chat-assistant .chat-bubble {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+
+/* === RESPONSE CONTAINER — ADAPTIVE WIDTH === */
+.response-container {
+  max-width: 680px;       /* Cap width so text stays readable on full-screen */
+  width: 100%;            /* Fill small containers fully */
+  margin: 0 auto;         /* Center when container is wider than 680px */
+  box-sizing: border-box;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+
+.response-container div,
+.response-container details {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* === COLLAPSIBLE CARD CHEVRON === */
+.response-container details summary::-webkit-details-marker {
+  display: none;
+}
+
+.response-container details summary::after {
+  content: '▸';
+  margin-left: auto;
+  font-size: 12px;
+  color: #94a3b8;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.response-container details[open] summary::after {
+  transform: rotate(90deg);
+}
+
+/* === EXPAND ANIMATION === */
+.response-container details[open] > div {
+  animation: cardExpand 0.2s ease-out;
+}
+
+@keyframes cardExpand {
+  from { opacity: 0; max-height: 0; }
+  to { opacity: 1; max-height: 2000px; }
+}
+
+/* === FULL-SCREEN / WIDE MODE (600px+ container) === */
+/* Increase font sizes and spacing when there's room */
+@media (min-width: 600px) {
+  .response-container {
+    font-size: 15px;
+  }
+  .response-container summary {
+    font-size: 15px;
+    padding: 12px 16px;
+  }
+  .response-container details > div {
+    padding: 14px 18px;
+    font-size: 14px;
+  }
+}
+
+/* === COMPACT MODE (360px and below) === */
+/* Tighten everything for small widget */
+@media (max-width: 360px) {
+  .response-container {
+    font-size: 12px;
+  }
+  .response-container summary {
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+  .response-container details > div {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  .response-container summary span:first-child {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+  }
+}
