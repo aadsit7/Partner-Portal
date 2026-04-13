@@ -831,7 +831,7 @@ async function callMeetingDocsAPI(messages, signal) {
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 8192,
       system: MEETING_DOCS_SYSTEM_PROMPT,
       messages: messages.map(m => ({ role: m.role, content: m.content })),
