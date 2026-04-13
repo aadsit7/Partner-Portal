@@ -319,42 +319,59 @@ export function cleanTextForSpeech(text) {
 }
 
 /**
- * Extract voice text from a raw HTML string without creating DOM elements first.
- * Useful for starting TTS before the HTML is inserted into the page.
+ * Extract voice text from a raw response string (markdown or legacy HTML).
+ * Useful for starting TTS before the content is inserted into the page.
  *
- * @param {string} html - Raw HTML response string
+ * @param {string} text - Raw response string (markdown or HTML)
  * @returns {string|null} Extracted voice text, or null if no voice element found
  */
-export function extractVoiceTextFromString(html) {
-  const match = html.match(/data-voice="true"[^>]*>([\s\S]*?)<\/div>\s*<(?:details|\/div)/);
-  if (match) {
+export function extractVoiceTextFromString(text) {
+  // Legacy HTML format
+  const htmlMatch = text.match(/data-voice="true"[^>]*>([\s\S]*?)<\/div>\s*<(?:details|\/div)/);
+  if (htmlMatch) {
     const temp = document.createElement('div');
-    temp.innerHTML = match[1];
+    temp.innerHTML = htmlMatch[1];
     return temp.textContent.replace('Summary', '').trim();
+  }
+  // New markdown format: extract text after **Summary** until first --- or ###
+  const mdMatch = text.match(/\*\*Summary\*\*\s*\n([\s\S]*?)(?=\n---|\n###|$)/);
+  if (mdMatch) {
+    return mdMatch[1].replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1').trim();
   }
   return null;
 }
 
 /**
- * Extract text from elements marked with data-voice="true" in an HTML string or DOM element.
- * Returns the text content of the first voice-marked element, or null to fall back to full text.
+ * Extract voice text from a rendered DOM element or raw string.
+ * Returns the summary text for voice output, or null to fall back to full text.
  *
- * @param {string|HTMLElement} htmlOrElement - Raw HTML string or a DOM element
+ * @param {string|HTMLElement} htmlOrElement - Raw string or a DOM element
  * @returns {string|null} Extracted voice text, or null to fall back to full text
  */
 export function extractVoiceText(htmlOrElement) {
-  let container;
+  // If raw string, try string-based extraction first
   if (typeof htmlOrElement === 'string') {
-    container = document.createElement('div');
-    container.innerHTML = htmlOrElement;
-  } else if (htmlOrElement instanceof HTMLElement) {
-    container = htmlOrElement;
-  } else {
+    return extractVoiceTextFromString(htmlOrElement);
+  }
+  if (!(htmlOrElement instanceof HTMLElement)) {
     return null;
   }
+  const container = htmlOrElement;
+  // Legacy HTML: data-voice attribute
   const voiceEl = container.querySelector('[data-voice="true"]');
   if (voiceEl) {
     return voiceEl.textContent.replace('Summary', '').trim();
+  }
+  // New markdown (rendered): text before first <hr> or <h3>/<h4>
+  const hr = container.querySelector('hr');
+  if (hr) {
+    let text = '';
+    let node = container.firstChild;
+    while (node && node !== hr) {
+      text += node.textContent || '';
+      node = node.nextSibling;
+    }
+    return text.replace('Summary', '').trim();
   }
   return null;
 }
