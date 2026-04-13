@@ -162,7 +162,7 @@ function buildDateRangeSlider(minTs, maxTs, onChange) {
 // ============================================
 
 function renderView(container, opportunities, filterBar) {
-  let activeView = 'board';
+  let activeView = 'list';
   // Compute close-date range for slider
   const closeDates = opportunities
     .map(o => o.expected_close ? new Date(o.expected_close).getTime() : null)
@@ -248,8 +248,8 @@ function renderView(container, opportunities, filterBar) {
   );
 
   // View toggle
-  const boardBtn = el('button', { class: 'btn btn--primary btn--sm', onClick: () => switchView('board') }, 'Board');
-  const listBtn = el('button', { class: 'btn btn--secondary btn--sm', onClick: () => switchView('list') }, 'List');
+  const boardBtn = el('button', { class: 'btn btn--secondary btn--sm', onClick: () => switchView('board') }, 'Board');
+  const listBtn = el('button', { class: 'btn btn--primary btn--sm', onClick: () => switchView('list') }, 'List');
 
   // Date range slider
   const dateSlider = buildDateRangeSlider(dateMin, dateMax, (min, max) => {
