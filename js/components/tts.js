@@ -318,6 +318,30 @@ export function cleanTextForSpeech(text) {
     .trim();
 }
 
+/**
+ * Extract text from elements marked with data-voice="true" in an HTML string or DOM element.
+ * Returns the text content of the first voice-marked element, or null to fall back to full text.
+ *
+ * @param {string|HTMLElement} htmlOrElement - Raw HTML string or a DOM element
+ * @returns {string|null} Extracted voice text, or null to fall back to full text
+ */
+export function extractVoiceText(htmlOrElement) {
+  let container;
+  if (typeof htmlOrElement === 'string') {
+    container = document.createElement('div');
+    container.innerHTML = htmlOrElement;
+  } else if (htmlOrElement instanceof HTMLElement) {
+    container = htmlOrElement;
+  } else {
+    return null;
+  }
+  const voiceEl = container.querySelector('[data-voice="true"]');
+  if (voiceEl) {
+    return voiceEl.textContent.replace('Summary', '').trim();
+  }
+  return null;
+}
+
 async function handleSpeakClick(btn, rawText) {
   // If this button is already playing, stop
   if (btn === currentBtn && audio && !audio.paused) {

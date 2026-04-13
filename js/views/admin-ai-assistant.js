@@ -9,7 +9,7 @@ import { setTopbarTitle } from '../components/sidebar.js';
 import { loadSheetData, callClaude, invalidateSheetCache } from '../utils/ai.js';
 import { parseActions, executeAction } from '../utils/ai-actions.js';
 import { activateVoiceMode, isVoiceModeActive, stopEverything as stopVoice } from '../components/voice-widget.js';
-import { attachSpeakerButton, autoSpeak, stopTTS, createSettingsButton, isTTSEnabled } from '../components/tts.js';
+import { attachSpeakerButton, autoSpeak, stopTTS, createSettingsButton, isTTSEnabled, extractVoiceText } from '../components/tts.js';
 import { getCurrentUser } from '../auth.js';
 import { appendRow, updateRow, deleteRow, readSheetAsObjects } from '../sheets.js';
 import { showToast } from '../components/toast.js';
@@ -47,6 +47,52 @@ function renderMarkdown(text) {
     .replace(/<\/(h[234]|ul|li)><\/p>/g, '</$1>');
 }
 
+// ── HTML Response Detection & Sanitization ────────────────────────
+const SAFE_TAGS = new Set([
+  'div', 'details', 'summary', 'span', 'p', 'b', 'strong', 'em', 'i',
+  'ul', 'ol', 'li', 'br', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'table', 'thead', 'tbody', 'tr', 'th', 'td'
+]);
+
+const SAFE_ATTRS = new Set(['class', 'data-voice', 'open', 'style']);
+
+function containsHTMLResponse(text) {
+  return /<div\s+class="response-container"/.test(text);
+}
+
+function sanitizeNode(node) {
+  const children = Array.from(node.childNodes);
+  for (const child of children) {
+    if (child.nodeType === Node.ELEMENT_NODE) {
+      const tag = child.tagName.toLowerCase();
+      if (!SAFE_TAGS.has(tag)) {
+        child.replaceWith(document.createTextNode(child.textContent));
+        continue;
+      }
+      const attrs = Array.from(child.attributes);
+      for (const attr of attrs) {
+        if (!SAFE_ATTRS.has(attr.name)) {
+          child.removeAttribute(attr.name);
+        }
+      }
+      if (child.hasAttribute('style')) {
+        const style = child.getAttribute('style');
+        if (/expression|javascript|vbscript/i.test(style)) {
+          child.removeAttribute('style');
+        }
+      }
+      sanitizeNode(child);
+    }
+  }
+}
+
+function sanitizeHTML(html) {
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  sanitizeNode(temp);
+  return temp.innerHTML;
+}
+
 // ── Chat Message Rendering ─────────────────────────────────────────
 function renderMessage(role, text, container) {
   const isUser = role === 'user';
@@ -57,15 +103,22 @@ function renderMessage(role, text, container) {
   avatar.textContent = isUser ? 'AA' : 'C';
   const bubble = document.createElement('div');
   bubble.className = 'chat-bubble';
-  bubble.innerHTML = isUser
-    ? `<p>${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`
-    : renderMarkdown(text);
+  if (isUser) {
+    bubble.innerHTML = `<p>${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`;
+  } else if (containsHTMLResponse(text)) {
+    bubble.innerHTML = sanitizeHTML(text);
+  } else {
+    bubble.innerHTML = renderMarkdown(text);
+  }
   if (isUser) { wrapper.appendChild(bubble); wrapper.appendChild(avatar); }
   else {
     wrapper.appendChild(avatar);
     wrapper.appendChild(bubble);
-    // Attach TTS speaker button to assistant messages
-    if (isTTSEnabled()) attachSpeakerButton(bubble, text);
+    // Attach TTS speaker button to assistant messages — prefer voice-tagged summary text
+    if (isTTSEnabled()) {
+      const voiceText = extractVoiceText(bubble) || text;
+      attachSpeakerButton(bubble, voiceText);
+    }
   }
   container.appendChild(wrapper);
   container.scrollTop = container.scrollHeight;
@@ -476,8 +529,9 @@ async function handleSend() {
     const assistantBubble = renderMessage('assistant', cleanText, chatArea);
     conversationHistory.push({ role: 'assistant', content: response, timestamp: new Date().toISOString() });
 
-    // Auto-speak the response if enabled
-    autoSpeak(assistantBubble, cleanText);
+    // Auto-speak the response if enabled — prefer voice-tagged summary text
+    const voiceText = extractVoiceText(assistantBubble) || cleanText;
+    autoSpeak(assistantBubble, voiceText);
 
     // Render confirmation cards for any actions
     actions.forEach(action => renderConfirmationCard(action, chatArea));
