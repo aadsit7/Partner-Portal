@@ -299,7 +299,7 @@
      Send button. A body.meeting-docs-open rule below also hides Randy
      entirely while this popup is visible. */
   z-index: 10000;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .meeting-docs--hidden {

@@ -80,8 +80,8 @@
   font-weight: var(--font-semibold);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--color-sidebar-text);
-  opacity: 0.6;
+  color: rgba(255,255,255,0.22);
+  opacity: 1;
 }
 
 .sidebar__link {
@@ -89,7 +89,7 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
+  border-radius: 7px;
   color: var(--color-sidebar-text);
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
@@ -101,7 +101,7 @@
 
 .sidebar__link:hover {
   background: var(--color-sidebar-hover);
-  color: var(--color-sidebar-text-active);
+  color: rgba(255,255,255,0.8);
 }
 
 .sidebar__link--active {
