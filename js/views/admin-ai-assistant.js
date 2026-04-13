@@ -57,7 +57,7 @@ const SAFE_TAGS = new Set([
 const SAFE_ATTRS = new Set(['class', 'data-voice', 'open', 'style']);
 
 function containsHTMLResponse(text) {
-  return /<div\s+class="response-container"/.test(text);
+  return text.includes('class="response-container"') || text.includes("class='response-container'");
 }
 
 function sanitizeNode(node) {
@@ -105,10 +105,14 @@ function renderMessage(role, text, container) {
   bubble.className = 'chat-bubble';
   if (isUser) {
     bubble.innerHTML = `<p>${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`;
-  } else if (containsHTMLResponse(text)) {
-    bubble.innerHTML = sanitizeHTML(text);
   } else {
-    bubble.innerHTML = renderMarkdown(text);
+    const isHTML = containsHTMLResponse(text);
+    console.log('HTML detected:', isHTML, '| text starts with:', text.substring(0, 120));
+    if (isHTML) {
+      bubble.innerHTML = sanitizeHTML(text);
+    } else {
+      bubble.innerHTML = renderMarkdown(text);
+    }
   }
   if (isUser) { wrapper.appendChild(bubble); wrapper.appendChild(avatar); }
   else {
