@@ -514,9 +514,8 @@ function handleTranscript(transcript) {
     transition(STATES.ACTIVE_LISTENING);
 
     if (afterWake.length > 2) {
-      speakText("What's up?", () => {
-        processUserInput(afterWake);
-      });
+      // User included their request — process directly without "What's up?"
+      processUserInput(afterWake);
     } else {
       speakText("What's up?");
     }
@@ -1475,7 +1474,15 @@ function createWidget() {
     if (!text || isProcessing) return;
     textInput.value = '';
     inputRow.hidden = true;
-    processUserInput(text);
+    // Strip wake word prefix if present (e.g., "hey Randy, show me Nerdio" → "show me Nerdio")
+    const lower = text.toLowerCase();
+    const wakeMatch = lower.match(WAKE_PATTERN);
+    if (wakeMatch) {
+      const afterWake = text.substring(lower.indexOf('randy') + 5).trim();
+      processUserInput(afterWake.length > 2 ? afterWake : text);
+    } else {
+      processUserInput(text);
+    }
   }
 
   textInput.addEventListener('keydown', (e) => {
@@ -1785,12 +1792,23 @@ export function initRandy() {
     synth.onvoiceschanged = selectVoice;
   }
 
-  // Restore persisted voice state (visual only — don't auto-start mic)
+  // Default to PASSIVE (wake-word listening) unless user explicitly turned off
   const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved === 'passive') {
+  if (saved !== 'off') {
     currentState = STATES.PASSIVE;
     updateWidgetUI();
+    // Try to start mic for wake word — may fail on first visit (no user gesture yet)
+    try { startRecognition(); } catch { /* will retry on first user click */ }
   }
+
+  // Fallback: if mic didn't start (no user gesture yet), retry on first click
+  const onFirstGesture = () => {
+    document.removeEventListener('click', onFirstGesture, true);
+    if (currentState === STATES.PASSIVE) {
+      startRecognition();
+    }
+  };
+  document.addEventListener('click', onFirstGesture, true);
 
   // Restore mute state
   if (localStorage.getItem('pp_randy_muted') === '1') {
