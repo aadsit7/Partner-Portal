@@ -686,6 +686,22 @@ async function processUserInput(text) {
     const { cleanText: afterActions, actions } = parseActions(response);
     const { cleaned: cleanText, navs } = parseNavCommands(afterActions);
     removeTypingIndicator();
+
+    // Extract voice text and speak BEFORE rendering HTML into the DOM
+    const voiceText = extractVoiceText(cleanText);
+
+    if (actions.length > 0) {
+      pendingActions = [...actions];
+      confirmAttempts = 0;
+      const summaries = actions.map(a => a.summary).filter(Boolean).join(', and ') || 'make that change';
+      speakText(`${voiceText}. I'll ${summaries}. Should I go ahead?`, () => {
+        transition(STATES.CONFIRMING);
+      });
+    } else {
+      speakText(voiceText);
+    }
+
+    // Render HTML into DOM AFTER speech is triggered
     const assistantMsg = renderMessage('assistant', cleanText);
 
     // Schedule navigation after a short delay so user hears context first
@@ -693,17 +709,6 @@ async function processUserInput(text) {
       setTimeout(() => {
         navs.forEach(nav => executeNavCommand(nav));
       }, 500);
-    }
-
-    if (actions.length > 0) {
-      pendingActions = [...actions];
-      confirmAttempts = 0;
-      const summaries = actions.map(a => a.summary).filter(Boolean).join(', and ') || 'make that change';
-      speakText(`${cleanText}. I'll ${summaries}. Should I go ahead?`, () => {
-        transition(STATES.CONFIRMING);
-      });
-    } else {
-      speakText(cleanText);
     }
 
     saveRandyConversation();
@@ -1121,6 +1126,17 @@ function renderMarkdown(text) {
     .replace(/\n{2,}/g, '</p><p>')
     .replace(/\n/g, '<br>')
     .replace(/^/, '<p>').replace(/$/, '</p>');
+}
+
+function extractVoiceText(text) {
+  if (!text.includes('response-container')) return text;
+  const match = text.match(/data-voice="true"[^>]*>([\s\S]*?)<\/div>\s*<(?:details|\/div)/);
+  if (match) {
+    const temp = document.createElement('div');
+    temp.innerHTML = match[1];
+    return temp.textContent.replace('Summary', '').trim();
+  }
+  return text.replace(/<[^>]*>/g, '').trim();
 }
 
 function containsHTMLResponse(text) {
