@@ -172,7 +172,7 @@ function buildEventRevenueChart(events, opportunities) {
 // ============================================
 
 function renderView(container, events, opportunities, filterBar) {
-  let activeView = 'board';
+  let activeView = 'list';
   let filters = { search: '', partners: new Set(), type: '', status: '' };
 
   // Calendar month state — persisted across filter changes and view switches
@@ -343,9 +343,9 @@ function renderView(container, events, opportunities, filterBar) {
   );
 
   // View toggle buttons
-  const boardBtn = el('button', { class: 'btn btn--primary btn--sm', onClick: () => switchView('board') }, 'Board');
+  const boardBtn = el('button', { class: 'btn btn--secondary btn--sm', onClick: () => switchView('board') }, 'Board');
   const calendarBtn = el('button', { class: 'btn btn--secondary btn--sm', onClick: () => switchView('calendar') }, 'Calendar');
-  const listBtn = el('button', { class: 'btn btn--secondary btn--sm', onClick: () => switchView('list') }, 'List');
+  const listBtn = el('button', { class: 'btn btn--primary btn--sm', onClick: () => switchView('list') }, 'List');
 
   const viewContainer = el('div', { id: 'events-view-container' });
 
