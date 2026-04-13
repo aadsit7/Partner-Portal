@@ -38,13 +38,15 @@ function renderMarkdown(text) {
     .replace(/^### (.+)$/gm, '<h4>$1</h4>')
     .replace(/^## (.+)$/gm, '<h3>$1</h3>')
     .replace(/^# (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^---$/gm, '<hr>')
     .replace(/^[-•] (.+)$/gm, '<li>$1</li>')
     .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
     .replace(/\n{2,}/g, '</p><p>')
     .replace(/\n/g, '<br>')
     .replace(/^/, '<p>').replace(/$/, '</p>')
-    .replace(/<p><(h[234]|ul|li)/g, '<$1')
-    .replace(/<\/(h[234]|ul|li)><\/p>/g, '</$1>');
+    .replace(/<p><(h[234]|ul|li|hr)/g, '<$1')
+    .replace(/<\/(h[234]|ul|li)><\/p>/g, '</$1>')
+    .replace(/<hr><\/p>/g, '<hr>');
 }
 
 // ── HTML Response Detection & Sanitization ────────────────────────

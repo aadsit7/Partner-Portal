@@ -52,8 +52,10 @@ Examples of Randy's style:
 
 Keep responses to 2-3 sentences since they're read aloud. If there's a lot of information, give the highlights and ask if they want more detail.
 
-ADDITIONAL VOICE RULES:
-- Never use asterisks or formatting characters
+VOICE OUTPUT RULES:
+- The **Summary** section is what gets spoken aloud. Keep it natural and conversational — no markdown syntax read aloud.
+- For simple questions, just give the summary with no sections.
+- For complex questions (e.g. 'tell me about Nerdio'), give a short conversational summary, then add ### sections for visual detail in the chat bubble.
 - Keep numbers conversational: say '120 grand' not '$120,000'
 - Keep partner names natural: say 'Nerdio' not 'Nerdio (partner_id 6)'
 
@@ -1122,22 +1124,41 @@ function renderMarkdown(text) {
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/^### (.+)$/gm, '<h4>$1</h4>')
+    .replace(/^## (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^# (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^---$/gm, '<hr>')
     .replace(/^[-•] (.+)$/gm, '<li>$1</li>')
     .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
     .replace(/\n{2,}/g, '</p><p>')
     .replace(/\n/g, '<br>')
-    .replace(/^/, '<p>').replace(/$/, '</p>');
+    .replace(/^/, '<p>').replace(/$/, '</p>')
+    .replace(/<p><(h[234]|ul|li|hr)/g, '<$1')
+    .replace(/<\/(h[234]|ul|li)><\/p>/g, '</$1>')
+    .replace(/<hr><\/p>/g, '<hr>');
 }
 
 function extractVoiceText(text) {
-  if (!text.includes('response-container')) return text;
-  const match = text.match(/data-voice="true"[^>]*>([\s\S]*?)<\/div>\s*<(?:details|\/div)/);
-  if (match) {
-    const temp = document.createElement('div');
-    temp.innerHTML = match[1];
-    return temp.textContent.replace('Summary', '').trim();
+  // Legacy HTML format fallback
+  if (text.includes('response-container')) {
+    const match = text.match(/data-voice="true"[^>]*>([\s\S]*?)<\/div>\s*<(?:details|\/div)/);
+    if (match) {
+      const temp = document.createElement('div');
+      temp.innerHTML = match[1];
+      return temp.textContent.replace('Summary', '').trim();
+    }
+    return text.replace(/<[^>]*>/g, '').trim();
   }
-  return text.replace(/<[^>]*>/g, '').trim();
+  // New markdown format: extract text after **Summary** until first --- or ###
+  const summaryMatch = text.match(/\*\*Summary\*\*\s*\n([\s\S]*?)(?=\n---|\n###|$)/);
+  if (summaryMatch) {
+    return summaryMatch[1]
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+      .trim();
+  }
+  // Fallback: strip markdown and return full text
+  return text.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1').replace(/#{1,4}\s+/g, '').replace(/^---$/gm, '').trim();
 }
 
 function containsHTMLResponse(text) {

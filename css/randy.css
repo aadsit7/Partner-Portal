@@ -342,6 +342,20 @@
 .randy-msg--assistant .randy-bubble p:last-child { margin-bottom: 0; }
 .randy-msg--assistant .randy-bubble ul { margin: 4px 0; padding-left: 18px; }
 .randy-msg--assistant .randy-bubble li { margin-bottom: 2px; }
+.randy-msg--assistant .randy-bubble h3,
+.randy-msg--assistant .randy-bubble h4 {
+  margin: 10px 0 4px 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+.randy-msg--assistant .randy-bubble h3:first-child,
+.randy-msg--assistant .randy-bubble h4:first-child { margin-top: 0; }
+.randy-msg--assistant .randy-bubble hr {
+  border: none;
+  border-top: 1px solid #ddd;
+  margin: 8px 0;
+}
 
 /* Voice badge */
 .randy-badge-voice {
