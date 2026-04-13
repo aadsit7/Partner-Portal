@@ -9,7 +9,7 @@
   bottom: 20px;
   right: 20px;
   z-index: 9999;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
 }
 
 /* ── STATE 1: Collapsed Avatar Button ──────────────────────────── */

@@ -13,18 +13,18 @@
   --color-danger: #CC2222;
 
   /* Neutrals */
-  --color-bg: #F0F0F6;
+  --color-bg: #f5f6fa;
   --color-surface: #FFFFFF;
-  --color-sidebar-bg: #0000CC;
-  --color-sidebar-hover: rgba(0, 191, 255, 0.15);
-  --color-sidebar-active: rgba(0, 191, 255, 0.25);
-  --color-sidebar-text: #AABBEE;
+  --color-sidebar-bg: #111128;
+  --color-sidebar-hover: rgba(255,255,255,0.06);
+  --color-sidebar-active: rgba(255,255,255,0.09);
+  --color-sidebar-text: rgba(255,255,255,0.45);
   --color-sidebar-text-active: #FFFFFF;
   --color-text-primary: #1A1A2E;
-  --color-text-secondary: #4A4A5A;
-  --color-text-muted: #8888AA;
+  --color-text-secondary: #555570;
+  --color-text-muted: #8b8ba0;
   --color-border: #E0E0E0;
-  --color-border-light: #F0F0F6;
+  --color-border-light: #e4e4ee;
 
   /* Status colors */
   --color-status-registered: #0000CC;
@@ -38,7 +38,7 @@
   --color-tier-registered: #9B9A9B;
 
   /* Typography */
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
 
   --text-xs: 0.6875rem;
@@ -76,7 +76,7 @@
   /* Border radii (subtle, not heavily rounded) */
   --radius-sm: 4px;
   --radius-md: 6px;
-  --radius-lg: 6px;
+  --radius-lg: 10px;
   --radius-xl: 8px;
   --radius-full: 9999px;
 
@@ -86,8 +86,8 @@
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.03);
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-card-hover: 0 8px 25px rgba(0, 0, 0, 0.1), 0 4px 10px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 1px 2px rgba(17, 17, 40, 0.04);
+  --shadow-card-hover: 0 4px 12px rgba(17, 17, 40, 0.07);
 
   /* Layout */
   --sidebar-width: 260px;

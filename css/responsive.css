@@ -214,7 +214,7 @@
   }
 
   .stat-card__value {
-    font-size: var(--text-2xl);
+    font-size: 20px;
   }
 
   /* Forms */
