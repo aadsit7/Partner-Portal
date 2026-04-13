@@ -11,6 +11,7 @@ import { getCurrentUser } from '../auth.js';
 import { appendRow, updateRow, readSheetAsObjects } from '../sheets.js';
 import { isVoiceModeActive } from './voice-widget.js';
 import { openOppModal } from '../views/admin-opportunities.js';
+import { speakWithElevenLabs } from './tts.js';
 
 // ── Randy Personality Prompt ──────────────────────────────────────
 const RANDY_PERSONALITY = `
@@ -147,6 +148,7 @@ let isDragging = false;
 let accumulatedTranscript = '';
 let autoSendTimer = null;
 let speechChainCancelled = false;
+let currentElevenLabsHandle = null;
 let dragOffset = { x: 0, y: 0 };
 let currentConvId = null;
 let currentConvRow = null;
@@ -304,6 +306,7 @@ function stopAll() {
   if (recognition) {
     try { recognition.abort(); } catch { /* ok */ }
   }
+  if (currentElevenLabsHandle) { currentElevenLabsHandle.stop(); currentElevenLabsHandle = null; }
   if (synth.speaking) synth.cancel();
   speechChainCancelled = true;
   if (autoSendTimer) { clearTimeout(autoSendTimer); autoSendTimer = null; }
@@ -360,6 +363,7 @@ function initRecognition() {
     // During speaking: check for intentional interrupt vs echo
     if (isRandySpeaking) {
       if (isInterrupt(transcript)) {
+        if (currentElevenLabsHandle) { currentElevenLabsHandle.stop(); currentElevenLabsHandle = null; }
         synth.cancel();
         speechChainCancelled = true;
         isRandySpeaking = false;
@@ -872,40 +876,71 @@ function speakText(text, onComplete) {
     }
   }
 
+  // Stop any previous playback
+  if (currentElevenLabsHandle) { currentElevenLabsHandle.stop(); currentElevenLabsHandle = null; }
   if (synth.speaking) synth.cancel();
 
+  // ── Try ElevenLabs first for natural voice ──
+  const handle = speakWithElevenLabs(clean, {
+    onStart: () => {
+      // Audio playback has begun
+    },
+    onEnd: () => {
+      currentElevenLabsHandle = null;
+      finishSpeaking();
+    },
+    onError: (err) => {
+      console.warn('Randy ElevenLabs error, falling back to Web Speech:', err?.message);
+      currentElevenLabsHandle = null;
+      // Fall back to Web Speech API
+      speakWithWebSpeech(clean);
+    },
+  });
+
+  if (handle) {
+    currentElevenLabsHandle = handle;
+    // Start recognition for barge-in
+    startRecognition();
+    return;
+  }
+
+  // ── Fall back to Web Speech API ──
+  speakWithWebSpeech(clean);
+}
+
+function finishSpeaking() {
+  clearSpeakingHighlight();
+  setTimeout(() => {
+    lastSpokenText = currentSpokenText;
+    lastSpeechEndTime = Date.now();
+    isRandySpeaking = false;
+    currentSpokenText = '';
+    const cb = currentSpeechOnComplete;
+    currentSpeechOnComplete = null;
+    if (cb) {
+      cb();
+    } else if (currentState === STATES.SPEAKING) {
+      transition(STATES.ACTIVE_LISTENING);
+    }
+  }, 300);
+}
+
+function speakWithWebSpeech(clean) {
   // Split into sentences at . ? ! boundaries
   const sentences = clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g);
   if (!sentences || sentences.length === 0) {
-    if (onComplete) onComplete();
+    finishSpeaking();
     return;
   }
   const parts = sentences.map(s => s.trim()).filter(s => s.length > 0);
   if (parts.length === 0) {
-    if (onComplete) onComplete();
+    finishSpeaking();
     return;
   }
 
   // Short confirmation (under 6 words) — single fast utterance
   const wordCount = clean.split(/\s+/).length;
   const isShort = wordCount < 6;
-
-  function finishSpeaking() {
-    clearSpeakingHighlight();
-    setTimeout(() => {
-      lastSpokenText = currentSpokenText;
-      lastSpeechEndTime = Date.now();
-      isRandySpeaking = false;
-      currentSpokenText = '';
-      const cb = currentSpeechOnComplete;
-      currentSpeechOnComplete = null;
-      if (cb) {
-        cb();
-      } else if (currentState === STATES.SPEAKING) {
-        transition(STATES.ACTIVE_LISTENING);
-      }
-    }, 1000);
-  }
 
   function handleError(e) {
     clearSpeakingHighlight();
@@ -945,8 +980,8 @@ function speakText(text, onComplete) {
       if (isLast) {
         finishSpeaking();
       } else if (!speechChainCancelled) {
-        // 150ms gap between sentences for natural pacing
-        setTimeout(() => speakPart(i + 1), 150);
+        // 100ms gap between sentences for natural pacing
+        setTimeout(() => speakPart(i + 1), 100);
       }
     };
 
@@ -1331,6 +1366,7 @@ function createWidget() {
   document.getElementById('randy-close-window').addEventListener('click', () => {
     saveRandyConversation();
     if (recognition) { try { recognition.abort(); } catch { /* ok */ } }
+    if (currentElevenLabsHandle) { currentElevenLabsHandle.stop(); currentElevenLabsHandle = null; }
     if (synth.speaking) synth.cancel();
     speechChainCancelled = true;
     if (autoSendTimer) { clearTimeout(autoSendTimer); autoSendTimer = null; }
@@ -1419,6 +1455,7 @@ function handleVoiceBtnClick() {
       break;
     case STATES.SPEAKING:
       // Speaking → interrupt and listen
+      if (currentElevenLabsHandle) { currentElevenLabsHandle.stop(); currentElevenLabsHandle = null; }
       synth.cancel();
       speechChainCancelled = true;
       isRandySpeaking = false;

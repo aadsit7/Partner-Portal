@@ -7,6 +7,7 @@
 import { isAdmin } from '../auth.js';
 import { loadSheetData, callClaude } from '../utils/ai.js';
 import { getCurrentPath } from '../router.js';
+import { speakWithElevenLabs } from './tts.js';
 
 // ── State ──────────────────────────────────────────────────────────
 let voiceHistory = [];
@@ -17,6 +18,7 @@ let synth = window.speechSynthesis;
 let currentUtterance = null;
 let abortController = null;
 let mounted = false;
+let elevenLabsHandle = null;
 
 const STORAGE_KEY = 'pp_voice_active';
 
@@ -54,9 +56,32 @@ function getPreferredVoice() {
 }
 
 function speak(text) {
+  // Stop any previous playback
+  if (elevenLabsHandle) { elevenLabsHandle.stop(); elevenLabsHandle = null; }
   if (synth.speaking) synth.cancel();
 
   const clean = stripMarkdown(text);
+
+  // Try ElevenLabs first for natural-sounding voice
+  const handle = speakWithElevenLabs(clean, {
+    onStart: () => setState('speaking'),
+    onEnd: () => {
+      elevenLabsHandle = null;
+      if (!stopping && voiceState === 'speaking') startListening();
+    },
+    onError: () => {
+      elevenLabsHandle = null;
+      if (!stopping && voiceState === 'speaking') startListening();
+    },
+  });
+
+  if (handle) {
+    elevenLabsHandle = handle;
+    setState('speaking');
+    return;
+  }
+
+  // Fall back to Web Speech API if ElevenLabs not configured
   currentUtterance = new SpeechSynthesisUtterance(clean);
   const voice = getPreferredVoice();
   if (voice) currentUtterance.voice = voice;
@@ -147,6 +172,7 @@ function stopEverything() {
   if (recognition) {
     try { recognition.abort(); } catch { /* ok */ }
   }
+  if (elevenLabsHandle) { elevenLabsHandle.stop(); elevenLabsHandle = null; }
   if (synth.speaking) synth.cancel();
   if (abortController) abortController.abort();
 

@@ -39,6 +39,30 @@ export async function render(container) {
     value: getRuntimeConfig('ANTHROPIC_API_KEY') || '',
   });
 
+  // --- ElevenLabs Key input ---
+  const elevenLabsKeyInput = el('input', {
+    class: 'form-input',
+    type: 'text',
+    placeholder: 'Paste your ElevenLabs API key here',
+    value: getRuntimeConfig('ELEVENLABS_API_KEY') || '',
+  });
+
+  // --- ElevenLabs Voice selector ---
+  const ELEVENLABS_VOICES = [
+    { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George — Warm, Natural Male' },
+    { id: 'TxGEqnHWrfWFTfGW9XjX', name: 'Josh — Conversational Male' },
+    { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam — Deep Male' },
+    { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel — American Female' },
+    { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah — Soft Female' },
+    { id: '9BWtsMINqrJLrRacOk9x', name: 'Aria — Expressive Female' },
+  ];
+  const currentVoice = getRuntimeConfig('ELEVENLABS_VOICE') || CONFIG.ELEVENLABS_VOICE || 'JBFqnCBsd6RMkjVDRZzb';
+  const elevenLabsVoiceSelect = el('select', { class: 'form-input' },
+    ...ELEVENLABS_VOICES.map(v =>
+      el('option', { value: v.id, ...(v.id === currentVoice ? { selected: true } : {}) }, v.name)
+    )
+  );
+
   // --- Spreadsheet ID display ---
   const sheetIdDisplay = el('input', {
     class: 'form-input',
@@ -116,6 +140,40 @@ export async function render(container) {
         el('div', { class: 'form-hint' },
           'Anthropic API key for the AI Assistant tab. Click 📋 to copy, then paste into the AI Assistant\'s 🔑 prompt. ',
           'Get a key at console.anthropic.com > Settings > API keys.'
+        )
+      ),
+
+      el('div', { class: 'form-group', style: { borderTop: '1px solid var(--border-color, #e5e7eb)', paddingTop: 'var(--space-4, 16px)', marginTop: 'var(--space-4, 16px)' } },
+        el('label', { class: 'form-label', style: { fontWeight: '600', fontSize: '1rem' } }, 'Voice Configuration (ElevenLabs)'),
+      ),
+
+      el('div', { class: 'form-group' },
+        el('label', { class: 'form-label' }, 'ElevenLabs API Key'),
+        el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
+          elevenLabsKeyInput,
+          el('button', {
+            class: 'btn btn--secondary',
+            title: 'Copy to clipboard',
+            style: { padding: '8px 12px', flexShrink: '0' },
+            onClick: () => {
+              const val = elevenLabsKeyInput.value.trim();
+              if (val) {
+                navigator.clipboard.writeText(val).then(() => showToast('ElevenLabs key copied', 'success'));
+              }
+            }
+          }, '📋')
+        ),
+        el('div', { class: 'form-hint' },
+          'ElevenLabs API key for natural voice responses (Randy & voice assistant). ',
+          'Get a key at elevenlabs.io > API Keys.'
+        )
+      ),
+
+      el('div', { class: 'form-group' },
+        el('label', { class: 'form-label' }, 'Voice'),
+        elevenLabsVoiceSelect,
+        el('div', { class: 'form-hint' },
+          'Voice used for Randy and the voice assistant. Change takes effect on next spoken response.'
         )
       ),
 
@@ -198,6 +256,10 @@ export async function render(container) {
 
     const newAiKey = aiKeyInput.value.trim();
     if (newAiKey) setRuntimeConfig('ANTHROPIC_API_KEY', newAiKey);
+
+    const newElevenLabsKey = elevenLabsKeyInput.value.trim();
+    if (newElevenLabsKey) setRuntimeConfig('ELEVENLABS_API_KEY', newElevenLabsKey);
+    setRuntimeConfig('ELEVENLABS_VOICE', elevenLabsVoiceSelect.value);
 
     showToast('Configuration saved', 'success');
     checkStatus();

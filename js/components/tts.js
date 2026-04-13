@@ -3,31 +3,33 @@
 // ============================================
 // Adds speaker buttons to assistant messages and
 // optional auto-speak. Calls ElevenLabs API directly.
+// Also exports speakWithElevenLabs() for use by
+// Randy and the voice widget.
 
-import { getRuntimeConfig, setRuntimeConfig } from '../config.js';
+import { CONFIG, getRuntimeConfig, setRuntimeConfig } from '../config.js';
 
 // ── Configuration ─────────────────────────────────────────────────
-// ElevenLabs API key — stored in runtime config (localStorage)
-const ELEVENLABS_API_KEY = getRuntimeConfig('ELEVENLABS_API_KEY') || '';
+const ELEVENLABS_BASE = 'https://api.elevenlabs.io/v1/text-to-speech';
+const OUTPUT_FORMAT = 'mp3_22050_32';
 
-// ElevenLabs voice IDs — find more at https://elevenlabs.io/voice-library
-// or via API: GET https://api.elevenlabs.io/v1/voices
+// ElevenLabs voice options (matches Setup page)
 const VOICES = [
-  { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam (Male, Deep)' },
-  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah (Female, Soft)' },
-  { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel (Male, British)' },
-  { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel (Female, American)' },
+  { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George (Warm, Natural Male)' },
+  { id: 'TxGEqnHWrfWFTfGW9XjX', name: 'Josh (Conversational Male)' },
+  { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam (Deep Male)' },
+  { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel (American Female)' },
+  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah (Soft Female)' },
+  { id: '9BWtsMINqrJLrRacOk9x', name: 'Aria (Expressive Female)' },
 ];
 
-const DEFAULT_VOICE = VOICES[0].id;
-const ELEVENLABS_BASE = 'https://api.elevenlabs.io/v1/text-to-speech';
-const DEFAULT_MODEL = 'eleven_multilingual_v2';
-const OUTPUT_FORMAT = 'mp3_44100_128';
-
-// ── State ─────────────────────────────────────────────────────────
+// ── State (button-based TTS) ─────────────────────────────────────
 let audio = null;
 let currentBtn = null;
 let currentObjectUrl = null;
+
+// ── State (shared speakWithElevenLabs) ───────────────────────────
+let sharedAudio = null;
+let sharedObjectUrl = null;
 
 // ── SVG Icons ─────────────────────────────────────────────────────
 const SPEAKER_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
@@ -47,11 +49,119 @@ export function isAutoSpeakEnabled() {
 }
 
 export function getSelectedVoice() {
-  return getRuntimeConfig('TTS_VOICE') || DEFAULT_VOICE;
+  return getRuntimeConfig('ELEVENLABS_VOICE') || getRuntimeConfig('TTS_VOICE') || CONFIG.ELEVENLABS_VOICE || VOICES[0].id;
 }
 
 export function getApiKey() {
-  return getRuntimeConfig('ELEVENLABS_API_KEY') || '';
+  return getRuntimeConfig('ELEVENLABS_API_KEY') || CONFIG.ELEVENLABS_API_KEY || '';
+}
+
+function getModel() {
+  return getRuntimeConfig('ELEVENLABS_MODEL') || CONFIG.ELEVENLABS_MODEL || 'eleven_turbo_v2_5';
+}
+
+/**
+ * Returns true if an ElevenLabs API key is configured and available.
+ */
+export function isElevenLabsReady() {
+  return !!getApiKey();
+}
+
+/**
+ * Speak text using ElevenLabs TTS. Returns a handle with stop(), or null if unavailable.
+ * Used by Randy, voice-widget, and button TTS.
+ *
+ * @param {string} rawText - Text to speak (will be cleaned of markdown/action blocks)
+ * @param {Object} callbacks
+ * @param {Function} [callbacks.onStart] - Called when audio playback begins
+ * @param {Function} [callbacks.onEnd] - Called when audio playback completes
+ * @param {Function} [callbacks.onError] - Called on any error
+ * @param {string} [callbacks.voiceId] - Override voice ID (defaults to selected voice)
+ * @returns {{ stop: Function } | null} Handle to stop playback, or null if not configured
+ */
+export function speakWithElevenLabs(rawText, { onStart, onEnd, onError, voiceId } = {}) {
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+
+  const text = cleanTextForSpeech(rawText);
+  if (!text) {
+    if (onEnd) setTimeout(onEnd, 0);
+    return { stop() {} };
+  }
+
+  let stopped = false;
+  let audioEl = document.createElement('audio');
+  let objectUrl = null;
+
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    if (audioEl) {
+      audioEl.pause();
+      audioEl.removeAttribute('src');
+      audioEl.load();
+      audioEl = null;
+    }
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+      objectUrl = null;
+    }
+  };
+
+  // Fire-and-forget async playback
+  (async () => {
+    try {
+      const voice = voiceId || getSelectedVoice();
+      const model = getModel();
+
+      const res = await fetch(
+        `${ELEVENLABS_BASE}/${voice}/stream?output_format=${OUTPUT_FORMAT}`,
+        {
+          method: 'POST',
+          headers: {
+            'xi-api-key': apiKey,
+            'Content-Type': 'application/json',
+            'Accept': 'audio/mpeg',
+          },
+          body: JSON.stringify({ text, model_id: model }),
+        }
+      );
+
+      if (stopped) return;
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: { message: 'TTS request failed' } }));
+        throw new Error(err.detail?.message || `HTTP ${res.status}`);
+      }
+
+      const blob = await res.blob();
+      if (stopped) return;
+
+      objectUrl = URL.createObjectURL(blob);
+      audioEl.src = objectUrl;
+
+      audioEl.addEventListener('ended', () => {
+        if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+        if (onEnd && !stopped) onEnd();
+      }, { once: true });
+
+      audioEl.addEventListener('error', () => {
+        stop();
+        if (onError) onError(new Error('Audio playback failed'));
+      }, { once: true });
+
+      await audioEl.play();
+      if (onStart && !stopped) onStart();
+
+    } catch (err) {
+      if (stopped) return;
+      console.error('ElevenLabs TTS error:', err);
+      stop();
+      if (onError) onError(err);
+    }
+  })();
+
+  return { stop };
 }
 
 /**
@@ -89,7 +199,7 @@ export function autoSpeak(bubble, text) {
 }
 
 /**
- * Stop any currently playing TTS audio.
+ * Stop any currently playing TTS audio (button-based).
  */
 export function stopTTS() {
   if (audio) {
@@ -169,7 +279,7 @@ export function createSettingsButton() {
     setRuntimeConfig('TTS_AUTO_SPEAK', e.target.checked);
   });
   popover.querySelector('#tts-voice').addEventListener('change', (e) => {
-    setRuntimeConfig('TTS_VOICE', e.target.value);
+    setRuntimeConfig('ELEVENLABS_VOICE', e.target.value);
   });
   popover.querySelector('#tts-api-key').addEventListener('change', (e) => {
     setRuntimeConfig('ELEVENLABS_API_KEY', e.target.value.trim());
@@ -190,7 +300,7 @@ function ensureAudio() {
   return audio;
 }
 
-function cleanTextForSpeech(text) {
+export function cleanTextForSpeech(text) {
   return text
     .replace(/:::ACTION[\s\S]*?:::/g, '')
     .replace(/:::NAV[\s\S]*?:::/g, '')
@@ -230,6 +340,7 @@ async function handleSpeakClick(btn, rawText) {
   if (!text) return;
 
   const voiceId = getSelectedVoice();
+  const model = getModel();
   currentBtn = btn;
   btn.innerHTML = SPINNER_ICON;
   btn.classList.add('tts-loading');
@@ -249,7 +360,7 @@ async function handleSpeakClick(btn, rawText) {
         },
         body: JSON.stringify({
           text,
-          model_id: DEFAULT_MODEL,
+          model_id: model,
         }),
       }
     );
