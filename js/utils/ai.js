@@ -10,9 +10,26 @@ import { stripHtml } from '../components/quill-editor.js';
 // ── Cache State ────────────────────────────────────────────────────
 let cachedSheetData = null;
 let cacheTimestamp = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// 60s TTL — short enough that external sheet edits surface quickly,
+// long enough that consecutive turns in a conversation reuse the
+// cached payload (and thus also hit Anthropic's prompt cache).
+const CACHE_TTL = 60 * 1000;
 
 export function invalidateSheetCache() { cacheTimestamp = 0; }
+
+// Fire-and-forget warmer. Used by Randy on wake-word detection so the
+// sheet fetch overlaps with the user's utterance instead of blocking
+// the LLM call that follows it. Safe to call repeatedly; loadSheetData
+// returns the cached value if it's fresh.
+let warmInFlight = null;
+export function warmSheetData() {
+  if (warmInFlight) return warmInFlight;
+  warmInFlight = loadSheetData().catch(err => {
+    console.warn('warmSheetData failed:', err?.message);
+    return null;
+  }).finally(() => { warmInFlight = null; });
+  return warmInFlight;
+}
 
 // ── System Prompt ──────────────────────────────────────────────────
 export const SYSTEM_PROMPT = `You are an AI assistant for Recast Software's Partner Portal. You answer questions about partners, deals, events, meetings, and partnership activity using the database context provided in each message.
@@ -477,48 +494,29 @@ export async function loadSheetData(forceRefresh = false) {
 }
 
 // ── Build Context for API Call ─────────────────────────────────────
+//
+// The context is split into two parts so Anthropic's prompt caching
+// can reuse the bulk of it across turns:
+//
+//   1. STABLE block  — the full corpus at a default truncation level
+//      (partners, opportunity index with 1500-char descriptions, events,
+//      meeting_index, transcript previews). Identical across turns as
+//      long as the underlying sheet cache hasn't refreshed, so it hits
+//      Anthropic's ephemeral cache on the second turn onward.
+//
+//   2. QUERY block   — only the expansions the current question needs
+//      (full 4000-char descriptions for a mentioned partner, or full
+//      transcripts for that partner). Typically empty. Never cached.
+//
+// The old buildDataContext() is kept as a convenience wrapper that
+// concatenates the two, for callers (like admin-ai-assistant) that
+// don't go through callClaudeStream.
 
-export function buildDataContext(data, userMessage) {
-  const msg = userMessage.toLowerCase();
-
-  let transcriptContext = '';
-  const needsTranscripts = /transcript|full detail|full history|exact|verbatim|what did .+ say|tell me everything|deep dive|email|contract|agreement/i.test(userMessage);
-
-  if (needsTranscripts) {
-    const partnerMatch = data.partners.find(p =>
-      msg.includes(p.display_name.toLowerCase()) ||
-      msg.includes(p.display_name.toLowerCase().replace(/\s+/g, ''))
-    );
-
-    if (partnerMatch) {
-      const relevantTranscripts = data.fullTranscripts
-        .filter(t => String(t.partner_id) === String(partnerMatch.partner_id))
-        .map(t => ({
-          transcript_id: t.transcript_id,
-          partner_name: t.partner_name,
-          conversation_date: t.conversation_date,
-          transcript_text: (t.transcript_text || '').substring(0, 8000)
-        }));
-
-      if (relevantTranscripts.length > 0) {
-        transcriptContext = `\n\nFULL TRANSCRIPTS (for ${partnerMatch.display_name}):\n${JSON.stringify(relevantTranscripts, null, 2)}`;
-      }
-    } else {
-      transcriptContext = `\n\nTRANSCRIPT PREVIEWS (ask about a specific partner for full text):\n${JSON.stringify(data.transcriptIndex, null, 2)}`;
-    }
-  } else {
-    transcriptContext = `\n\nTRANSCRIPT PREVIEWS (${data.transcriptIndex.length} transcripts available — ask about a specific partner for full text):\n${JSON.stringify(data.transcriptIndex, null, 2)}`;
-  }
-
-  const needsFullDescriptions = /environment|platform|citrix|intune|sccm|avd|technical|architecture|current state|migration|deal|pipeline|status|update|detail|description|summary|recap|meeting|close|revenue|forecast|note/i.test(userMessage);
-
-  const opps = data.opportunities.map(o => {
-    const plain = stripHtml(o.description || '');
-    if (needsFullDescriptions) {
-      return { ...o, description: plain.substring(0, 4000) };
-    }
-    return { ...o, description: plain.substring(0, 1500) };
-  });
+export function buildStableContext(data) {
+  const opps = data.opportunities.map(o => ({
+    ...o,
+    description: stripHtml(o.description || '').substring(0, 1500),
+  }));
 
   return `DATA CONTEXT:
 
@@ -532,41 +530,220 @@ EVENTS (${data.events.length} records):
 ${JSON.stringify(data.events, null, 2)}
 
 MEETING_INDEX (${data.meetingIndex.length} records):
-${JSON.stringify(data.meetingIndex, null, 2)}${transcriptContext}`;
+${JSON.stringify(data.meetingIndex, null, 2)}
+
+TRANSCRIPT PREVIEWS (${data.transcriptIndex.length} transcripts available — full text is added only when a question asks for it):
+${JSON.stringify(data.transcriptIndex, null, 2)}`;
+}
+
+function findMentionedPartner(partners, userMessage) {
+  const msg = userMessage.toLowerCase();
+  return partners.find(p => {
+    const name = (p.display_name || '').toLowerCase();
+    if (!name) return false;
+    return msg.includes(name) || msg.includes(name.replace(/\s+/g, ''));
+  }) || null;
+}
+
+export function buildQueryContext(data, userMessage) {
+  const needsTranscripts = /transcript|full detail|full history|exact|verbatim|what did .+ say|tell me everything|deep dive|email|contract|agreement/i.test(userMessage);
+  const needsFullDescriptions = /environment|platform|citrix|intune|sccm|avd|technical|architecture|current state|migration|deal|pipeline|status|update|detail|description|summary|recap|meeting|close|revenue|forecast|note/i.test(userMessage);
+
+  if (!needsTranscripts && !needsFullDescriptions) return '';
+
+  const partner = findMentionedPartner(data.partners, userMessage);
+  if (!partner) return '';
+
+  const sections = [];
+
+  if (needsFullDescriptions) {
+    const partnerOpps = data.opportunities
+      .filter(o => String(o.partner_id) === String(partner.partner_id))
+      .map(o => ({ ...o, description: stripHtml(o.description || '').substring(0, 4000) }));
+    if (partnerOpps.length > 0) {
+      sections.push(`FULL OPPORTUNITY DETAILS (for ${partner.display_name}):\n${JSON.stringify(partnerOpps, null, 2)}`);
+    }
+  }
+
+  if (needsTranscripts) {
+    const partnerTranscripts = data.fullTranscripts
+      .filter(t => String(t.partner_id) === String(partner.partner_id))
+      .map(t => ({
+        transcript_id: t.transcript_id,
+        partner_name: t.partner_name,
+        conversation_date: t.conversation_date,
+        transcript_text: (t.transcript_text || '').substring(0, 8000),
+      }));
+    if (partnerTranscripts.length > 0) {
+      sections.push(`FULL TRANSCRIPTS (for ${partner.display_name}):\n${JSON.stringify(partnerTranscripts, null, 2)}`);
+    }
+  }
+
+  return sections.length ? `\n\n${sections.join('\n\n')}` : '';
+}
+
+// Back-compat: single-string form used by non-streaming callers.
+export function buildDataContext(data, userMessage) {
+  return buildStableContext(data) + buildQueryContext(data, userMessage);
 }
 
 // ── API Call ────────────────────────────────────────────────────────
+//
+// Both entry points below build the same structured request:
+//   • system        — array with one cached text block (the system
+//                     prompt is stable for a whole conversation).
+//   • messages      — the last user turn is converted to an array of
+//                     content blocks so we can mark the stable data
+//                     context as cached and leave the user's actual
+//                     question + any query-specific expansions
+//                     uncached at the tail.
+//
+// After the first turn this means ~60–80 KB of input tokens read from
+// Anthropic's ephemeral cache instead of being re-processed, which
+// drops time-to-first-token dramatically and cuts input cost ~90%.
 
-export async function callClaude(messages, sheetData, userMessage, signal, systemPrompt) {
+function buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stream }) {
+  const stableContext = buildStableContext(sheetData);
+  const queryContext = buildQueryContext(sheetData, userMessage);
+
+  const augmentedMessages = messages.map((m, i) => {
+    if (i === messages.length - 1 && m.role === 'user') {
+      // Split the final user turn into cached + uncached blocks.
+      return {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: stableContext,
+            cache_control: { type: 'ephemeral' },
+          },
+          {
+            type: 'text',
+            text: queryContext
+              ? `${m.content}\n\n---${queryContext}`
+              : m.content,
+          },
+        ],
+      };
+    }
+    return { role: m.role, content: m.content };
+  });
+
+  return {
+    model: 'claude-sonnet-4-6',
+    max_tokens: 4096,
+    system: [
+      {
+        type: 'text',
+        text: systemPrompt || SYSTEM_PROMPT,
+        cache_control: { type: 'ephemeral' },
+      },
+    ],
+    messages: augmentedMessages,
+    ...(stream ? { stream: true } : {}),
+  };
+}
+
+function buildRequestHeaders(apiKey) {
+  return {
+    'Content-Type': 'application/json',
+    'x-api-key': apiKey,
+    'anthropic-version': '2023-06-01',
+    'anthropic-dangerous-direct-browser-access': 'true',
+  };
+}
+
+function requireApiKey() {
   const apiKey = getRuntimeConfig('ANTHROPIC_API_KEY');
   if (!apiKey) {
     throw new Error('API key not set. Configure it on the Setup page or click the 🔑 icon in AI Assistant.');
   }
+  return apiKey;
+}
 
-  const dataContext = buildDataContext(sheetData, userMessage);
-  const augmentedMessages = messages.map((m, i) => {
-    const msg = { role: m.role, content: m.content };
-    if (i === messages.length - 1 && m.role === 'user') {
-      msg.content = `${m.content}\n\n---\n${dataContext}`;
-    }
-    return msg;
-  });
+/**
+ * Stream a Claude response. Invokes onChunk(text) for each text delta
+ * as it arrives. Returns the full accumulated text when the stream
+ * completes. Aborts cleanly when the supplied AbortSignal fires.
+ */
+export async function callClaudeStream(messages, sheetData, userMessage, signal, systemPrompt, onChunk) {
+  const apiKey = requireApiKey();
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system: systemPrompt || SYSTEM_PROMPT,
-      messages: augmentedMessages
-    }),
-    signal: signal || undefined
+    headers: buildRequestHeaders(apiKey),
+    body: JSON.stringify(buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stream: true })),
+    signal: signal || undefined,
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error: ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let full = '';
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // Parse SSE events — each event ends with a blank line.
+      let eventEnd;
+      while ((eventEnd = buffer.indexOf('\n\n')) !== -1) {
+        const raw = buffer.slice(0, eventEnd);
+        buffer = buffer.slice(eventEnd + 2);
+
+        // Only care about the data: line. Anthropic sends one per event.
+        const dataLine = raw.split('\n').find(l => l.startsWith('data:'));
+        if (!dataLine) continue;
+        const payload = dataLine.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+
+        let evt;
+        try { evt = JSON.parse(payload); } catch { continue; }
+
+        if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
+          const text = evt.delta.text || '';
+          if (text) {
+            full += text;
+            if (onChunk) onChunk(text, full);
+          }
+        } else if (evt.type === 'message_delta' && evt.usage) {
+          // Log cache hit info once per response so we can verify caching
+          // is working in dev without spamming.
+          const u = evt.usage;
+          if (u.cache_read_input_tokens || u.cache_creation_input_tokens) {
+            console.log(`[Claude cache] read=${u.cache_read_input_tokens || 0} created=${u.cache_creation_input_tokens || 0}`);
+          }
+        }
+      }
+    }
+  } finally {
+    try { reader.releaseLock(); } catch { /* ok */ }
+  }
+
+  return full;
+}
+
+/**
+ * Non-streaming convenience wrapper. Kept for the admin AI Assistant
+ * view and any other caller that expects a single awaited string.
+ * Uses the same prompt-cached request body as callClaudeStream so it
+ * benefits from caching even without the SSE machinery.
+ */
+export async function callClaude(messages, sheetData, userMessage, signal, systemPrompt) {
+  const apiKey = requireApiKey();
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: buildRequestHeaders(apiKey),
+    body: JSON.stringify(buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stream: false })),
+    signal: signal || undefined,
   });
 
   if (!response.ok) {
@@ -575,6 +752,9 @@ export async function callClaude(messages, sheetData, userMessage, signal, syste
   }
 
   const data = await response.json();
+  if (data.usage && (data.usage.cache_read_input_tokens || data.usage.cache_creation_input_tokens)) {
+    console.log(`[Claude cache] read=${data.usage.cache_read_input_tokens || 0} created=${data.usage.cache_creation_input_tokens || 0}`);
+  }
   return data.content
     .filter(block => block.type === 'text')
     .map(block => block.text)
