@@ -69,9 +69,43 @@ export function buildForm(fields, onSubmit, initialValues = {}) {
   return form;
 }
 
+/**
+ * Build iOS/mobile-friendly input attributes based on field type & name.
+ * These are no-ops on desktop but prevent iPhone Chrome quirks:
+ *  - inputmode surfaces the right keyboard (numeric/email/tel/url)
+ *  - autocapitalize/autocorrect avoid capitalizing emails/urls mid-stream
+ */
+function getMobileInputAttrs(field) {
+  const attrs = {};
+  const type = field.type || 'text';
+  if (type === 'email') {
+    attrs.inputmode = 'email';
+    attrs.autocapitalize = 'off';
+    attrs.autocorrect = 'off';
+    attrs.spellcheck = 'false';
+  } else if (type === 'tel') {
+    attrs.inputmode = 'tel';
+  } else if (type === 'url') {
+    attrs.inputmode = 'url';
+    attrs.autocapitalize = 'off';
+    attrs.autocorrect = 'off';
+    attrs.spellcheck = 'false';
+  } else if (type === 'number') {
+    attrs.inputmode = 'decimal';
+  } else if (type === 'text' || !type) {
+    // Proper-name-ish fields: capitalize each word
+    if (field.name && /name|company|title|contact/i.test(field.name)) {
+      attrs.autocapitalize = 'words';
+    }
+  }
+  if (field.inputmode) attrs.inputmode = field.inputmode;
+  return attrs;
+}
+
 function createFormGroup(field, initialValue) {
   const group = el('div', { class: 'form-group' });
   const value = initialValue ?? field.default ?? '';
+  const mobileAttrs = getMobileInputAttrs(field);
 
   if (field.label) {
     group.appendChild(
@@ -151,6 +185,7 @@ function createFormGroup(field, initialValue) {
         placeholder: field.placeholder || '',
         min: field.min,
         step: field.step || 'any',
+        ...mobileAttrs,
       });
       if (value !== '' && value !== undefined) input.value = String(value);
       break;
@@ -162,6 +197,7 @@ function createFormGroup(field, initialValue) {
         id: `field-${field.name}`,
         name: field.name,
         placeholder: field.placeholder || '',
+        ...mobileAttrs,
       });
       if (value !== '' && value !== undefined) input.value = String(value);
   }

@@ -64,6 +64,9 @@ export async function render(container) {
           placeholder: 'Enter your username',
           required: true,
           autocomplete: 'username',
+          autocapitalize: 'off',
+          autocorrect: 'off',
+          spellcheck: 'false',
         })
       ),
       el('div', { class: 'form-group' },

@@ -1,0 +1,246 @@
+/* ============================================
+   Mobile / iPhone Chrome Optimization
+   Additive overrides. Loaded LAST so it wins by
+   source order (no !important unless unavoidable).
+   Scoped inside @media (max-width: 768px) so the
+   desktop experience stays untouched.
+   ============================================ */
+
+/* ---------- Always-on: safe-area tokens + tap feel ---------- */
+:root {
+  --safe-top:    env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left:   env(safe-area-inset-left, 0px);
+  --safe-right:  env(safe-area-inset-right, 0px);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+* {
+  -webkit-tap-highlight-color: rgba(0, 0, 204, 0.12);
+}
+
+/* ============================================
+   Mobile viewport (<= 768px)
+   ============================================ */
+@media (max-width: 768px) {
+
+  /* ---------- 1. Viewport height fix (dvh, with vh fallback) ----------
+     iOS Chrome's dynamic URL bar makes 100vh *taller* than the visible
+     viewport, so login / modal submit buttons hide below the fold.
+     dvh tracks the currently-visible viewport; vh is the fallback. */
+  .app-shell--login {
+    height: 100vh;                /* fallback */
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow-y: auto;             /* scroll login card if it ever exceeds viewport */
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bottom);
+    padding-left: var(--safe-left);
+    padding-right: var(--safe-right);
+  }
+
+  .app-shell--app {
+    height: 100vh;                /* fallback */
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+
+  /* Make the scrollable view area respect dvh too */
+  .view-container {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ---------- 2. Kill iOS focus-zoom on form inputs ----------
+     iOS zooms into any input with font-size < 16px on focus.
+     Bumping to 16px eliminates that behavior without changing layout. */
+  .form-input,
+  .form-select,
+  .form-textarea,
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
+  /* Keep existing height; just the font grows */
+  .form-input,
+  .form-select {
+    height: 44px;                 /* also bumps tap area from 40 -> 44 */
+  }
+
+  .form-textarea {
+    min-height: 120px;
+  }
+
+  /* ---------- 3. Tap targets >= 44px (Apple HIG) ---------- */
+  .btn {
+    min-height: 44px;
+    font-size: 14px;
+    padding: 10px 18px;
+  }
+
+  .btn--sm {
+    min-height: 40px;
+    font-size: 13px;
+  }
+
+  .btn--lg {
+    min-height: 48px;
+  }
+
+  .sidebar__link {
+    min-height: 44px;
+    padding: var(--space-3);
+    font-size: var(--text-base);
+  }
+
+  .sidebar__logout {
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal__close {
+    width: 44px;
+    height: 44px;
+  }
+
+  .topbar__hamburger {
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ---------- 4. Safe-area insets (notch, home indicator) ---------- */
+  .topbar {
+    padding-top: var(--safe-top);
+    padding-left: calc(var(--space-4) + var(--safe-left));
+    padding-right: calc(var(--space-4) + var(--safe-right));
+    height: calc(var(--header-height) + var(--safe-top));
+  }
+
+  .sidebar {
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bottom);
+  }
+
+  .modal-backdrop {
+    padding-top: calc(var(--space-4) + var(--safe-top));
+    padding-bottom: calc(var(--space-4) + var(--safe-bottom));
+    padding-left: calc(var(--space-4) + var(--safe-left));
+    padding-right: calc(var(--space-4) + var(--safe-right));
+  }
+
+  .modal {
+    /* Override responsive.css:228 max-height:100vh which overflowed. */
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 32px);
+    margin: 0;                    /* padding on backdrop instead */
+  }
+
+  .modal__footer {
+    padding-bottom: calc(var(--space-3) + var(--safe-bottom));
+    position: sticky;
+    bottom: 0;
+    background: var(--color-surface);
+    z-index: 1;
+  }
+
+  .login-card {
+    margin-bottom: calc(var(--space-4) + var(--safe-bottom));
+  }
+
+  /* Toast container should dodge the notch too */
+  .toast-container {
+    top: calc(var(--space-4) + var(--safe-top));
+    left: calc(var(--space-4) + var(--safe-left));
+    right: calc(var(--space-4) + var(--safe-right));
+  }
+
+  /* ---------- 5. Randy voice widget + overlays ---------- */
+  .randy {
+    bottom: calc(12px + var(--safe-bottom));
+    right: calc(12px + var(--safe-right));
+  }
+
+  .randy-window {
+    max-height: 100dvh;
+  }
+
+  /* Override randy.css:701 which uses 100vh !important.
+     Match the selector specificity + add !important to win. */
+  .randy--fullscreen .randy-window {
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bottom);
+  }
+
+  /* ---------- 6. Kanban hover actions visible on touch ----------
+     Components.css:2498 sets opacity:0, only revealing on :hover.
+     Touch devices never fire :hover, so actions are unreachable.
+     !important needed because the inline opacity:0 rule has the
+     same specificity and would tie. */
+  .kanban__card-actions {
+    opacity: 1 !important;
+    position: static;
+    margin-top: var(--space-2);
+    justify-content: flex-end;
+  }
+
+  .kanban__card {
+    padding-right: var(--space-3);
+  }
+
+  /* ---------- 7. Tap feedback (substitute for :hover) ---------- */
+  .btn:active,
+  .sidebar__link:active,
+  .kanban__card:active,
+  .card:active,
+  .stat-card:active,
+  .modal__close:active,
+  .topbar__hamburger:active {
+    transform: scale(0.97);
+    transition: transform 80ms ease;
+  }
+
+  /* ---------- 8. Table tightening inside scroll containers ---------- */
+  .table td,
+  .table th {
+    padding: var(--space-2) var(--space-3);
+    font-size: 13px;
+  }
+
+  /* ---------- 9. Meeting docs sticky header ---------- */
+  .meeting-docs__header {
+    top: var(--safe-top);
+  }
+
+  /* ---------- 10. Form row stacking already handled elsewhere ---------- */
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  /* Prevent horizontal page scroll from rogue wide elements */
+  html, body {
+    overflow-x: hidden;
+  }
+}
+
+/* Small phones (<= 380px) — slightly tighter padding */
+@media (max-width: 380px) {
+  .btn {
+    padding: 10px 14px;
+  }
+
+  .view-container {
+    padding: var(--space-3);
+  }
+}
