@@ -4,7 +4,7 @@
 // Persistent floating widget in the app shell.
 // Separate from the voice-widget.js chat mic feature.
 
-import { SYSTEM_PROMPT, loadSheetData, callClaude, invalidateSheetCache } from '../utils/ai.js';
+import { SYSTEM_PROMPT, loadSheetData, callClaudeStream, warmSheetData } from '../utils/ai.js';
 import { parseActions, executeAction } from '../utils/ai-actions.js';
 import { CONFIG } from '../config.js';
 import { getCurrentUser } from '../auth.js';
@@ -372,6 +372,10 @@ function initRecognition() {
         isRandySpeaking = false;
         currentSpokenText = '';
         currentSpeechOnComplete = null;
+        // With streaming, the LLM fetch may still be in flight when
+        // the user interrupts mid-speech. Abort it so processUserInput
+        // unwinds and the barge-in can start a new turn.
+        if (abortController) { abortController.abort(); abortController = null; }
         console.log('Randy: interrupted by user');
         if (currentState === STATES.SPEAKING) {
           currentState = STATES.ACTIVE_LISTENING;
@@ -504,6 +508,11 @@ function handleTranscript(transcript) {
     // Check for wake word
     const wakeMatch = lower.match(WAKE_PATTERN);
     if (!wakeMatch) return;
+
+    // Kick off sheet load in parallel with the user finishing their
+    // sentence. By the time processUserInput runs, the cache is hot
+    // and loadSheetData() returns instantly.
+    warmSheetData();
 
     // Visual flash + auto-expand window
     flashWidget();
@@ -658,6 +667,17 @@ async function executeNavCommand(nav) {
 }
 
 // ── Process User Input (voice-only) ───────────────────────────────
+// Flow:
+//   1. Start streaming Claude's response.
+//   2. As text arrives, watch for the **Summary** section to close
+//      (a blank-line + --- / ### terminator, or two newlines). When it
+//      closes AND no :::ACTION has appeared yet, fire TTS on the summary
+//      in parallel with the rest of the stream — this is where the
+//      perceived-latency win comes from.
+//   3. When the stream finishes, parse :::ACTION and :::NAV blocks.
+//      If actions exist they need user confirmation; the confirmation
+//      prompt is either appended (when summary already played) or
+//      spoken as one utterance (when it hasn't).
 async function processUserInput(text) {
   // Re-entry guard — prevent parallel API calls
   if (isProcessing) return;
@@ -669,14 +689,60 @@ async function processUserInput(text) {
   isProcessing = true;
 
   try {
-    // Always load fresh data for accuracy (bypass cache)
-    const sheetData = await loadSheetData(true);
+    // Respect the shared 60s sheet cache (warmed on wake-word). Writes
+    // still invalidate via ai-actions.js, so this stays fresh.
+    const sheetData = await loadSheetData();
     abortController = new AbortController();
 
     // Add user message to history only now (after we have data, before API call)
     conversationHistory.push({ role: 'user', content: text });
 
-    const response = await callClaude(conversationHistory, sheetData, text, abortController.signal, RANDY_SYSTEM_PROMPT);
+    let summarySpoken = false;
+    let summaryDone = null;
+    const summaryPromise = new Promise(resolve => { summaryDone = resolve; });
+
+    const trySpeakSummary = (accumulated) => {
+      if (summarySpoken) return;
+      // Don't speak early if an action block is already streaming —
+      // the confirmation text ("I'll do X, should I go ahead?") has to
+      // be appended to the summary as a single utterance.
+      if (accumulated.includes(':::ACTION')) return;
+
+      const marker = '**Summary**';
+      const start = accumulated.indexOf(marker);
+      if (start === -1) return;
+      const body = accumulated.slice(start + marker.length);
+
+      // Summary ends at --- / ### separator or a blank line followed
+      // by more content. Require at least one terminal punctuation mark
+      // so we don't clip mid-sentence.
+      const endMatch = body.match(/\n(?:---|###|\n)/);
+      if (!endMatch) return;
+      const summaryText = body.slice(0, endMatch.index).trim();
+      if (!summaryText || !/[.!?]/.test(summaryText)) return;
+
+      summarySpoken = true;
+      removeTypingIndicator();
+      speakText(summaryText, () => {
+        summaryDone();
+        // If no follow-up (confirmation) gets queued after the stream
+        // completes, fall back to the default SPEAKING → ACTIVE_LISTENING
+        // transition that finishSpeaking normally does when no callback
+        // is supplied.
+        if (currentState === STATES.SPEAKING) {
+          transition(STATES.ACTIVE_LISTENING);
+        }
+      });
+    };
+
+    const response = await callClaudeStream(
+      conversationHistory,
+      sheetData,
+      text,
+      abortController.signal,
+      RANDY_SYSTEM_PROMPT,
+      (_chunk, full) => trySpeakSummary(full),
+    );
     abortController = null;
 
     conversationHistory.push({ role: 'assistant', content: response });
@@ -696,15 +762,28 @@ async function processUserInput(text) {
       pendingActions = [...actions];
       confirmAttempts = 0;
       const summaries = actions.map(a => a.summary).filter(Boolean).join(', and ') || 'make that change';
-      speakText(`${voiceText}. I'll ${summaries}. Should I go ahead?`, () => {
-        transition(STATES.CONFIRMING);
-      });
-    } else {
+      const confirmSuffix = `I'll ${summaries}. Should I go ahead?`;
+      if (summarySpoken) {
+        // Summary is already playing. Queue the confirmation to play
+        // right after it finishes — don't cancel the in-flight audio.
+        (async () => {
+          if (summaryPromise) await summaryPromise;
+          speakText(confirmSuffix, () => {
+            transition(STATES.CONFIRMING);
+          });
+        })();
+      } else {
+        speakText(`${voiceText}. ${confirmSuffix}`, () => {
+          transition(STATES.CONFIRMING);
+        });
+      }
+    } else if (!summarySpoken) {
+      // No Summary marker or too-short response — speak the full clean text.
       speakText(voiceText);
     }
 
     // Render HTML into DOM AFTER speech is triggered
-    const assistantMsg = renderMessage('assistant', cleanText);
+    renderMessage('assistant', cleanText);
 
     // Schedule navigation after a short delay so user hears context first
     if (navs.length > 0) {
@@ -713,6 +792,7 @@ async function processUserInput(text) {
       }, 500);
     }
 
+    // Fire-and-forget — don't block the next turn on a Sheets write.
     saveRandyConversation();
 
   } catch (err) {
