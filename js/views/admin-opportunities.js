@@ -725,7 +725,12 @@ export async function openOppModal(opp, container, onSaved) {
         }
       }
 
-      const toUpdate = workingDescriptions.filter(d => !d._deleted && !d._isNew && d._modified);
+      // Skip updates that would blank out an existing row. This matches
+      // the card-local Save validation so modal-level Save can't bypass it
+      // when the user clears the editor and hits Save Changes directly.
+      const toUpdate = workingDescriptions.filter(d =>
+        !d._deleted && !d._isNew && d._modified && !isDescriptionEmpty(d)
+      );
       for (const d of toUpdate) {
         const values = [
           d.description_id, opportunityId, data.deal_name,
@@ -740,7 +745,7 @@ export async function openOppModal(opp, container, onSaved) {
 
       // Skip brand-new cards where the user never actually typed anything.
       const toInsert = workingDescriptions.filter(d =>
-        !d._deleted && d._isNew && stripHtml(d.description_text || '').trim() !== ''
+        !d._deleted && d._isNew && !isDescriptionEmpty(d)
       );
       for (const d of toInsert) {
         const descriptionId = uuid('dsc');
@@ -842,11 +847,22 @@ function toISODateOnly(value) {
 }
 
 /**
- * Among the working descriptions (ignoring ones flagged for delete),
- * return the HTML text of the one with the newest description_date.
+ * True if a working description has no visible text content.
+ * Treats both missing text and Quill's empty-state markup
+ * (e.g. "<p><br></p>") as empty.
+ */
+function isDescriptionEmpty(desc) {
+  return stripHtml(desc.description_text || '').trim() === '';
+}
+
+/**
+ * Among the working descriptions (ignoring ones flagged for delete or
+ * left empty), return the HTML text of the one with the newest
+ * description_date. Excluding empties matches the save-time filters so
+ * an unfilled new card can never overwrite the opp-row description.
  */
 function pickLatestDescriptionText(workingDescriptions) {
-  const live = workingDescriptions.filter(d => !d._deleted);
+  const live = workingDescriptions.filter(d => !d._deleted && !isDescriptionEmpty(d));
   if (live.length === 0) return '';
   const sorted = [...live].sort((a, b) =>
     new Date(b.description_date || b.created_at || 0) -
