@@ -6,14 +6,14 @@ import { getCurrentUser } from '../auth.js';
 import { readSheetAsObjects, appendRow, updateRow, deleteRow, isConfigured, addDemoRow, updateDemoRow, deleteDemoRow } from '../sheets.js';
 import { CONFIG } from '../config.js';
 import { el, mount, uuid, $, debounce, formatCurrency } from '../utils/dom.js';
-import { nowISO, formatDate } from '../utils/date.js';
+import { nowISO, formatDate, todayISO } from '../utils/date.js';
 import { openModal, closeModal, confirmDialog } from '../components/modal.js';
 import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { statCard } from '../components/card.js';
 import { filterPartners, filterOpportunities } from '../utils/filters.js';
-import { initQuillEditor, ensureHtml } from '../components/quill-editor.js';
+import { initQuillEditor, ensureHtml, stripHtml } from '../components/quill-editor.js';
 import { loadTypeFilter, computeTypeData, buildTypeFilterBar, applyTypeFilter } from '../components/type-filter.js';
 
 export const title = 'Opportunities';
@@ -554,12 +554,34 @@ export async function openOppModal(opp, container, onSaved) {
     if (events) cachedEvents = events;
   }
 
-  // Parse existing notes
-  let notes = [];
-  if (isEdit && opp.notes) {
-    try { notes = JSON.parse(opp.notes); } catch { notes = []; }
+  // Load existing descriptions for this opportunity
+  let workingDescriptions = [];
+  if (isEdit) {
+    try {
+      const allDescriptions = await readSheetAsObjects(CONFIG.SHEET_OPP_DESCRIPTIONS);
+      workingDescriptions = allDescriptions
+        .filter(d => d.opportunity_id === opp.opportunity_id)
+        .map(d => ({ ...d }))
+        .sort((a, b) => new Date(b.description_date || b.created_at) - new Date(a.description_date || a.created_at));
+    } catch (err) {
+      console.warn('Failed to load opportunity descriptions', err);
+    }
+
+    // Legacy migration: if no separate description records exist but the
+    // opportunity row still has a description, surface it as a pending
+    // first-version card. Saving the modal will persist it to the new sheet.
+    if (workingDescriptions.length === 0 && opp.description) {
+      workingDescriptions.push({
+        _tempId: `tmp_${uuid('dsc')}`,
+        _isNew: true,
+        opportunity_id: opp.opportunity_id,
+        deal_name: opp.deal_name,
+        description_date: toISODateOnly(opp.updated_at || opp.created_at) || todayISO(),
+        description_text: opp.description,
+        created_at: opp.created_at || nowISO(),
+      });
+    }
   }
-  if (!Array.isArray(notes)) notes = [];
 
   const partnerOptions = (cachedPartners || []).map(p => ({
     value: p.partner_id,
@@ -631,7 +653,6 @@ export async function openOppModal(opp, container, onSaved) {
       name: 'lead_source', label: 'Lead Source', type: 'select',
       options: leadSourceOptions,
     },
-    { name: 'description', label: 'Description', type: 'textarea', placeholder: 'Brief description of the opportunity...' },
   ];
 
   const initialValues = isEdit ? {
@@ -643,20 +664,28 @@ export async function openOppModal(opp, container, onSaved) {
     stage: opp.stage,
     status: opp.status,
     lead_source: opp.lead_source || 'salesperson',
-    description: opp.description,
   } : { lead_source: 'salesperson' };
 
   const form = buildForm(fields, async (data) => {
     try {
-      const notesJson = JSON.stringify(notes);
       const leadSource = data.lead_source || 'salesperson';
 
+      // Compute the "latest" description text to store on the opp row
+      // (keeps opp.description as a convenient denormalized reference).
+      const latestDescText = pickLatestDescriptionText(workingDescriptions);
+
+      let opportunityId;
+      let createdAt;
+
       if (isEdit) {
+        opportunityId = opp.opportunity_id;
+        createdAt = opp.created_at;
+
         const values = [
-          opp.opportunity_id, data.partner_id, data.deal_name, data.customer_name,
+          opportunityId, data.partner_id, data.deal_name, data.customer_name,
           data.deal_value, data.status || 'Registered', data.stage,
-          data.expected_close, data.description, opp.created_at, nowISO(),
-          notesJson, leadSource,
+          data.expected_close, latestDescText, createdAt, nowISO(),
+          '', leadSource,
         ];
 
         if (isConfigured()) {
@@ -664,13 +693,15 @@ export async function openOppModal(opp, container, onSaved) {
         } else {
           updateDemoRow(CONFIG.SHEET_OPPORTUNITIES, opp._rowIndex, values);
         }
-        showToast('Opportunity updated!', 'success');
       } else {
+        opportunityId = uuid('opp');
+        createdAt = nowISO();
+
         const values = [
-          uuid('opp'), data.partner_id, data.deal_name, data.customer_name,
+          opportunityId, data.partner_id, data.deal_name, data.customer_name,
           data.deal_value, data.status || 'Registered', data.stage,
-          data.expected_close, data.description, nowISO(), nowISO(),
-          notesJson, leadSource,
+          data.expected_close, latestDescText, createdAt, createdAt,
+          '', leadSource,
         ];
 
         if (isConfigured()) {
@@ -678,9 +709,50 @@ export async function openOppModal(opp, container, onSaved) {
         } else {
           addDemoRow(CONFIG.SHEET_OPPORTUNITIES, values);
         }
-        showToast('Opportunity created!', 'success');
       }
 
+      // Persist description changes to SHEET_OPP_DESCRIPTIONS.
+      // Process deletes before inserts so row indices stay valid when
+      // deleting the highest-index rows first.
+      const toDelete = workingDescriptions
+        .filter(d => d._deleted && d.description_id && d._rowIndex)
+        .sort((a, b) => b._rowIndex - a._rowIndex);
+      for (const d of toDelete) {
+        if (isConfigured()) {
+          await deleteRow(CONFIG.SHEET_OPP_DESCRIPTIONS, d._rowIndex);
+        } else {
+          deleteDemoRow(CONFIG.SHEET_OPP_DESCRIPTIONS, d._rowIndex);
+        }
+      }
+
+      const toUpdate = workingDescriptions.filter(d => !d._deleted && !d._isNew && d._modified);
+      for (const d of toUpdate) {
+        const values = [
+          d.description_id, opportunityId, data.deal_name,
+          d.description_date, d.description_text, d.created_at,
+        ];
+        if (isConfigured()) {
+          await updateRow(CONFIG.SHEET_OPP_DESCRIPTIONS, d._rowIndex, values);
+        } else {
+          updateDemoRow(CONFIG.SHEET_OPP_DESCRIPTIONS, d._rowIndex, values);
+        }
+      }
+
+      const toInsert = workingDescriptions.filter(d => !d._deleted && d._isNew);
+      for (const d of toInsert) {
+        const descriptionId = uuid('dsc');
+        const values = [
+          descriptionId, opportunityId, data.deal_name,
+          d.description_date, d.description_text, d.created_at || nowISO(),
+        ];
+        if (isConfigured()) {
+          await appendRow(CONFIG.SHEET_OPP_DESCRIPTIONS, values);
+        } else {
+          addDemoRow(CONFIG.SHEET_OPP_DESCRIPTIONS, values);
+        }
+      }
+
+      showToast(isEdit ? 'Opportunity updated!' : 'Opportunity created!', 'success');
       closeModal();
       if (onSaved) { onSaved(); } else { reRender(); }
     } catch (err) {
@@ -727,14 +799,15 @@ export async function openOppModal(opp, container, onSaved) {
     }
   }
 
-  // Build notes history section
-  const notesSection = buildNotesSection(notes);
+  // Descriptions panel (replaces the old single-description textarea)
+  const descriptionsPanel = buildDescriptionsPanel(workingDescriptions);
 
-  const modalContent = el('div', {}, form, notesSection);
+  const modalContent = el('div', {}, form, descriptionsPanel);
 
   openModal({
     title: isEdit ? 'Edit Opportunity' : 'New Opportunity',
     content: modalContent,
+    className: 'modal--wide',
     footer: [
       el('button', { class: 'btn btn--secondary', onClick: closeModal }, 'Cancel'),
       el('button', {
@@ -743,102 +816,294 @@ export async function openOppModal(opp, container, onSaved) {
       }, isEdit ? 'Save Changes' : 'Create Opportunity'),
     ],
   });
-
-  // Replace description textarea with Quill rich text editor
-  const descTextarea = form.querySelector('[name="description"]');
-  if (descTextarea) {
-    const descEditor = initQuillEditor({
-      placeholder: 'Brief description of the opportunity...',
-      initialHtml: isEdit ? opp.description : '',
-      title: 'Edit Description',
-      onTextChange: () => { descTextarea.value = descEditor.getHtml(); },
-    });
-    descTextarea.style.display = 'none';
-    descTextarea.parentNode.appendChild(descEditor.wrapper);
-    descEditor.mount();
-  }
 }
 
 // ============================================
-// Notes History Section
+// Descriptions Panel (versioned, like Call Transcripts)
 // ============================================
 
-function formatNoteDate(isoString) {
-  try {
-    const d = new Date(isoString);
-    return d.toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric',
-    }) + ' \u00B7 ' + d.toLocaleTimeString('en-US', {
-      hour: 'numeric', minute: '2-digit', hour12: true,
-    });
-  } catch {
-    return isoString;
-  }
+/**
+ * Normalize a timestamp to YYYY-MM-DD (local date portion only).
+ */
+function toISODateOnly(value) {
+  if (!value) return '';
+  const str = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) return str.split('T')[0];
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
-function buildNotesSection(notes) {
-  const section = el('div', { class: 'notes-section' },
-    el('div', { class: 'notes-section__header' },
-      el('h3', { class: 'notes-section__title' }, 'Notes History'),
-      el('p', { class: 'notes-section__subtitle' }, 'Track updates and activity for this opportunity')
-    ),
+/**
+ * Among the working descriptions (ignoring ones flagged for delete),
+ * return the HTML text of the one with the newest description_date.
+ */
+function pickLatestDescriptionText(workingDescriptions) {
+  const live = workingDescriptions.filter(d => !d._deleted);
+  if (live.length === 0) return '';
+  const sorted = [...live].sort((a, b) =>
+    new Date(b.description_date || b.created_at || 0) -
+    new Date(a.description_date || a.created_at || 0)
   );
+  return sorted[0].description_text || '';
+}
 
-  const notesList = el('div', { class: 'notes-list' });
+function getDescriptionKey(desc) {
+  return desc.description_id || desc._tempId;
+}
+
+function buildDescriptionsPanel(workingDescriptions) {
+  const list = el('div', { class: 'descriptions-list' });
+
+  const countBadge = el('span', { class: 'descriptions-panel__count' }, '0');
+
+  function liveDescriptions() {
+    return workingDescriptions.filter(d => !d._deleted);
+  }
 
   function rebuildList() {
-    notesList.innerHTML = '';
+    list.innerHTML = '';
+    const live = liveDescriptions().sort((a, b) =>
+      new Date(b.description_date || b.created_at || 0) -
+      new Date(a.description_date || a.created_at || 0)
+    );
+    countBadge.textContent = String(live.length);
 
-    if (notes.length === 0) {
-      notesList.appendChild(
-        el('div', { class: 'notes-empty' }, 'No notes yet. Add a note to start tracking activity.')
+    if (live.length === 0) {
+      list.appendChild(
+        el('div', { class: 'empty-state', style: { padding: 'var(--space-6) var(--space-2)' } },
+          el('div', { class: 'empty-state__title' }, 'No descriptions yet'),
+          el('div', { class: 'empty-state__description' }, 'Click "Add Description" to capture details for this opportunity.')
+        )
       );
       return;
     }
 
-    // Display newest first
-    [...notes].forEach((note) => {
-      notesList.appendChild(
-        el('div', { class: 'notes-item' },
-          el('div', { class: 'notes-item__date' }, formatNoteDate(note.date)),
-          el('div', { class: 'notes-item__text' }, note.text)
-        )
-      );
+    live.forEach(desc => {
+      list.appendChild(descriptionCard(desc, rebuildList));
     });
   }
-
-  // Add note input
-  const noteInput = el('textarea', {
-    class: 'notes-input',
-    placeholder: 'Add a note...',
-    rows: '2',
-  });
 
   const addBtn = el('button', {
     class: 'btn btn--primary btn--sm',
     onClick: () => {
-      const text = noteInput.value.trim();
-      if (!text) return;
-      notes.unshift({ date: nowISO(), text });
-      noteInput.value = '';
+      const newDesc = {
+        _tempId: `tmp_${uuid('dsc')}`,
+        _isNew: true,
+        _startInEdit: true,
+        description_date: todayISO(),
+        description_text: '',
+        created_at: nowISO(),
+      };
+      workingDescriptions.push(newDesc);
       rebuildList();
+      // Focus the newly-added card's editor on the next frame.
+      requestAnimationFrame(() => {
+        const card = list.querySelector(`[data-desc-key="${getDescriptionKey(newDesc)}"]`);
+        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
     },
-  }, '+ Add Note');
-
-  noteInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      addBtn.click();
-    }
-  });
-
-  section.appendChild(
-    el('div', { class: 'notes-add' }, noteInput, addBtn)
+  },
+    el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
+    'Add Description'
   );
-  section.appendChild(notesList);
+
+  const panel = el('div', { class: 'descriptions-panel' },
+    el('div', { class: 'descriptions-panel__header' },
+      el('div', { class: 'descriptions-panel__title-group' },
+        el('h3', { class: 'descriptions-panel__title' }, 'Descriptions'),
+        countBadge,
+      ),
+      el('div', { class: 'descriptions-panel__actions' }, addBtn),
+    ),
+    list,
+  );
 
   rebuildList();
-  return section;
+  return panel;
+}
+
+/**
+ * A single description card. Supports three UI states:
+ *   - collapsed (date + preview)
+ *   - expanded view (full HTML + Edit/Delete)
+ *   - expanded edit (date input + Quill editor + Save/Cancel)
+ *
+ * Changes to the underlying `desc` object (workingDescriptions entry)
+ * are applied in-place; persistence happens on the main modal submit.
+ */
+function descriptionCard(desc, onListChanged) {
+  const key = getDescriptionKey(desc);
+  // Persist expand/edit state on the desc object so it survives list rebuilds
+  // that happen after an add/save/delete.
+  if (desc._startInEdit) {
+    desc._uiOpen = true;
+    desc._uiEditing = true;
+    delete desc._startInEdit;
+  }
+  let isOpen = !!desc._uiOpen;
+  let isEditing = !!desc._uiEditing;
+
+  const card = el('div', { class: 'transcript-card', 'data-desc-key': key });
+
+  function syncState() {
+    desc._uiOpen = isOpen;
+    desc._uiEditing = isEditing;
+  }
+
+  function rebuild() {
+    syncState();
+    card.innerHTML = '';
+    card.appendChild(renderHeader());
+    const body = renderBody();
+    if (body) card.appendChild(body);
+  }
+
+  function renderHeader() {
+    const plainText = stripHtml(desc.description_text || '');
+    const preview = plainText
+      ? plainText.slice(0, 120) + (plainText.length > 120 ? '...' : '')
+      : (desc._isNew ? 'New description (unsaved)' : 'Empty');
+    const dateStr = desc.description_date ? formatDate(desc.description_date) : '—';
+
+    const toggleIcon = el('span', {
+      class: 'transcript-card__toggle' + (isOpen ? ' transcript-card__toggle--open' : ''),
+      html: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    });
+
+    return el('div', {
+      class: 'transcript-card__header',
+      onClick: () => {
+        if (isEditing) return; // don't collapse while editing
+        isOpen = !isOpen;
+        rebuild();
+      },
+    },
+      el('span', { class: 'transcript-card__date' }, dateStr),
+      el('span', { class: 'transcript-card__preview' }, preview),
+      toggleIcon
+    );
+  }
+
+  function renderBody() {
+    if (!isOpen) return null;
+    return isEditing ? renderEditBody() : renderViewBody();
+  }
+
+  function renderViewBody() {
+    return el('div', { class: 'transcript-card__body transcript-card__body--open' },
+      el('div', { class: 'transcript-card__text', html: ensureHtml(desc.description_text || '') }),
+      el('div', { class: 'transcript-card__actions' },
+        el('button', {
+          class: 'btn btn--ghost btn--sm',
+          onClick: (e) => {
+            e.stopPropagation();
+            isEditing = true;
+            rebuild();
+          },
+        }, 'Edit'),
+        el('button', {
+          class: 'btn btn--ghost btn--sm',
+          style: { color: 'var(--color-danger)' },
+          onClick: async (e) => {
+            e.stopPropagation();
+            const confirmed = await confirmDialog(
+              'Delete Description',
+              'Are you sure you want to remove this description version? This will take effect when you save the opportunity.'
+            );
+            if (!confirmed) return;
+            desc._deleted = true;
+            onListChanged();
+          },
+        }, 'Delete'),
+      )
+    );
+  }
+
+  function renderEditBody() {
+    const dateInput = el('input', {
+      class: 'form-input',
+      type: 'date',
+      id: `desc-date-${key}`,
+    });
+    dateInput.value = desc.description_date || todayISO();
+
+    const editor = initQuillEditor({
+      placeholder: 'Write the description for this opportunity...',
+      initialHtml: desc.description_text || '',
+      title: 'Edit Description',
+    });
+
+    const saveBtn = el('button', {
+      class: 'btn btn--primary btn--sm',
+      onClick: (e) => {
+        e.stopPropagation();
+        const newDate = dateInput.value || todayISO();
+        const newText = editor.getHtml();
+        if (editor.isEmpty()) {
+          showToast('Please enter description text', 'error');
+          return;
+        }
+
+        // Apply edits in place.
+        const dateChanged = newDate !== desc.description_date;
+        const textChanged = newText !== desc.description_text;
+        desc.description_date = newDate;
+        desc.description_text = newText;
+        if (!desc._isNew && (dateChanged || textChanged)) {
+          desc._modified = true;
+        }
+
+        isEditing = false;
+        isOpen = true;
+        syncState();
+        onListChanged();
+      },
+    }, 'Save');
+
+    const cancelBtn = el('button', {
+      class: 'btn btn--ghost btn--sm',
+      onClick: (e) => {
+        e.stopPropagation();
+        if (desc._isNew && !desc.description_text) {
+          // Discard brand-new, never-saved card entirely.
+          desc._deleted = true;
+          syncState();
+          onListChanged();
+        } else {
+          isEditing = false;
+          rebuild();
+        }
+      },
+    }, 'Cancel');
+
+    const body = el('div', { class: 'transcript-card__body transcript-card__body--open' },
+      el('div', { class: 'form-group', style: { marginBottom: 'var(--space-3)' } },
+        el('label', { class: 'form-label', for: `desc-date-${key}` }, 'Date'),
+        dateInput,
+      ),
+      el('div', { class: 'form-group', style: { marginBottom: 'var(--space-3)' } },
+        el('label', { class: 'form-label' }, 'Description'),
+        editor.wrapper,
+      ),
+      el('div', { class: 'transcript-card__actions' },
+        saveBtn,
+        cancelBtn,
+      )
+    );
+
+    // Mount Quill after the body is in the DOM.
+    requestAnimationFrame(() => editor.mount());
+
+    return body;
+  }
+
+  rebuild();
+  return card;
 }
 
 async function handleDelete(opp) {
