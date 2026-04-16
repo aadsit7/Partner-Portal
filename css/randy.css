@@ -356,6 +356,40 @@
   border-top: 1px solid #ddd;
   margin: 8px 0;
 }
+.randy-msg--assistant .randy-bubble .randy-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+  table-layout: auto;
+  background: #fff;
+  border: 1px solid #e3e3ea;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.randy-msg--assistant .randy-bubble .randy-table th,
+.randy-msg--assistant .randy-bubble .randy-table td {
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid #eceef3;
+  word-break: break-word;
+}
+.randy-msg--assistant .randy-bubble .randy-table thead th {
+  background: #f4f5fa;
+  color: #1a1a2e;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid #d8dae3;
+}
+.randy-msg--assistant .randy-bubble .randy-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.randy-msg--assistant .randy-bubble .randy-table tbody tr:nth-child(even) td {
+  background: #fafbfd;
+}
 
 /* Voice badge */
 .randy-badge-voice {
