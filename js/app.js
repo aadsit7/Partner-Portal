@@ -106,6 +106,15 @@ addRoute('/admin/opportunities', {
   cleanup: adminOpportunities.cleanup,
 });
 
+addRoute('/admin/leadcheck', {
+  title: 'LeadCheck',
+  render: async (container) => {
+    setupAppShell();
+    await partnerLeadCheck.render(container);
+  },
+  cleanup: partnerLeadCheck.cleanup,
+});
+
 addRoute('/admin/events', {
   title: 'Events',
   render: async (container) => {

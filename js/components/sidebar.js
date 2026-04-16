@@ -18,6 +18,7 @@ const ADMIN_NAV = [
   { path: '/admin/partners', label: 'Partners', icon: 'partners' },
   { path: '/admin/events', label: 'Events / JLG', icon: 'events' },
   { path: '/admin/opportunities', label: 'Opportunities', icon: 'opportunities' },
+  { path: '/admin/leadcheck', label: 'LeadCheck', icon: 'leadcheck' },
   { path: '/admin/setup', label: 'Setup', icon: 'setup' },
 ];
 
