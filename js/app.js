@@ -11,6 +11,7 @@ import * as loginView from './views/login.js';
 import * as partnerDashboard from './views/partner-dashboard.js';
 import * as partnerMarketing from './views/partner-marketing.js';
 import * as partnerResources from './views/partner-resources.js';
+import * as partnerLeadCheck from './views/partner-leadcheck.js';
 import * as adminDashboard from './views/admin-dashboard.js';
 import * as adminPartners from './views/admin-partners.js';
 import * as adminEvents from './views/admin-events.js';
@@ -37,6 +38,15 @@ addRoute('/partner/opportunities', {
     await partnerDashboard.render(container);
   },
   cleanup: partnerDashboard.cleanup,
+});
+
+addRoute('/partner/leadcheck', {
+  title: 'LeadCheck',
+  render: async (container) => {
+    setupAppShell();
+    await partnerLeadCheck.render(container);
+  },
+  cleanup: partnerLeadCheck.cleanup,
 });
 
 addRoute('/partner/demandgen', {
