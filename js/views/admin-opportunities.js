@@ -725,7 +725,12 @@ export async function openOppModal(opp, container, onSaved) {
         }
       }
 
-      const toUpdate = workingDescriptions.filter(d => !d._deleted && !d._isNew && d._modified);
+      // Skip updates that would blank out an existing row. This matches
+      // the card-local Save validation so modal-level Save can't bypass it
+      // when the user clears the editor and hits Save Changes directly.
+      const toUpdate = workingDescriptions.filter(d =>
+        !d._deleted && !d._isNew && d._modified && !isDescriptionEmpty(d)
+      );
       for (const d of toUpdate) {
         const values = [
           d.description_id, opportunityId, data.deal_name,
@@ -738,7 +743,10 @@ export async function openOppModal(opp, container, onSaved) {
         }
       }
 
-      const toInsert = workingDescriptions.filter(d => !d._deleted && d._isNew);
+      // Skip brand-new cards where the user never actually typed anything.
+      const toInsert = workingDescriptions.filter(d =>
+        !d._deleted && d._isNew && !isDescriptionEmpty(d)
+      );
       for (const d of toInsert) {
         const descriptionId = uuid('dsc');
         const values = [
@@ -839,11 +847,22 @@ function toISODateOnly(value) {
 }
 
 /**
- * Among the working descriptions (ignoring ones flagged for delete),
- * return the HTML text of the one with the newest description_date.
+ * True if a working description has no visible text content.
+ * Treats both missing text and Quill's empty-state markup
+ * (e.g. "<p><br></p>") as empty.
+ */
+function isDescriptionEmpty(desc) {
+  return stripHtml(desc.description_text || '').trim() === '';
+}
+
+/**
+ * Among the working descriptions (ignoring ones flagged for delete or
+ * left empty), return the HTML text of the one with the newest
+ * description_date. Excluding empties matches the save-time filters so
+ * an unfilled new card can never overwrite the opp-row description.
  */
 function pickLatestDescriptionText(workingDescriptions) {
-  const live = workingDescriptions.filter(d => !d._deleted);
+  const live = workingDescriptions.filter(d => !d._deleted && !isDescriptionEmpty(d));
   if (live.length === 0) return '';
   const sorted = [...live].sort((a, b) =>
     new Date(b.description_date || b.created_at || 0) -
@@ -1025,6 +1044,16 @@ function descriptionCard(desc, onListChanged) {
   }
 
   function renderEditBody() {
+    // Snapshot the pre-edit values so Cancel can revert. onTextChange below
+    // streams changes straight into `desc` so the main modal Save button
+    // always sees the latest typed content, which means we need a separate
+    // snapshot to roll back to.
+    const snapshot = {
+      description_date: desc.description_date,
+      description_text: desc.description_text,
+      _modified: !!desc._modified,
+    };
+
     const dateInput = el('input', {
       class: 'form-input',
       type: 'date',
@@ -1032,10 +1061,31 @@ function descriptionCard(desc, onListChanged) {
     });
     dateInput.value = desc.description_date || todayISO();
 
+    // Keep desc.description_date in sync so the main modal's "Save Changes"
+    // button can persist the in-progress edit even if the user never clicks
+    // the card-local Save button.
+    dateInput.addEventListener('change', () => {
+      const v = dateInput.value || todayISO();
+      if (v !== desc.description_date) {
+        desc.description_date = v;
+        if (!desc._isNew) desc._modified = true;
+      }
+    });
+
     const editor = initQuillEditor({
       placeholder: 'Write the description for this opportunity...',
       initialHtml: desc.description_text || '',
       title: 'Edit Description',
+      // Mirror Quill content to the working description on every keystroke
+      // so clicking the main modal's Save button (without first clicking the
+      // card-local Save) still persists the text the user typed.
+      onTextChange: (quill) => {
+        const html = quill.root.innerHTML.trim();
+        if (html !== desc.description_text) {
+          desc.description_text = html;
+          if (!desc._isNew) desc._modified = true;
+        }
+      },
     });
 
     const saveBtn = el('button', {
@@ -1069,12 +1119,17 @@ function descriptionCard(desc, onListChanged) {
       class: 'btn btn--ghost btn--sm',
       onClick: (e) => {
         e.stopPropagation();
-        if (desc._isNew && !desc.description_text) {
-          // Discard brand-new, never-saved card entirely.
+        if (desc._isNew && !snapshot.description_text) {
+          // Brand-new card that was never populated → drop it entirely.
           desc._deleted = true;
           syncState();
           onListChanged();
         } else {
+          // Revert to the pre-edit snapshot. onTextChange streamed the
+          // user's edits into `desc`, so we roll those back here.
+          desc.description_date = snapshot.description_date;
+          desc.description_text = snapshot.description_text;
+          desc._modified = snapshot._modified;
           isEditing = false;
           rebuild();
         }
