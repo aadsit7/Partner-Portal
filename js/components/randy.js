@@ -1270,9 +1270,54 @@ function removeInterimBubble() {
 }
 
 // ── Chat Message Rendering ────────────────────────────────────────
+function convertTables(text) {
+  // Convert GFM-style markdown tables (header row + |---|---| separator
+  // + data rows) into <table> HTML. Runs before paragraph/line-break
+  // logic so each table collapses into one logical chunk.
+  const lines = text.split('\n');
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const next = lines[i + 1] || '';
+    const isHeaderLine = /^\s*\|.+\|\s*$/.test(line);
+    const isSeparator = /^\s*\|[\s\-:|]+\|\s*$/.test(next) && /-/.test(next);
+    if (isHeaderLine && isSeparator) {
+      const headers = line.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      i += 2;
+      const rows = [];
+      while (i < lines.length && /^\s*\|.+\|\s*$/.test(lines[i])) {
+        const cells = lines[i].trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+        rows.push(cells);
+        i++;
+      }
+      let html = '<table class="randy-table"><thead><tr>';
+      for (const h of headers) html += `<th>${h}</th>`;
+      html += '</tr></thead><tbody>';
+      for (const row of rows) {
+        html += '<tr>';
+        for (let c = 0; c < headers.length; c++) {
+          html += `<td>${row[c] || ''}</td>`;
+        }
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+      out.push(html);
+      // Eat one trailing blank line so we don't emit a stray <br> after the table.
+      if (i < lines.length && lines[i].trim() === '') i++;
+    } else {
+      out.push(line);
+      i++;
+    }
+  }
+  return out.join('\n');
+}
+
 function renderMarkdown(text) {
-  return text
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const escaped = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const withTables = convertTables(escaped);
+  return withTables
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
@@ -1285,9 +1330,11 @@ function renderMarkdown(text) {
     .replace(/\n{2,}/g, '</p><p>')
     .replace(/\n/g, '<br>')
     .replace(/^/, '<p>').replace(/$/, '</p>')
-    .replace(/<p><(h[234]|ul|li|hr)/g, '<$1')
-    .replace(/<\/(h[234]|ul|li)><\/p>/g, '</$1>')
-    .replace(/<hr><\/p>/g, '<hr>');
+    .replace(/<p><(h[234]|ul|li|hr|table)/g, '<$1')
+    .replace(/<\/(h[234]|ul|li|table)><\/p>/g, '</$1>')
+    .replace(/<hr><\/p>/g, '<hr>')
+    .replace(/<p><br><table/g, '<table')
+    .replace(/<\/table><br>/g, '</table>');
 }
 
 function extractVoiceText(text) {
