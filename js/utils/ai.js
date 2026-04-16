@@ -456,12 +456,13 @@ export async function loadSheetData(forceRefresh = false) {
     return cachedSheetData;
   }
 
-  const [partners, opportunities, events, meetingIndex, transcripts] = await Promise.all([
+  const [partners, opportunities, events, meetingIndex, transcripts, oppDescriptions] = await Promise.all([
     safeRead(CONFIG.SHEET_PARTNERS),
     safeRead(CONFIG.SHEET_OPPORTUNITIES),
     safeRead(CONFIG.SHEET_EVENTS),
     safeRead(CONFIG.SHEET_MEETING_INDEX),
-    safeRead(CONFIG.SHEET_TRANSCRIPTS)
+    safeRead(CONFIG.SHEET_TRANSCRIPTS),
+    safeRead(CONFIG.SHEET_OPP_DESCRIPTIONS)
   ]);
 
   if (partners.length === 0) {
@@ -481,13 +482,28 @@ export async function loadSheetData(forceRefresh = false) {
     preview: (t.transcript_text || '').substring(0, 300) + '...'
   }));
 
+  // Opportunity_Descriptions stores the full history of description
+  // entries per opportunity. The Opportunities row only carries the
+  // latest in opp.description — the rest of the history lives here.
+  // Randy is expected to analyze ALL of these when asked about an opp.
+  const oppDescriptionIndex = oppDescriptions.map(d => ({
+    description_id: d.description_id,
+    opportunity_id: d.opportunity_id,
+    deal_name: d.deal_name,
+    description_date: d.description_date,
+    created_at: d.created_at,
+    preview: stripHtml(d.description_text || '').substring(0, 200) + '...'
+  }));
+
   cachedSheetData = {
     partners: sanitizedPartners,
     opportunities: opportunities,
     events: events,
     meetingIndex: meetingIndex,
     transcriptIndex: transcriptIndex,
-    fullTranscripts: transcripts
+    fullTranscripts: transcripts,
+    oppDescriptionIndex: oppDescriptionIndex,
+    fullOppDescriptions: oppDescriptions
   };
   cacheTimestamp = now;
   return cachedSheetData;
@@ -533,7 +549,10 @@ MEETING_INDEX (${data.meetingIndex.length} records):
 ${JSON.stringify(data.meetingIndex, null, 2)}
 
 TRANSCRIPT PREVIEWS (${data.transcriptIndex.length} transcripts available — full text is added only when a question asks for it):
-${JSON.stringify(data.transcriptIndex, null, 2)}`;
+${JSON.stringify(data.transcriptIndex, null, 2)}
+
+OPPORTUNITY DESCRIPTION INDEX (${(data.oppDescriptionIndex || []).length} description notes across all opportunities — full text for a specific opportunity is added when that opportunity is mentioned):
+${JSON.stringify(data.oppDescriptionIndex || [], null, 2)}`;
 }
 
 function findMentionedPartner(partners, userMessage) {
@@ -545,16 +564,66 @@ function findMentionedPartner(partners, userMessage) {
   }) || null;
 }
 
+function findMentionedOpportunity(opportunities, userMessage) {
+  const msg = userMessage.toLowerCase();
+  return opportunities.find(o => {
+    const deal = (o.deal_name || '').toLowerCase();
+    const cust = (o.customer_name || '').toLowerCase();
+    if (deal && (msg.includes(deal) || msg.includes(deal.replace(/\s+/g, '')))) return true;
+    if (cust && (msg.includes(cust) || msg.includes(cust.replace(/\s+/g, '')))) return true;
+    return false;
+  }) || null;
+}
+
+function buildFullDescriptionsFor(data, opportunityId) {
+  const list = (data.fullOppDescriptions || [])
+    .filter(d => String(d.opportunity_id) === String(opportunityId))
+    .sort((a, b) =>
+      new Date(b.description_date || b.created_at || 0) -
+      new Date(a.description_date || a.created_at || 0)
+    )
+    .map(d => ({
+      description_id: d.description_id,
+      opportunity_id: d.opportunity_id,
+      deal_name: d.deal_name,
+      description_date: d.description_date,
+      created_at: d.created_at,
+      description_text: stripHtml(d.description_text || '').substring(0, 4000)
+    }));
+  return list;
+}
+
 export function buildQueryContext(data, userMessage) {
   const needsTranscripts = /transcript|full detail|full history|exact|verbatim|what did .+ say|tell me everything|deep dive|email|contract|agreement/i.test(userMessage);
-  const needsFullDescriptions = /environment|platform|citrix|intune|sccm|avd|technical|architecture|current state|migration|deal|pipeline|status|update|detail|description|summary|recap|meeting|close|revenue|forecast|note/i.test(userMessage);
-
-  if (!needsTranscripts && !needsFullDescriptions) return '';
-
-  const partner = findMentionedPartner(data.partners, userMessage);
-  if (!partner) return '';
+  const needsFullDescriptions = /environment|platform|citrix|intune|sccm|avd|technical|architecture|current state|migration|deal|pipeline|status|update|detail|description|summary|recap|meeting|close|revenue|forecast|note|opportunity|opp\b/i.test(userMessage);
 
   const sections = [];
+  const mentionedOpp = findMentionedOpportunity(data.opportunities || [], userMessage);
+
+  // If the user named a specific opportunity, always pull ALL of its
+  // description notes so Randy can analyze the full history (per the
+  // opportunity-analysis contract in RANDY_PERSONALITY).
+  if (mentionedOpp) {
+    const opp = {
+      ...mentionedOpp,
+      description: stripHtml(mentionedOpp.description || '').substring(0, 4000)
+    };
+    sections.push(`MENTIONED OPPORTUNITY (${mentionedOpp.deal_name}):\n${JSON.stringify(opp, null, 2)}`);
+
+    const allDescriptions = buildFullDescriptionsFor(data, mentionedOpp.opportunity_id);
+    if (allDescriptions.length > 0) {
+      sections.push(`FULL DESCRIPTION HISTORY for opportunity "${mentionedOpp.deal_name}" (${allDescriptions.length} entries, newest first — analyze ALL of these unless user asks otherwise):\n${JSON.stringify(allDescriptions, null, 2)}`);
+    }
+  }
+
+  if (!needsTranscripts && !needsFullDescriptions) {
+    return sections.length ? `\n\n${sections.join('\n\n')}` : '';
+  }
+
+  const partner = findMentionedPartner(data.partners, userMessage);
+  if (!partner) {
+    return sections.length ? `\n\n${sections.join('\n\n')}` : '';
+  }
 
   if (needsFullDescriptions) {
     const partnerOpps = data.opportunities
@@ -562,6 +631,23 @@ export function buildQueryContext(data, userMessage) {
       .map(o => ({ ...o, description: stripHtml(o.description || '').substring(0, 4000) }));
     if (partnerOpps.length > 0) {
       sections.push(`FULL OPPORTUNITY DETAILS (for ${partner.display_name}):\n${JSON.stringify(partnerOpps, null, 2)}`);
+    }
+
+    // Also surface all description-note history for every opportunity
+    // belonging to this partner — Randy should analyze them all.
+    const partnerOppIds = new Set(partnerOpps.map(o => String(o.opportunity_id)));
+    const partnerDescriptions = (data.fullOppDescriptions || [])
+      .filter(d => partnerOppIds.has(String(d.opportunity_id)))
+      .map(d => ({
+        description_id: d.description_id,
+        opportunity_id: d.opportunity_id,
+        deal_name: d.deal_name,
+        description_date: d.description_date,
+        created_at: d.created_at,
+        description_text: stripHtml(d.description_text || '').substring(0, 4000)
+      }));
+    if (partnerDescriptions.length > 0) {
+      sections.push(`FULL DESCRIPTION HISTORY (for ${partner.display_name}'s opportunities — analyze ALL entries):\n${JSON.stringify(partnerDescriptions, null, 2)}`);
     }
   }
 
