@@ -738,7 +738,10 @@ export async function openOppModal(opp, container, onSaved) {
         }
       }
 
-      const toInsert = workingDescriptions.filter(d => !d._deleted && d._isNew);
+      // Skip brand-new cards where the user never actually typed anything.
+      const toInsert = workingDescriptions.filter(d =>
+        !d._deleted && d._isNew && stripHtml(d.description_text || '').trim() !== ''
+      );
       for (const d of toInsert) {
         const descriptionId = uuid('dsc');
         const values = [
@@ -1025,6 +1028,16 @@ function descriptionCard(desc, onListChanged) {
   }
 
   function renderEditBody() {
+    // Snapshot the pre-edit values so Cancel can revert. onTextChange below
+    // streams changes straight into `desc` so the main modal Save button
+    // always sees the latest typed content, which means we need a separate
+    // snapshot to roll back to.
+    const snapshot = {
+      description_date: desc.description_date,
+      description_text: desc.description_text,
+      _modified: !!desc._modified,
+    };
+
     const dateInput = el('input', {
       class: 'form-input',
       type: 'date',
@@ -1032,10 +1045,31 @@ function descriptionCard(desc, onListChanged) {
     });
     dateInput.value = desc.description_date || todayISO();
 
+    // Keep desc.description_date in sync so the main modal's "Save Changes"
+    // button can persist the in-progress edit even if the user never clicks
+    // the card-local Save button.
+    dateInput.addEventListener('change', () => {
+      const v = dateInput.value || todayISO();
+      if (v !== desc.description_date) {
+        desc.description_date = v;
+        if (!desc._isNew) desc._modified = true;
+      }
+    });
+
     const editor = initQuillEditor({
       placeholder: 'Write the description for this opportunity...',
       initialHtml: desc.description_text || '',
       title: 'Edit Description',
+      // Mirror Quill content to the working description on every keystroke
+      // so clicking the main modal's Save button (without first clicking the
+      // card-local Save) still persists the text the user typed.
+      onTextChange: (quill) => {
+        const html = quill.root.innerHTML.trim();
+        if (html !== desc.description_text) {
+          desc.description_text = html;
+          if (!desc._isNew) desc._modified = true;
+        }
+      },
     });
 
     const saveBtn = el('button', {
@@ -1069,12 +1103,17 @@ function descriptionCard(desc, onListChanged) {
       class: 'btn btn--ghost btn--sm',
       onClick: (e) => {
         e.stopPropagation();
-        if (desc._isNew && !desc.description_text) {
-          // Discard brand-new, never-saved card entirely.
+        if (desc._isNew && !snapshot.description_text) {
+          // Brand-new card that was never populated → drop it entirely.
           desc._deleted = true;
           syncState();
           onListChanged();
         } else {
+          // Revert to the pre-edit snapshot. onTextChange streamed the
+          // user's edits into `desc`, so we roll those back here.
+          desc.description_date = snapshot.description_date;
+          desc.description_text = snapshot.description_text;
+          desc._modified = snapshot._modified;
           isEditing = false;
           rebuild();
         }
