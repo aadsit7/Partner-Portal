@@ -720,6 +720,9 @@ function buildDetailsDocumentsSection(files) {
 }
 
 export async function openOppDetailsModal(opp) {
+  // Partners/events are needed to render the in-memory fields (partner name,
+  // lead source label) and are typically already cached by the list view.
+  // Only block on them when they're missing.
   if (!cachedPartners || !cachedEvents) {
     const [partners, events] = await Promise.all([
       cachedPartners ? Promise.resolve(null) : readSheetAsObjects(CONFIG.SHEET_PARTNERS),
@@ -728,27 +731,6 @@ export async function openOppDetailsModal(opp) {
     if (partners) cachedPartners = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
     if (events) cachedEvents = events;
   }
-
-  const [descResult, docsResult] = await Promise.allSettled([
-    readSheetAsObjects(CONFIG.SHEET_OPP_DESCRIPTIONS),
-    listOpportunityDocuments(opp.opportunity_id),
-  ]);
-
-  let descriptions = [];
-  if (descResult.status === 'fulfilled') {
-    descriptions = descResult.value
-      .filter(d => d.opportunity_id === opp.opportunity_id)
-      .sort((a, b) => new Date(b.description_date || b.created_at) - new Date(a.description_date || a.created_at));
-  }
-  // Legacy: fall back to the opp row description if no separate records exist.
-  if (descriptions.length === 0 && opp.description) {
-    descriptions = [{
-      description_date: toISODateOnly(opp.updated_at || opp.created_at) || todayISO(),
-      description_text: opp.description,
-    }];
-  }
-
-  const files = docsResult.status === 'fulfilled' ? docsResult.value : [];
 
   const editBtn = el('button', {
     class: 'btn btn--primary btn--sm details-modal__edit-btn',
@@ -770,16 +752,23 @@ export async function openOppDetailsModal(opp) {
     detailRow('Lead Source', getLeadSourceDisplay(opp)),
   );
 
+  const descriptionsSlot = el('div', { class: 'details-modal__descriptions-slot' },
+    buildDetailsLoadingPlaceholder(),
+  );
+  const documentsSlot = el('div', { class: 'details-modal__documents-slot' },
+    buildDetailsLoadingPlaceholder(),
+  );
+
   const content = el('div', { class: 'details-modal' },
     el('div', { class: 'details-modal__top-actions' }, editBtn),
     grid,
     el('div', { class: 'details-modal__section' },
       el('h3', { class: 'details-modal__section-title' }, 'Descriptions'),
-      buildDetailsDescriptionsSection(descriptions),
+      descriptionsSlot,
     ),
     el('div', { class: 'details-modal__section' },
       el('h3', { class: 'details-modal__section-title' }, 'Documents'),
-      buildDetailsDocumentsSection(files),
+      documentsSlot,
     ),
   );
 
@@ -789,6 +778,38 @@ export async function openOppDetailsModal(opp) {
     className: 'modal--wide',
     footer: el('button', { class: 'btn btn--secondary', onClick: closeModal }, 'Close'),
   });
+
+  // Stream descriptions and documents in parallel after the modal is visible.
+  // replaceChildren on a detached node (modal already closed) is a no-op.
+  Promise.allSettled([
+    readSheetAsObjects(CONFIG.SHEET_OPP_DESCRIPTIONS),
+    listOpportunityDocuments(opp.opportunity_id),
+  ]).then(([descResult, docsResult]) => {
+    let descriptions = [];
+    if (descResult.status === 'fulfilled') {
+      descriptions = descResult.value
+        .filter(d => d.opportunity_id === opp.opportunity_id)
+        .sort((a, b) => new Date(b.description_date || b.created_at) - new Date(a.description_date || a.created_at));
+    }
+    // Legacy: fall back to the opp row description if no separate records exist.
+    if (descriptions.length === 0 && opp.description) {
+      descriptions = [{
+        description_date: toISODateOnly(opp.updated_at || opp.created_at) || todayISO(),
+        description_text: opp.description,
+      }];
+    }
+    descriptionsSlot.replaceChildren(buildDetailsDescriptionsSection(descriptions));
+
+    const files = docsResult.status === 'fulfilled' ? docsResult.value : [];
+    documentsSlot.replaceChildren(buildDetailsDocumentsSection(files));
+  });
+}
+
+function buildDetailsLoadingPlaceholder() {
+  return el('div', { class: 'details-modal__loading' },
+    el('div', { class: 'spinner details-modal__loading-spinner' }),
+    el('span', { class: 'details-modal__loading-text' }, 'Loading...'),
+  );
 }
 
 // ============================================
