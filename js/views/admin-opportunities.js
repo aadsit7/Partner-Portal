@@ -866,7 +866,7 @@ export async function openOppDetailsModal(opp) {
   }
 
   const editBtn = el('button', {
-    class: 'btn btn--primary btn--sm details-modal__edit-btn',
+    class: 'details-modal__edit-btn',
     onClick: () => {
       closeModal();
       // Wait for close animation before opening edit modal
@@ -899,7 +899,6 @@ export async function openOppDetailsModal(opp) {
   );
 
   const content = el('div', { class: 'details-modal' },
-    el('div', { class: 'details-modal__top-actions' }, editBtn),
     grid,
     el('div', { class: 'details-modal__section' },
       el('div', { class: 'details-modal__section-header' },
@@ -909,18 +908,23 @@ export async function openOppDetailsModal(opp) {
       descriptionsToolbarSlot,
       descriptionsSlot,
     ),
-    el('div', { class: 'details-modal__section' },
+    el('div', { class: 'details-modal__section details-modal__section--documents' },
       el('h3', { class: 'details-modal__section-title' }, 'Documents'),
       documentsSlot,
     ),
   );
 
-  openModal({
+  const modalResult = openModal({
     title: opp.deal_name || 'Opportunity Details',
     content,
-    className: 'modal--wide',
-    footer: el('button', { class: 'btn btn--secondary', onClick: closeModal }, 'Close'),
+    className: 'modal--wide modal--details',
+    footer: el('button', { class: 'details-modal__close-btn', onClick: closeModal }, 'Close'),
   });
+
+  // Inject the edit button into the modal header, before the close X
+  const headerEl = modalResult.element.querySelector('.modal__header');
+  const closeX = headerEl.querySelector('.modal__close');
+  headerEl.insertBefore(editBtn, closeX);
 
   // Stream descriptions and documents in parallel after the modal is visible.
   // replaceChildren on a detached node (modal already closed) is a no-op.
