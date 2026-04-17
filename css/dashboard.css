@@ -1,0 +1,330 @@
+/* ============================================
+   Dashboard Page — Visual Design Overrides
+   Scoped to admin dashboard only.
+   Does NOT affect Opportunities, Partners,
+   Accounts, Events, or Setup pages.
+   ============================================ */
+
+/* -----------------------------------------------
+   Global base refinements (dashboard context)
+   ----------------------------------------------- */
+.dashboard-top,
+#dashboard-activity-view,
+#dashboard-partners-view {
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI',
+    'Plus Jakarta Sans', sans-serif;
+  color: #374151;
+}
+
+/* -----------------------------------------------
+   Summary Stat Cards
+   Scoped to .dashboard-top__stats so the partner
+   dashboard's stat cards are not affected.
+   ----------------------------------------------- */
+.dashboard-top__stats .stat-card {
+  background: #ffffff;
+  border: none;
+  border-left: 3px solid #e5e7eb; /* fallback; JS sets accent color as borderLeft */
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.dashboard-top__stats .stat-card__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.dashboard-top__stats .stat-card__value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+  letter-spacing: -0.02em;
+}
+
+.dashboard-top__stats .stat-card--clickable:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+  background: #ffffff;
+}
+
+.dashboard-top__stats .stat-card--active {
+  background: rgba(0, 0, 204, 0.04);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+.dashboard-top__stats .stat-card--active .stat-card__value {
+  color: #0000cc;
+}
+
+/* -----------------------------------------------
+   Opportunity Source by Partner Chart
+   ----------------------------------------------- */
+.dashboard-top__chart .demandgen-chart {
+  background: #ffffff;
+  border: none;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition: box-shadow 0.2s;
+}
+
+.dashboard-top__chart .demandgen-chart__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.dashboard-top__chart .demandgen-chart__subtitle {
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+/* -----------------------------------------------
+   Dashboard Top Zone — spacing
+   ----------------------------------------------- */
+.dashboard-top {
+  gap: 20px;
+  margin-bottom: 32px;
+}
+
+/* -----------------------------------------------
+   Activity Hub / Partners Tab Buttons
+   (view-toggle without type-filter-bar class)
+   ----------------------------------------------- */
+.view-toggle:not(.type-filter-bar) {
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.view-toggle:not(.type-filter-bar) .btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  height: auto;
+  color: #6b7280;
+  background: transparent;
+  border: none;
+}
+
+.view-toggle:not(.type-filter-bar) .btn--primary {
+  background: #111827;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.view-toggle:not(.type-filter-bar) .btn--secondary {
+  background: transparent;
+  color: #6b7280;
+  border: none;
+  box-shadow: none;
+}
+
+/* -----------------------------------------------
+   Type Filter Bar Tabs
+   (All Types, MSP/SI, Technology, OEM, MENA)
+   ----------------------------------------------- */
+.view-toggle.type-filter-bar {
+  background: transparent;
+  border: none;
+  padding: 0;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.view-toggle.type-filter-bar .btn {
+  background: #f9fafb;
+  color: #6b7280;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 6px 14px;
+  height: auto;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.view-toggle.type-filter-bar .btn--primary {
+  background: #111827;
+  color: #ffffff;
+  border-color: #111827;
+  box-shadow: none;
+}
+
+.view-toggle.type-filter-bar .btn .type-filter-pipeline {
+  font-size: 11px;
+  color: #9ca3af;
+  opacity: 1;
+}
+
+.view-toggle.type-filter-bar .btn--primary .type-filter-pipeline {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+/* -----------------------------------------------
+   Section Headers (Partner Activity, Upcoming
+   Joint Events) — scoped to activity view
+   ----------------------------------------------- */
+#dashboard-activity-view .section-header__title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 8px;
+}
+
+#dashboard-activity-view .section-header__subtitle {
+  font-size: 14px;
+  color: #9ca3af;
+  margin-bottom: 20px;
+}
+
+/* Spacing between the two major sections */
+#dashboard-activity-view .section-header + .activity-grid,
+#dashboard-activity-view .section-header + .empty-state {
+  margin-top: 0;
+}
+
+/* -----------------------------------------------
+   Partner Activity Cards
+   ----------------------------------------------- */
+.activity-grid {
+  gap: 16px;
+  align-items: stretch; /* equal height cards */
+}
+
+.activity-card {
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition: box-shadow 0.2s, transform 0.2s;
+  display: flex;
+  flex-direction: column;
+}
+
+.activity-card:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+  border-color: transparent;
+}
+
+/* Stats row — spacing and dividers */
+.activity-card__metrics {
+  gap: 0;
+  padding: 12px 0;
+  border-top: 1px solid #f3f4f6;
+  border-bottom: 1px solid #f3f4f6;
+  margin-bottom: 12px;
+}
+
+.activity-card__metric {
+  position: relative;
+  padding: 0 16px;
+}
+
+.activity-card__metric + .activity-card__metric::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  height: 60%;
+  width: 1px;
+  background: #e5e7eb;
+}
+
+.activity-card__metric:first-child {
+  padding-left: 0;
+}
+
+.activity-card__metric:last-child {
+  padding-right: 0;
+}
+
+/* Event chips — tighter text */
+.activity-card__event-chip {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.activity-card__event-name {
+  font-size: 12px;
+}
+
+.activity-card__event-date {
+  font-size: 11px;
+}
+
+/* -----------------------------------------------
+   Upcoming Joint Events (Timeline) Cards
+   ----------------------------------------------- */
+.timeline-card {
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border-left: 3px solid #e5e7eb;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.timeline-card:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+  border-color: transparent;
+  border-left-color: transparent;
+}
+
+/* Date box */
+.timeline-card__date-col {
+  background: #f3f4f6;
+  border-radius: 10px;
+}
+
+.timeline-card__month {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Event type badges (Roundtable, Conference, etc.) */
+.timeline-card .badge--xs {
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+
+/* Progress bar */
+.timeline-card__checklist-bar {
+  height: 4px;
+  background: #e5e7eb;
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.timeline-card__checklist-fill {
+  border-radius: 99px;
+}
+
+/* -----------------------------------------------
+   Partners View — Type Distribution Cards
+   ----------------------------------------------- */
+.type-card {
+  border-radius: 10px;
+  border-width: 1px;
+  border-style: solid;
+  border-color: #e5e7eb;
+}
+
+.type-card--active {
+  border-color: #0000cc;
+  box-shadow: 0 0 0 1px #0000cc;
+}
+
+.type-card__pipeline {
+  font-size: 11px;
+  color: #9ca3af;
+}

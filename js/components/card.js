@@ -118,7 +118,7 @@ export function statCard(label, value, options) {
 
   const style = {};
   if (accentColor) {
-    style.borderTop = `3px solid ${accentColor}`;
+    style.borderLeft = `3px solid ${accentColor}`;
   }
 
   return el('div', {
