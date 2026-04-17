@@ -429,56 +429,42 @@ function downloadTranscriptPDF(transcript) {
   showToast('PDF downloaded', 'success');
 }
 
-function downloadAllTranscriptsPDF(partner, transcripts) {
-  if (!window.jspdf) {
-    showToast('PDF library loading, try again in a moment', 'error');
-    return;
-  }
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
+function copyAllTranscripts(partner, transcripts) {
+  const divider = '\n\n' + '='.repeat(60) + '\n\n';
+  const text = transcripts.map(t => {
+    const date = formatDate(t.conversation_date) || formatDate(t.created_at) || 'Undated';
+    const body = stripHtml(t.transcript_text || '').trim();
+    return `${date}\n${'-'.repeat(60)}\n\n${body}`;
+  }).join(divider);
 
-  // Title page
-  doc.setFontSize(22);
-  doc.text(partner.display_name, 20, 30);
-  doc.setFontSize(12);
-  doc.setTextColor(100);
-  doc.text('Call Transcripts', 20, 40);
-  doc.text(`${transcripts.length} transcript(s)`, 20, 48);
-  doc.setDrawColor(200);
-  doc.line(20, 54, 190, 54);
-
-  let y = 64;
-
-  transcripts.forEach((t, i) => {
-    if (y > 250 || i > 0) {
-      doc.addPage();
-      y = 20;
-    }
-
-    doc.setFontSize(13);
-    doc.setTextColor(0);
-    doc.text(`${formatDate(t.conversation_date)}`, 20, y);
-    y += 8;
-
-    doc.setDrawColor(220);
-    doc.line(20, y, 190, y);
-    y += 6;
-
-    doc.setFontSize(10);
-    doc.setTextColor(40);
-    const lines = doc.splitTextToSize(stripHtml(t.transcript_text || ''), 170);
-    lines.forEach(line => {
-      if (y > 280) { doc.addPage(); y = 20; }
-      doc.text(line, 20, y);
-      y += 5;
+  const fallback = () => {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.top = '50%';
+    textarea.style.left = '50%';
+    textarea.style.transform = 'translate(-50%, -50%)';
+    textarea.style.width = '80vw';
+    textarea.style.height = '60vh';
+    textarea.style.zIndex = '99999';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    showToast('Press Ctrl+C to copy, then click away', 'info');
+    textarea.addEventListener('blur', () => {
+      if (textarea.parentNode) textarea.parentNode.removeChild(textarea);
     });
+  };
 
-    y += 10;
-  });
-
-  const fileName = `${partner.display_name.replace(/\s+/g, '_')}_All_Transcripts.pdf`;
-  doc.save(fileName);
-  showToast('All transcripts exported as PDF', 'success');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(
+      () => showToast('Transcripts copied to clipboard', 'success'),
+      () => fallback()
+    );
+  } else {
+    fallback();
+  }
 }
 
 // ============================================
@@ -499,8 +485,8 @@ function buildTranscriptsPanel(partner, transcripts) {
     transcripts.length > 0
       ? el('button', {
           class: 'btn btn--secondary btn--sm',
-          onClick: () => downloadAllTranscriptsPDF(partner, transcripts),
-        }, 'Export PDF')
+          onClick: () => copyAllTranscripts(partner, transcripts),
+        }, 'Copy All')
       : null,
     el('button', {
       class: 'btn btn--primary btn--sm',
