@@ -8,7 +8,7 @@ import { SYSTEM_PROMPT, loadSheetData, callClaudeStream, warmSheetData } from '.
 import { parseActions, executeAction } from '../utils/ai-actions.js';
 import { CONFIG } from '../config.js';
 import { getCurrentUser } from '../auth.js';
-import { appendRow, updateRow, readSheetAsObjects } from '../sheets.js';
+import { appendRow, updateRow, readSheetAsObjects, loadCustomPrompts } from '../sheets.js';
 import { isVoiceModeActive } from './voice-widget.js';
 import { openOppModal } from '../views/admin-opportunities.js';
 import { speakWithElevenLabs } from './tts.js';
@@ -231,6 +231,8 @@ let dragMoveHandler = null;
 let dragUpHandler = null;
 let escapeHandler = null;
 let isMuted = false;
+let loadedPresets = [];
+let activePresetId = null;
 
 // Listening recovery
 let restartCount = 0;
@@ -807,12 +809,17 @@ async function processUserInput(text) {
       });
     };
 
+    const activePreset = loadedPresets.find(p => p.prompt_id === activePresetId);
+    const effectiveSystemPrompt = activePreset
+      ? `${activePreset.instructions}\n\n---\n\n${RANDY_SYSTEM_PROMPT}`
+      : RANDY_SYSTEM_PROMPT;
+
     const response = await callClaudeStream(
       conversationHistory,
       sheetData,
       text,
       abortController.signal,
-      RANDY_SYSTEM_PROMPT,
+      effectiveSystemPrompt,
       (_chunk, full) => trySpeakSummary(full),
     );
     abortController = null;
@@ -1503,6 +1510,11 @@ function setWindowState(state) {
   windowState = state;
   updateWindowUI();
 
+  // Lazy-load presets the first time the window opens
+  if (state === 'open' && loadedPresets.length === 0) {
+    loadCustomPrompts().then(p => { loadedPresets = p; renderPresets(); }).catch(() => {});
+  }
+
   // Save to localStorage
   try {
     const win = document.getElementById('randy-window');
@@ -1549,6 +1561,24 @@ function updateWidgetUI() {
   updateVoiceButton();
 }
 
+// ── Preset Pills ──────────────────────────────────────────────────
+function renderPresets() {
+  const bar = document.getElementById('randy-presets-bar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  loadedPresets.forEach(preset => {
+    const pill = document.createElement('button');
+    pill.className = 'randy-preset-pill' + (preset.prompt_id === activePresetId ? ' randy-preset-pill--active' : '');
+    pill.textContent = `${preset.icon || '🤖'} ${preset.label}`;
+    pill.title = preset.label;
+    pill.addEventListener('click', () => {
+      activePresetId = activePresetId === preset.prompt_id ? null : preset.prompt_id;
+      renderPresets();
+    });
+    bar.appendChild(pill);
+  });
+}
+
 // ── Widget DOM ────────────────────────────────────────────────────
 const MIC_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
 const SPINNER_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2a10 10 0 0 1 10 10"/></svg>`;
@@ -1587,6 +1617,8 @@ function createWidget() {
         </div>
 
         <div class="randy-window__chat" id="randy-chat"></div>
+
+        <div class="randy-presets-bar" id="randy-presets-bar"></div>
 
         <div class="randy-window__bottom">
           <div class="randy-window__status" id="randy-status" role="status" aria-live="polite">Tap to talk</div>
@@ -2057,6 +2089,11 @@ export function initRandy() {
       win.style.height = winData.height;
     }
   } catch { /* ok */ }
+
+  // Reload presets whenever they are saved from the Setup page
+  window.addEventListener('custom-prompts-changed', () => {
+    loadCustomPrompts().then(p => { loadedPresets = p; if (windowState === 'open') renderPresets(); }).catch(() => {});
+  });
 
   mounted = true;
 }

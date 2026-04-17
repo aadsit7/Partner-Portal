@@ -226,6 +226,7 @@ const SHEET_HEADERS = {
   [CONFIG.SHEET_TRANSCRIPTS]: ['transcript_id', 'partner_id', 'partner_name', 'conversation_date', 'transcript_text', 'created_at'],
   [CONFIG.SHEET_OPP_DESCRIPTIONS]: ['description_id', 'opportunity_id', 'deal_name', 'description_date', 'description_text', 'created_at'],
   [CONFIG.SHEET_PARTNER_DOCUMENTS]: ['document_id', 'partner_id', 'partner_name', 'title', 'doc_type', 'html_content', 'status', 'created_at', 'updated_at'],
+  [CONFIG.SHEET_CUSTOM_PROMPTS]: ['prompt_id', 'label', 'icon', 'instructions', 'created_at'],
 };
 
 /**
@@ -250,7 +251,7 @@ export async function initializeSheet() {
 
   // 2. Build batchUpdate requests to add missing tabs
   const requests = [];
-  const tabsToCreate = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS, CONFIG.SHEET_TRANSCRIPTS, CONFIG.SHEET_OPP_DESCRIPTIONS, CONFIG.SHEET_PARTNER_DOCUMENTS];
+  const tabsToCreate = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS, CONFIG.SHEET_TRANSCRIPTS, CONFIG.SHEET_OPP_DESCRIPTIONS, CONFIG.SHEET_PARTNER_DOCUMENTS, CONFIG.SHEET_CUSTOM_PROMPTS];
 
   for (const tabName of tabsToCreate) {
     if (!existingSheets.includes(tabName)) {
@@ -294,7 +295,7 @@ export async function syncHeaders() {
   if (!token) throw new Error('OAuth token required — please log in with Google SSO first.');
 
   const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
-  const tabs = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS, CONFIG.SHEET_TRANSCRIPTS, CONFIG.SHEET_OPP_DESCRIPTIONS, CONFIG.SHEET_PARTNER_DOCUMENTS];
+  const tabs = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS, CONFIG.SHEET_TRANSCRIPTS, CONFIG.SHEET_OPP_DESCRIPTIONS, CONFIG.SHEET_PARTNER_DOCUMENTS, CONFIG.SHEET_CUSTOM_PROMPTS];
 
   for (const tabName of tabs) {
     const headerRow = SHEET_HEADERS[tabName];
@@ -347,6 +348,32 @@ export async function seedSheetData() {
   }
 
   return { success: true };
+}
+
+// ============================================
+// Custom Prompts (AI Assistant Presets)
+// ============================================
+
+export async function loadCustomPrompts() {
+  try {
+    return await readSheetAsObjects(CONFIG.SHEET_CUSTOM_PROMPTS);
+  } catch {
+    return [];
+  }
+}
+
+export async function saveCustomPrompt(promptId, label, icon, instructions, rowIndex) {
+  const now = new Date().toISOString();
+  const id = promptId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `p_${Date.now()}`);
+  const row = [id, label, icon, instructions, now];
+  if (rowIndex) {
+    return updateRow(CONFIG.SHEET_CUSTOM_PROMPTS, rowIndex, row);
+  }
+  return appendRow(CONFIG.SHEET_CUSTOM_PROMPTS, row);
+}
+
+export async function deleteCustomPrompt(rowIndex) {
+  return deleteRow(CONFIG.SHEET_CUSTOM_PROMPTS, rowIndex);
 }
 
 /**

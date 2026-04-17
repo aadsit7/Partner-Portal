@@ -3,7 +3,7 @@
 // ============================================
 
 import { CONFIG, getRuntimeConfig, setRuntimeConfig } from '../config.js';
-import { isConfigured, testConnection, initializeSheet, seedSheetData, syncHeaders } from '../sheets.js';
+import { isConfigured, testConnection, initializeSheet, seedSheetData, syncHeaders, loadCustomPrompts, saveCustomPrompt, deleteCustomPrompt } from '../sheets.js';
 import { el, mount } from '../utils/dom.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { showToast } from '../components/toast.js';
@@ -180,6 +180,22 @@ export async function render(container) {
       el('div', { class: 'setup-actions' }, saveBtn, testBtn)
     ),
 
+    // AI Assistant Presets
+    el('div', { class: 'setup-card' },
+      el('h3', { class: 'setup-card__title' }, 'AI Assistant Presets'),
+      el('p', { class: 'setup-card__description' },
+        'Create up to 5 custom instruction sets for Randy. Activate one from the pill menu above Randy\'s chat input to change how he responds for that conversation.'
+      ),
+      el('div', { id: 'presets-container', style: { display: 'flex', flexDirection: 'column', gap: '12px' } }),
+      el('div', { style: { marginTop: '8px' } },
+        el('button', {
+          class: 'btn btn--secondary',
+          id: 'add-preset-btn',
+          onClick: handleAddPreset,
+        }, '+ Add Preset')
+      )
+    ),
+
     // Sheet Initialization
     el('div', { class: 'setup-card' },
       el('h3', { class: 'setup-card__title' }, 'Sheet Initialization'),
@@ -244,6 +260,9 @@ export async function render(container) {
 
   // Check connection on load
   checkStatus();
+
+  // Load and render existing presets
+  loadCustomPrompts().then(presets => renderPresetCards(presets)).catch(() => {});
 
   // --- Handlers ---
 
@@ -352,6 +371,134 @@ export async function render(container) {
     } catch (err) {
       setStatus('error', `Error: ${err.message}`);
     }
+  }
+
+  // ── AI Assistant Presets ─────────────────────────────────────────
+
+  function buildPresetCard(preset) {
+    const isNew = !preset._rowIndex;
+
+    const iconInput = el('input', {
+      class: 'form-input',
+      type: 'text',
+      placeholder: '🤖',
+      value: preset.icon || '',
+      maxLength: '4',
+      style: { width: '54px', textAlign: 'center', flexShrink: '0', fontSize: '1.25rem', padding: '6px 4px' },
+    });
+
+    const labelInput = el('input', {
+      class: 'form-input',
+      type: 'text',
+      placeholder: 'Preset name (e.g. Deal Analyst)',
+      value: preset.label || '',
+      style: { flex: '1' },
+    });
+
+    const instructionsInput = el('textarea', {
+      class: 'form-input',
+      placeholder: 'Describe how Randy should behave when this preset is active...',
+      rows: '4',
+      style: { resize: 'vertical', fontFamily: 'inherit' },
+    }, preset.instructions || '');
+
+    const savePresetBtn = el('button', {
+      class: 'btn btn--primary',
+      style: { fontSize: '0.875rem', padding: '7px 14px' },
+      onClick: async () => {
+        const label = labelInput.value.trim();
+        const icon = iconInput.value.trim();
+        const instructions = instructionsInput.value.trim();
+        if (!label) { showToast('Preset name is required', 'error'); return; }
+        if (!instructions) { showToast('Instructions are required', 'error'); return; }
+        savePresetBtn.disabled = true;
+        savePresetBtn.textContent = 'Saving...';
+        try {
+          await saveCustomPrompt(preset.prompt_id || null, label, icon, instructions, preset._rowIndex || null);
+          showToast('Preset saved', 'success');
+          preset.prompt_id = preset.prompt_id || label;
+          preset.label = label;
+          preset.icon = icon;
+          preset.instructions = instructions;
+          window.dispatchEvent(new CustomEvent('custom-prompts-changed'));
+          // Reload cards to get the updated _rowIndex for newly-created presets
+          if (isNew) {
+            loadCustomPrompts().then(p => renderPresetCards(p)).catch(() => {});
+          }
+        } catch (err) {
+          showToast(err.message || 'Failed to save preset', 'error');
+        } finally {
+          savePresetBtn.disabled = false;
+          savePresetBtn.textContent = 'Save Preset';
+        }
+      },
+    }, 'Save Preset');
+
+    const deletePresetBtn = el('button', {
+      class: 'btn btn--secondary',
+      style: { fontSize: '0.875rem', padding: '7px 10px', color: '#dc2626', borderColor: '#fca5a5' },
+      onClick: async () => {
+        if (!preset._rowIndex) { card.remove(); refreshAddBtn(); return; }
+        deletePresetBtn.disabled = true;
+        deletePresetBtn.textContent = '...';
+        try {
+          await deleteCustomPrompt(preset._rowIndex);
+          showToast('Preset deleted', 'success');
+          card.remove();
+          refreshAddBtn();
+          window.dispatchEvent(new CustomEvent('custom-prompts-changed'));
+        } catch (err) {
+          showToast(err.message || 'Failed to delete preset', 'error');
+          deletePresetBtn.disabled = false;
+          deletePresetBtn.textContent = '✕';
+        }
+      },
+    }, '✕');
+
+    const card = el('div', {
+      class: 'setup-card',
+      style: { margin: '0', padding: '14px', border: '1px solid #e5e7eb', borderRadius: '8px' },
+    },
+      el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px' } },
+        iconInput,
+        labelInput,
+        deletePresetBtn
+      ),
+      el('div', { class: 'form-group', style: { marginBottom: '10px' } },
+        el('label', { class: 'form-label' }, 'Instructions'),
+        instructionsInput
+      ),
+      el('div', { style: { display: 'flex', justifyContent: 'flex-end' } },
+        savePresetBtn
+      )
+    );
+
+    return card;
+  }
+
+  function renderPresetCards(presets) {
+    const container = document.getElementById('presets-container');
+    if (!container) return;
+    container.innerHTML = '';
+    presets.forEach(p => container.appendChild(buildPresetCard(p)));
+    refreshAddBtn();
+  }
+
+  function refreshAddBtn() {
+    const container = document.getElementById('presets-container');
+    const addBtn = document.getElementById('add-preset-btn');
+    if (!container || !addBtn) return;
+    addBtn.disabled = container.children.length >= 5;
+    addBtn.title = container.children.length >= 5 ? 'Maximum of 5 presets reached' : '';
+  }
+
+  function handleAddPreset() {
+    const container = document.getElementById('presets-container');
+    if (!container || container.children.length >= 5) return;
+    const card = buildPresetCard({});
+    container.appendChild(card);
+    card.querySelector('input')?.focus();
+    refreshAddBtn();
   }
 }
 

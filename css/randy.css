@@ -736,3 +736,44 @@
     border-radius: 0;
   }
 }
+
+/* ── AI Assistant Preset Pills ───────────────────────────────────── */
+.randy-presets-bar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 12px 2px;
+  overflow-x: auto;
+  flex-shrink: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.randy-presets-bar::-webkit-scrollbar { display: none; }
+.randy-presets-bar:empty { display: none; }
+
+.randy-preset-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 99px;
+  border: 1.5px solid #d1d5db;
+  background: #f9fafb;
+  color: #374151;
+  font-size: 0.72rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  line-height: 1.3;
+}
+.randy-preset-pill:hover {
+  border-color: #0000CC;
+  background: #f0f0ff;
+  color: #0000CC;
+}
+.randy-preset-pill--active {
+  border-color: #0000CC;
+  background: #0000CC;
+  color: #fff;
+}
