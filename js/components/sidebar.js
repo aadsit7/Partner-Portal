@@ -15,10 +15,10 @@ const PARTNER_NAV = [
 
 const ADMIN_NAV = [
   { path: '/admin/dashboard', label: 'Dashboard', icon: 'dashboard' },
+  { path: '/admin/opportunities', label: 'Opportunities', icon: 'opportunities' },
+  { path: '/admin/leadcheck', label: 'Accounts', icon: 'leadcheck' },
   { path: '/admin/partners', label: 'Partners', icon: 'partners' },
   { path: '/admin/events', label: 'Events / JLG', icon: 'events' },
-  { path: '/admin/opportunities', label: 'Opportunities', icon: 'opportunities' },
-  { path: '/admin/leadcheck', label: 'LeadCheck', icon: 'leadcheck' },
   { path: '/admin/setup', label: 'Setup', icon: 'setup' },
 ];
 
