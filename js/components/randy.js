@@ -231,6 +231,7 @@ let dragMoveHandler = null;
 let dragUpHandler = null;
 let escapeHandler = null;
 let isMuted = false;
+let isTypeModeActive = false;
 let loadedPresets = [];
 let activePresetId = null;
 
@@ -480,8 +481,6 @@ function initRecognition() {
       const classification = classifyTranscript(accumulatedTranscript);
       if (classification === 'action') {
         // Auto-send after 0.5s of silence
-        const status = document.getElementById('randy-status');
-        if (status) status.textContent = 'Sending...';
         autoSendTimer = setTimeout(() => {
           autoSendTimer = null;
           removeInterimBubble();
@@ -491,11 +490,8 @@ function initRecognition() {
             processUserInput(text);
           }
         }, 500);
-      } else {
-        // Question or unknown — manual send, keep listening
-        const status = document.getElementById('randy-status');
-        if (status) status.textContent = 'Tap when done';
       }
+      // Status bar always shows "Listening..." during ACTIVE_LISTENING (set by updateStatusBar)
       return;
     }
 
@@ -1265,10 +1261,6 @@ function updateInterimBubble(text) {
   }
   bubble.querySelector('.randy-bubble').textContent = text;
   chat.scrollTop = chat.scrollHeight;
-
-  // Also show in status text
-  const status = document.getElementById('randy-status');
-  if (status) status.textContent = text;
 }
 
 function removeInterimBubble() {
@@ -1569,11 +1561,13 @@ function renderPresets() {
   if (!bar) return;
   bar.innerHTML = '';
   loadedPresets.forEach((preset, index) => {
+    const color = PRESET_COLORS[index] || '#6b7280';
     const pill = document.createElement('button');
     pill.className = 'randy-preset-pill' + (preset.prompt_id === activePresetId ? ' randy-preset-pill--active' : '');
     pill.title = preset.label;
+    pill.style.setProperty('--pill-color', color);
     const dot = document.createElement('span');
-    dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:50%;background:${PRESET_COLORS[index] || '#6b7280'};flex-shrink:0;`;
+    dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;`;
     pill.appendChild(dot);
     pill.appendChild(document.createTextNode('\u00a0' + preset.label));
     pill.addEventListener('click', () => {
@@ -1586,8 +1580,9 @@ function renderPresets() {
 
 // ── Widget DOM ────────────────────────────────────────────────────
 const MIC_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
-const SPINNER_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2a10 10 0 0 1 10 10"/></svg>`;
+const PENCIL_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>`;
 const SPEAKER_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>`;
+const MUTED_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`;
 
 function createWidget() {
   const root = document.getElementById('randy-root');
@@ -1625,16 +1620,25 @@ function createWidget() {
 
         <div class="randy-presets-bar" id="randy-presets-bar"></div>
 
+        <div class="randy-status-bar" id="randy-status-bar">
+          <span class="randy-status-dot randy-status-dot--ready" id="randy-status-dot"></span>
+          <span class="randy-status-label randy-status-label--ready" id="randy-status" role="status" aria-live="polite">Ready</span>
+        </div>
+
         <div class="randy-window__bottom">
-          <div class="randy-window__status" id="randy-status" role="status" aria-live="polite">Tap to talk</div>
           <div class="randy-window__voice-row">
-            <button class="randy-voice-btn randy-voice-btn--paused" id="randy-voice-btn" aria-label="Toggle voice">${MIC_SVG}</button>
-            <button class="randy-edit-btn" id="randy-edit-btn" title="Type a message" aria-label="Type a message">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
-            </button>
-            <button class="randy-mute-btn" id="randy-mute-btn" title="Mute voice" aria-label="Mute voice">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
-            </button>
+            <div class="randy-btn-wrap">
+              <button class="randy-ctrl-btn randy-ctrl-btn--voice-active" id="randy-voice-btn" aria-label="Voice mode">${MIC_SVG}</button>
+              <span class="randy-btn-label">Voice</span>
+            </div>
+            <div class="randy-btn-wrap">
+              <button class="randy-ctrl-btn" id="randy-edit-btn" aria-label="Type a message">${PENCIL_SVG}</button>
+              <span class="randy-btn-label">Type</span>
+            </div>
+            <div class="randy-btn-wrap">
+              <button class="randy-ctrl-btn" id="randy-mute-btn" aria-label="Mute voice">${SPEAKER_SVG}</button>
+              <span class="randy-btn-label">Mute</span>
+            </div>
           </div>
           <div class="randy-input-row" id="randy-input-row" hidden>
             <input type="text" class="randy-text-input" id="randy-text-input" placeholder="Type a message..." maxlength="500">
@@ -1706,23 +1710,34 @@ function createWidget() {
   const sendBtn = document.getElementById('randy-send-btn');
 
   editBtn.addEventListener('click', () => {
-    const isVisible = !inputRow.hidden;
-    inputRow.hidden = isVisible;
-    if (!isVisible) textInput.focus();
+    isTypeModeActive = !isTypeModeActive;
+    inputRow.hidden = !isTypeModeActive;
+    if (isTypeModeActive) {
+      textInput.focus();
+      // Deactivate voice listening when switching to type mode
+      if (currentState === STATES.ACTIVE_LISTENING) {
+        if (autoSendTimer) { clearTimeout(autoSendTimer); autoSendTimer = null; }
+        removeInterimBubble();
+        voiceEnabled = false;
+        transition(STATES.PASSIVE, true);
+      }
+    }
+    updateVoiceButton();
   });
 
   // Mute toggle
   const muteBtn = document.getElementById('randy-mute-btn');
   muteBtn.addEventListener('click', () => {
     isMuted = !isMuted;
-    muteBtn.classList.toggle('randy-mute-btn--active', isMuted);
-    muteBtn.title = isMuted ? 'Unmute voice' : 'Mute voice';
+    muteBtn.innerHTML = isMuted ? MUTED_SVG : SPEAKER_SVG;
+    muteBtn.classList.toggle('randy-ctrl-btn--muted', isMuted);
     muteBtn.setAttribute('aria-label', isMuted ? 'Unmute voice' : 'Mute voice');
     // Stop any current speech when muting
     if (isMuted) {
       if (currentElevenLabsHandle) { currentElevenLabsHandle.stop(); currentElevenLabsHandle = null; }
       if (synth.speaking) synth.cancel();
     }
+    updateStatusBar();
     try { localStorage.setItem('pp_randy_muted', isMuted ? '1' : ''); } catch { /* ok */ }
   });
 
@@ -1761,6 +1776,13 @@ function createWidget() {
 
 // ── Single Voice Button Logic ─────────────────────────────────────
 function handleVoiceBtnClick() {
+  // Deactivate type mode when switching to voice
+  if (isTypeModeActive) {
+    isTypeModeActive = false;
+    const inputRow = document.getElementById('randy-input-row');
+    if (inputRow) inputRow.hidden = true;
+  }
+
   switch (currentState) {
     case STATES.OFF:
     case STATES.PASSIVE:
@@ -1813,42 +1835,69 @@ function handleVoiceBtnClick() {
 
 function updateVoiceButton() {
   const btn = document.getElementById('randy-voice-btn');
-  const status = document.getElementById('randy-status');
-  if (!btn || !status) return;
+  const typeBtn = document.getElementById('randy-edit-btn');
+  if (!btn) return;
 
-  // Reset classes
-  btn.className = 'randy-voice-btn';
+  // Voice button: green fill when voice is selected mode (voiceEnabled or actively listening/speaking/processing/confirming)
+  // listening pulse only during ACTIVE_LISTENING
+  btn.className = 'randy-ctrl-btn';
+  const voiceIsSelected = voiceEnabled || (currentState !== STATES.OFF && currentState !== STATES.PASSIVE) || (!isTypeModeActive);
+
+  if (currentState === STATES.ACTIVE_LISTENING) {
+    btn.classList.add('randy-ctrl-btn--voice-listening');
+  } else if (voiceIsSelected && !isTypeModeActive) {
+    btn.classList.add('randy-ctrl-btn--voice-active');
+  }
+
+  // Type button: blue fill when type mode active
+  if (typeBtn) {
+    typeBtn.className = 'randy-ctrl-btn';
+    if (isTypeModeActive) typeBtn.classList.add('randy-ctrl-btn--type-active');
+  }
+
+  updateStatusBar();
+}
+
+function updateStatusBar() {
+  const dot = document.getElementById('randy-status-dot');
+  const label = document.getElementById('randy-status');
+  if (!dot || !label) return;
+
+  dot.className = 'randy-status-dot';
+  label.className = 'randy-status-label';
+
+  if (isMuted) {
+    dot.classList.add('randy-status-dot--muted');
+    label.classList.add('randy-status-label--muted');
+    label.textContent = 'Muted';
+    return;
+  }
 
   switch (currentState) {
-    case STATES.OFF:
-    case STATES.PASSIVE:
-      btn.classList.add('randy-voice-btn--paused');
-      btn.innerHTML = MIC_SVG;
-      status.textContent = 'Tap to talk';
-      break;
     case STATES.ACTIVE_LISTENING:
-      btn.classList.add('randy-voice-btn--listening');
-      btn.innerHTML = MIC_SVG;
-      // Status shows live transcript (updated by updateInterimBubble) or default
-      if (!status.textContent || status.textContent === 'Tap to talk' || status.textContent === 'Thinking...' || status.textContent === 'Randy is speaking...' || status.textContent === 'Listening...') {
-        status.textContent = 'Tap when done';
-      }
+      dot.classList.add('randy-status-dot--listening');
+      label.classList.add('randy-status-label--listening');
+      label.textContent = 'Listening...';
       break;
     case STATES.PROCESSING:
-      btn.classList.add('randy-voice-btn--processing');
-      btn.innerHTML = SPINNER_SVG;
-      status.textContent = 'Thinking...';
+      dot.classList.add('randy-status-dot--thinking');
+      label.classList.add('randy-status-label--thinking');
+      label.textContent = 'Thinking...';
       break;
     case STATES.SPEAKING:
-      btn.classList.add('randy-voice-btn--speaking');
-      btn.innerHTML = SPEAKER_SVG;
-      status.textContent = 'Randy is speaking...';
+      dot.classList.add('randy-status-dot--speaking');
+      label.classList.add('randy-status-label--speaking');
+      label.textContent = 'Speaking...';
       break;
     case STATES.CONFIRMING:
-      btn.classList.add('randy-voice-btn--listening');
-      btn.innerHTML = MIC_SVG;
-      status.textContent = 'Yes or no?';
+      dot.classList.add('randy-status-dot--listening');
+      label.classList.add('randy-status-label--listening');
+      label.textContent = 'Listening...';
       break;
+    default:
+      dot.classList.add('randy-status-dot--ready');
+      label.classList.add('randy-status-label--ready');
+      label.textContent = 'Ready';
   }
 }
 
@@ -2072,10 +2121,11 @@ export function initRandy() {
     isMuted = true;
     const muteBtn = document.getElementById('randy-mute-btn');
     if (muteBtn) {
-      muteBtn.classList.add('randy-mute-btn--active');
-      muteBtn.title = 'Unmute voice';
+      muteBtn.innerHTML = MUTED_SVG;
+      muteBtn.classList.add('randy-ctrl-btn--muted');
       muteBtn.setAttribute('aria-label', 'Unmute voice');
     }
+    updateStatusBar();
   }
 
   // Restore window position and size
