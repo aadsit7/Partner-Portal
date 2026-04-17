@@ -1073,7 +1073,7 @@ export async function openOppModal(opp, container, onSaved) {
   }
 
   // Descriptions panel (replaces the old single-description textarea)
-  const descriptionsPanel = buildDescriptionsPanel(workingDescriptions);
+  const { panel: descriptionsPanel, refresh: refreshDescriptions } = buildDescriptionsPanel(workingDescriptions);
 
   // Documents panel — drag-and-drop uploads to Google Drive via the file API.
   // For new (unsaved) opportunities there's no opportunity_id to attach to yet,
@@ -1084,7 +1084,13 @@ export async function openOppModal(opp, container, onSaved) {
       const input = form.querySelector('[name="customer_name"]');
       return (input && input.value) || (isEdit ? (opp.customer_name || '') : '');
     },
+    getDealName: () => {
+      const input = form.querySelector('[name="deal_name"]');
+      return (input && input.value) || (isEdit ? (opp.deal_name || '') : '');
+    },
     initialFiles: initialDocuments,
+    workingDescriptions,
+    refreshDescriptions,
   });
 
   const modalContent = el('div', {}, form, descriptionsPanel, documentsPanel);
@@ -1220,7 +1226,7 @@ function buildDescriptionsPanel(workingDescriptions) {
   );
 
   rebuildList();
-  return panel;
+  return { panel, refresh: rebuildList };
 }
 
 /**
@@ -1521,7 +1527,16 @@ function fileIconSvg() {
   return '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 1.5H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5.5L9 1.5z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M9 1.5V5.5H13" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/></svg>';
 }
 
-function buildDocumentsPanel({ opportunityId, getCustomerName, initialFiles }) {
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildDocumentsPanel({ opportunityId, getCustomerName, getDealName, initialFiles, workingDescriptions, refreshDescriptions }) {
   const files = [...(initialFiles || [])];
   const list = el('div', { class: 'documents-list' });
   const countBadge = el('span', { class: 'descriptions-panel__count' }, '0');
@@ -1541,6 +1556,10 @@ function buildDocumentsPanel({ opportunityId, getCustomerName, initialFiles }) {
     }
 
     files.forEach(f => list.appendChild(documentRow(f)));
+  }
+
+  function isAnalyzed(file) {
+    return String(file.analyzed || '').toUpperCase() === 'TRUE';
   }
 
   function documentRow(file) {
@@ -1569,12 +1588,81 @@ function buildDocumentsPanel({ opportunityId, getCustomerName, initialFiles }) {
       class: 'document-row__name',
     }, file.file_name || 'Untitled');
 
+    const analyzeEl = isAnalyzed(file)
+      ? el('span', { class: 'document-row__analyzed', title: 'Already analyzed' }, '✓ Analyzed')
+      : buildAnalyzeLink(file);
+
     return el('div', { class: 'document-row' },
       el('span', { class: 'document-row__icon', html: fileIconSvg() }),
       nameLink,
       el('span', { class: 'document-row__date' }, file.date_added ? formatDate(file.date_added) : ''),
+      analyzeEl,
       removeLink,
     );
+  }
+
+  function buildAnalyzeLink(file) {
+    const link = el('a', {
+      href: '#',
+      class: 'document-row__analyze',
+    }, 'Analyze');
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleAnalyze(file, link);
+    });
+    return link;
+  }
+
+  async function handleAnalyze(file, link) {
+    if (link.classList.contains('document-row__analyze--loading')) return;
+    link.classList.add('document-row__analyze--loading');
+    link.textContent = 'Analyzing...';
+
+    try {
+      const data = await fileApiRequest({
+        action: 'analyzeDocument',
+        docId: file.doc_id,
+        driveUrl: file.drive_url,
+      });
+
+      const fileName = data.fileName || file.file_name || 'Document';
+      const dateISO = todayISO();
+      const dateLabel = formatDate(dateISO);
+      const descriptionHtml =
+        `<h4>📄 ${escapeHtml(fileName)} — Analyzed ${escapeHtml(dateLabel)}</h4>` +
+        ensureHtml(data.html || '');
+
+      const descriptionId = uuid('dsc');
+      const createdAt = nowISO();
+      const dealName = (getDealName && getDealName()) || '';
+      const values = [descriptionId, opportunityId, dealName, dateISO, descriptionHtml, createdAt];
+      if (isConfigured()) {
+        await appendRow(CONFIG.SHEET_OPP_DESCRIPTIONS, values);
+      } else {
+        addDemoRow(CONFIG.SHEET_OPP_DESCRIPTIONS, values);
+      }
+
+      if (Array.isArray(workingDescriptions)) {
+        workingDescriptions.push({
+          description_id: descriptionId,
+          opportunity_id: opportunityId,
+          deal_name: dealName,
+          description_date: dateISO,
+          description_text: descriptionHtml,
+          created_at: createdAt,
+        });
+      }
+
+      file.analyzed = 'TRUE';
+      rebuildList();
+      if (typeof refreshDescriptions === 'function') refreshDescriptions();
+      showToast('Document analyzed and added to descriptions', 'success');
+    } catch (err) {
+      link.classList.remove('document-row__analyze--loading');
+      link.textContent = 'Analyze';
+      showToast(err.message || 'Failed to analyze document', 'error');
+    }
   }
 
   // Drop zone
