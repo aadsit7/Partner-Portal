@@ -375,16 +375,20 @@ export async function render(container) {
 
   // ── AI Assistant Presets ─────────────────────────────────────────
 
-  function buildPresetCard(preset) {
+  const PRESET_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#0891b2'];
+
+  function buildPresetCard(preset, index) {
     const isNew = !preset._rowIndex;
 
-    const iconInput = el('input', {
-      class: 'form-input',
-      type: 'text',
-      placeholder: '🤖',
-      value: preset.icon || '',
-      maxLength: '4',
-      style: { width: '54px', textAlign: 'center', flexShrink: '0', fontSize: '1.25rem', padding: '6px 4px' },
+    const colorDot = el('span', {
+      style: {
+        display: 'inline-block',
+        width: '12px',
+        height: '12px',
+        borderRadius: '50%',
+        background: PRESET_COLORS[index] || '#6b7280',
+        flexShrink: '0',
+      },
     });
 
     const labelInput = el('input', {
@@ -407,7 +411,7 @@ export async function render(container) {
       style: { fontSize: '0.875rem', padding: '7px 14px' },
       onClick: async () => {
         const label = labelInput.value.trim();
-        const icon = iconInput.value.trim();
+        const icon = String(index + 1);
         const instructions = instructionsInput.value.trim();
         if (!label) { showToast('Preset name is required', 'error'); return; }
         if (!instructions) { showToast('Instructions are required', 'error'); return; }
@@ -460,7 +464,7 @@ export async function render(container) {
       style: { margin: '0', padding: '14px', border: '1px solid #e5e7eb', borderRadius: '8px' },
     },
       el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px' } },
-        iconInput,
+        colorDot,
         labelInput,
         deletePresetBtn
       ),
@@ -480,7 +484,7 @@ export async function render(container) {
     const container = document.getElementById('presets-container');
     if (!container) return;
     container.innerHTML = '';
-    presets.forEach(p => container.appendChild(buildPresetCard(p)));
+    presets.forEach((p, i) => container.appendChild(buildPresetCard(p, i)));
     refreshAddBtn();
   }
 
@@ -495,7 +499,7 @@ export async function render(container) {
   function handleAddPreset() {
     const container = document.getElementById('presets-container');
     if (!container || container.children.length >= 5) return;
-    const card = buildPresetCard({});
+    const card = buildPresetCard({}, container.children.length);
     container.appendChild(card);
     card.querySelector('input')?.focus();
     refreshAddBtn();

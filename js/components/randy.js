@@ -1562,15 +1562,20 @@ function updateWidgetUI() {
 }
 
 // ── Preset Pills ──────────────────────────────────────────────────
+const PRESET_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#0891b2'];
+
 function renderPresets() {
   const bar = document.getElementById('randy-presets-bar');
   if (!bar) return;
   bar.innerHTML = '';
-  loadedPresets.forEach(preset => {
+  loadedPresets.forEach((preset, index) => {
     const pill = document.createElement('button');
     pill.className = 'randy-preset-pill' + (preset.prompt_id === activePresetId ? ' randy-preset-pill--active' : '');
-    pill.textContent = `${preset.icon || '🤖'} ${preset.label}`;
     pill.title = preset.label;
+    const dot = document.createElement('span');
+    dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:50%;background:${PRESET_COLORS[index] || '#6b7280'};flex-shrink:0;`;
+    pill.appendChild(dot);
+    pill.appendChild(document.createTextNode('\u00a0' + preset.label));
     pill.addEventListener('click', () => {
       activePresetId = activePresetId === preset.prompt_id ? null : preset.prompt_id;
       renderPresets();
