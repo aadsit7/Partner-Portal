@@ -649,7 +649,8 @@ function detailRow(label, value) {
   );
 }
 
-function buildDetailsDescriptionsSection(descriptions) {
+function buildDetailsDescriptionsSection(descriptions, options = {}) {
+  const { selectionMode = false, selected = null, onToggle = null } = options;
   const list = el('div', { class: 'details-modal__descriptions' });
 
   if (!descriptions || descriptions.length === 0) {
@@ -657,7 +658,7 @@ function buildDetailsDescriptionsSection(descriptions) {
     return list;
   }
 
-  descriptions.forEach(desc => {
+  descriptions.forEach((desc, idx) => {
     const isOpenRef = { value: false };
     const dateStr = desc.description_date ? formatDate(desc.description_date) : '—';
     const plainText = stripHtml(desc.description_text || '');
@@ -689,10 +690,142 @@ function buildDetailsDescriptionsSection(descriptions) {
       toggleIcon,
     );
 
-    list.appendChild(el('div', { class: 'transcript-card' }, header, body));
+    const card = el('div', { class: 'transcript-card' }, header, body);
+
+    if (selectionMode) {
+      const checkbox = el('input', {
+        type: 'checkbox',
+        class: 'description-select__checkbox',
+        checked: selected && selected.has(idx),
+        onChange: (e) => { if (onToggle) onToggle(idx, e.target.checked); },
+        onClick: (e) => e.stopPropagation(),
+      });
+      list.appendChild(el('div', { class: 'description-select__row' }, checkbox, card));
+    } else {
+      list.appendChild(card);
+    }
   });
 
   return list;
+}
+
+function buildDescriptionsSelectionToolbar({ count, onCopy, onSelectAll, onCancel }) {
+  return el('div', { class: 'description-select__toolbar' },
+    el('span', { class: 'description-select__count' }, `${count} selected`),
+    el('div', { class: 'description-select__actions' },
+      el('button', {
+        class: 'btn btn--primary btn--sm',
+        type: 'button',
+        disabled: count === 0,
+        onClick: onCopy,
+      }, 'Copy Selected'),
+      el('button', {
+        class: 'description-select__link',
+        type: 'button',
+        onClick: onSelectAll,
+      }, 'Select All'),
+      el('button', {
+        class: 'description-select__link',
+        type: 'button',
+        onClick: onCancel,
+      }, 'Cancel'),
+    ),
+  );
+}
+
+function formatDescriptionsForCopy(entries) {
+  return entries.map(d => {
+    const date = d.description_date ? formatDate(d.description_date) : '—';
+    const body = stripHtml(d.description_text || '').trim();
+    return `--- ${date} ---\n${body}`;
+  }).join('\n\n');
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      // fall through to legacy path
+    }
+  }
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.top = '-1000px';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+function setupDescriptionsSelection({ descriptions, copyBtn, toolbarSlot, listSlot }) {
+  if (!descriptions || descriptions.length === 0) {
+    copyBtn.hidden = true;
+    return;
+  }
+  copyBtn.hidden = false;
+
+  const state = { selectionMode: false, selected: new Set() };
+
+  const render = () => {
+    copyBtn.hidden = state.selectionMode;
+    if (state.selectionMode) {
+      toolbarSlot.replaceChildren(buildDescriptionsSelectionToolbar({
+        count: state.selected.size,
+        onCopy: handleCopy,
+        onSelectAll: () => {
+          for (let i = 0; i < descriptions.length; i++) state.selected.add(i);
+          render();
+        },
+        onCancel: () => {
+          state.selectionMode = false;
+          state.selected.clear();
+          render();
+        },
+      }));
+    } else {
+      toolbarSlot.replaceChildren();
+    }
+    listSlot.replaceChildren(buildDetailsDescriptionsSection(descriptions, {
+      selectionMode: state.selectionMode,
+      selected: state.selected,
+      onToggle: (idx, checked) => {
+        if (checked) state.selected.add(idx);
+        else state.selected.delete(idx);
+        render();
+      },
+    }));
+  };
+
+  const handleCopy = async () => {
+    if (state.selected.size === 0) return;
+    const entries = [...state.selected].sort((a, b) => a - b).map(i => descriptions[i]);
+    const text = formatDescriptionsForCopy(entries);
+    const ok = await copyTextToClipboard(text);
+    if (ok) {
+      const n = entries.length;
+      showToast(`${n} description${n === 1 ? '' : 's'} copied to clipboard`, 'success');
+      state.selectionMode = false;
+      state.selected.clear();
+      render();
+    } else {
+      showToast('Unable to copy to clipboard', 'error');
+    }
+  };
+
+  copyBtn.addEventListener('click', () => {
+    state.selectionMode = true;
+    render();
+  });
 }
 
 function buildDetailsDocumentsSection(files) {
@@ -755,6 +888,12 @@ export async function openOppDetailsModal(opp) {
   const descriptionsSlot = el('div', { class: 'details-modal__descriptions-slot' },
     buildDetailsLoadingPlaceholder(),
   );
+  const descriptionsToolbarSlot = el('div', { class: 'details-modal__descriptions-toolbar-slot' });
+  const descriptionsCopyBtn = el('button', {
+    class: 'btn btn--secondary btn--sm details-modal__copy-btn',
+    type: 'button',
+    hidden: true,
+  }, 'Copy');
   const documentsSlot = el('div', { class: 'details-modal__documents-slot' },
     buildDetailsLoadingPlaceholder(),
   );
@@ -763,7 +902,11 @@ export async function openOppDetailsModal(opp) {
     el('div', { class: 'details-modal__top-actions' }, editBtn),
     grid,
     el('div', { class: 'details-modal__section' },
-      el('h3', { class: 'details-modal__section-title' }, 'Descriptions'),
+      el('div', { class: 'details-modal__section-header' },
+        el('h3', { class: 'details-modal__section-title' }, 'Descriptions'),
+        descriptionsCopyBtn,
+      ),
+      descriptionsToolbarSlot,
       descriptionsSlot,
     ),
     el('div', { class: 'details-modal__section' },
@@ -799,6 +942,12 @@ export async function openOppDetailsModal(opp) {
       }];
     }
     descriptionsSlot.replaceChildren(buildDetailsDescriptionsSection(descriptions));
+    setupDescriptionsSelection({
+      descriptions,
+      copyBtn: descriptionsCopyBtn,
+      toolbarSlot: descriptionsToolbarSlot,
+      listSlot: descriptionsSlot,
+    });
 
     const files = docsResult.status === 'fulfilled' ? docsResult.value : [];
     documentsSlot.replaceChildren(buildDetailsDocumentsSection(files));
