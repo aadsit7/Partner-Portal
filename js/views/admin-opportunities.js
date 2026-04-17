@@ -84,77 +84,141 @@ function getPartnerName(partnerId) {
 }
 
 // ============================================
-// Date Range Slider Component
+// Date Range Inputs (From / To)
 // ============================================
 
-function buildDateRangeSlider(minTs, maxTs, onChange) {
-  const DAY = 86400000;
-  const formatSliderDate = (ts) =>
-    new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+function tsToISODate(ts) {
+  if (ts == null || !isFinite(ts)) return '';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
-  const valuesLabel = el('span', { class: 'date-range-slider__values' },
-    `${formatSliderDate(minTs)} — ${formatSliderDate(maxTs)}`
-  );
-
-  const fill = el('div', { class: 'date-range-slider__fill' });
-
-  const updateFill = (lo, hi) => {
-    const range = maxTs - minTs || 1;
-    const leftPct = ((lo - minTs) / range) * 100;
-    const rightPct = ((maxTs - hi) / range) * 100;
-    fill.style.left = leftPct + '%';
-    fill.style.right = rightPct + '%';
-  };
-
-  const inputMin = el('input', {
-    class: 'date-range-slider__input',
-    type: 'range',
-    min: String(minTs),
-    max: String(maxTs),
-    value: String(minTs),
-    step: String(DAY),
-    style: { zIndex: '3' },
-    onInput: () => {
-      let lo = Number(inputMin.value);
-      const hi = Number(inputMax.value);
-      if (lo > hi) { lo = hi; inputMin.value = String(lo); }
-      updateFill(lo, hi);
-      valuesLabel.textContent = `${formatSliderDate(lo)} — ${formatSliderDate(hi)}`;
-      onChange(lo, hi);
-    },
+function buildDateRangeInputs({ onChange }) {
+  const fromInput = el('input', {
+    class: 'form-input filter-bar__date',
+    type: 'date',
+    'aria-label': 'From close date',
+    onChange: () => emit(),
+  });
+  const toInput = el('input', {
+    class: 'form-input filter-bar__date',
+    type: 'date',
+    'aria-label': 'To close date',
+    onChange: () => emit(),
   });
 
-  const inputMax = el('input', {
-    class: 'date-range-slider__input',
-    type: 'range',
-    min: String(minTs),
-    max: String(maxTs),
-    value: String(maxTs),
-    step: String(DAY),
-    style: { zIndex: '4' },
-    onInput: () => {
-      const lo = Number(inputMin.value);
-      let hi = Number(inputMax.value);
-      if (hi < lo) { hi = lo; inputMax.value = String(hi); }
-      updateFill(lo, hi);
-      valuesLabel.textContent = `${formatSliderDate(lo)} — ${formatSliderDate(hi)}`;
-      onChange(lo, hi);
+  function emit() {
+    const fromStr = fromInput.value;
+    const toStr = toInput.value;
+    const fromTs = fromStr ? new Date(fromStr + 'T00:00:00').getTime() : null;
+    const toTs = toStr ? new Date(toStr + 'T23:59:59').getTime() : null;
+    onChange(fromTs, toTs);
+  }
+
+  const clearLink = el('a', {
+    href: '#',
+    class: 'filter-bar__date-clear',
+    onClick: (e) => {
+      e.preventDefault();
+      fromInput.value = '';
+      toInput.value = '';
+      emit();
     },
+  }, 'Clear dates');
+
+  return el('div', { class: 'filter-bar__date-group' },
+    el('span', { class: 'filter-bar__date-label' }, 'From'),
+    fromInput,
+    el('span', { class: 'filter-bar__date-label' }, 'To'),
+    toInput,
+    clearLink,
+  );
+}
+
+// ============================================
+// Multi-select Stage Filter
+// ============================================
+
+function buildStageMultiSelect({ allStages, selected, onChange }) {
+  const button = el('button', {
+    type: 'button',
+    class: 'multi-select__button form-select',
+    'aria-haspopup': 'true',
+    'aria-expanded': 'false',
   });
 
-  updateFill(minTs, maxTs);
+  const panel = el('div', { class: 'multi-select__panel', role: 'listbox' });
 
-  return el('div', { class: 'date-range-slider' },
-    el('div', { class: 'date-range-slider__header' },
-      el('span', { class: 'date-range-slider__label' }, 'Close Date'),
-      valuesLabel,
-    ),
-    el('div', { class: 'date-range-slider__track' },
-      fill,
-      inputMin,
-      inputMax,
-    ),
+  const allCheckbox = el('input', { type: 'checkbox', class: 'multi-select__checkbox' });
+  const allOption = el('label', { class: 'multi-select__option multi-select__option--all' },
+    allCheckbox,
+    el('span', {}, 'All'),
   );
+  panel.appendChild(allOption);
+
+  const stageCheckboxes = new Map();
+  allStages.forEach(stage => {
+    const cb = el('input', { type: 'checkbox', class: 'multi-select__checkbox', value: stage });
+    cb.checked = selected.has(stage);
+    cb.addEventListener('change', () => {
+      if (cb.checked) selected.add(stage); else selected.delete(stage);
+      syncAllCheckbox();
+      updateLabel();
+      onChange();
+    });
+    stageCheckboxes.set(stage, cb);
+    panel.appendChild(el('label', { class: 'multi-select__option' }, cb, el('span', {}, stage)));
+  });
+
+  allCheckbox.addEventListener('change', () => {
+    if (allCheckbox.checked) {
+      allStages.forEach(s => selected.add(s));
+    } else {
+      selected.clear();
+    }
+    stageCheckboxes.forEach((cb, stage) => { cb.checked = selected.has(stage); });
+    updateLabel();
+    onChange();
+  });
+
+  function syncAllCheckbox() {
+    allCheckbox.checked = selected.size === allStages.length;
+    allCheckbox.indeterminate = selected.size > 0 && selected.size < allStages.length;
+  }
+
+  function updateLabel() {
+    if (selected.size === allStages.length || allStages.length === 0) {
+      button.textContent = 'All Stages';
+    } else {
+      button.textContent = `Stages: ${selected.size} selected`;
+    }
+  }
+
+  const wrapper = el('div', { class: 'multi-select filter-bar__select' }, button, panel);
+
+  function setOpen(open) {
+    wrapper.classList.toggle('multi-select--open', open);
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  button.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setOpen(!wrapper.classList.contains('multi-select--open'));
+  });
+
+  panel.addEventListener('click', (e) => e.stopPropagation());
+
+  document.addEventListener('click', (e) => {
+    if (!wrapper.contains(e.target)) setOpen(false);
+  });
+
+  syncAllCheckbox();
+  updateLabel();
+  return wrapper;
 }
 
 // ============================================
@@ -163,14 +227,24 @@ function buildDateRangeSlider(minTs, maxTs, onChange) {
 
 function renderView(container, opportunities, filterBar) {
   let activeView = 'list';
-  // Compute close-date range for slider
-  const closeDates = opportunities
-    .map(o => o.expected_close ? new Date(o.expected_close).getTime() : null)
-    .filter(Boolean);
-  const dateMin = closeDates.length ? Math.min(...closeDates) : Date.now();
-  const dateMax = closeDates.length ? Math.max(...closeDates) : Date.now();
 
-  let filters = { search: '', partner: '', status: '', statusExclude: null, dateMin, dateMax };
+  // Collect unique stages present in the data, ordered by OPP_STAGES then alphabetic for unknowns
+  const stageSet = new Set(opportunities.map(o => o.stage).filter(Boolean));
+  const allStages = [
+    ...OPP_STAGES.filter(s => stageSet.has(s)),
+    ...[...stageSet].filter(s => !OPP_STAGES.includes(s)).sort(),
+  ];
+  const selectedStages = new Set(allStages);
+
+  let filters = {
+    search: '',
+    partner: '',
+    status: '',
+    statusExclude: null,
+    dateFrom: null,
+    dateTo: null,
+    stages: selectedStages,
+  };
 
   function getFiltered() {
     return opportunities.filter(opp => {
@@ -183,9 +257,14 @@ function renderView(container, opportunities, filterBar) {
               opp.customer_name?.toLowerCase().includes(q) ||
               getPartnerName(opp.partner_id)?.toLowerCase().includes(q))) return false;
       }
-      if (filters.dateMin != null && filters.dateMax != null && opp.expected_close) {
+      if (filters.dateFrom != null || filters.dateTo != null) {
+        if (!opp.expected_close) return false;
         const closeTime = new Date(opp.expected_close).getTime();
-        if (closeTime < filters.dateMin || closeTime > filters.dateMax) return false;
+        if (filters.dateFrom != null && closeTime < filters.dateFrom) return false;
+        if (filters.dateTo != null && closeTime > filters.dateTo) return false;
+      }
+      if (allStages.length > 0 && filters.stages.size < allStages.length) {
+        if (!filters.stages.has(opp.stage)) return false;
       }
       return true;
     });
@@ -247,15 +326,23 @@ function renderView(container, opportunities, filterBar) {
     ...OPP_STATUSES.map(s => el('option', { value: s }, s))
   );
 
+  const stageMultiSelect = buildStageMultiSelect({
+    allStages,
+    selected: selectedStages,
+    onChange: () => refreshContent(),
+  });
+
   // View toggle
   const boardBtn = el('button', { class: 'btn btn--secondary btn--sm', onClick: () => switchView('board') }, 'Board');
   const listBtn = el('button', { class: 'btn btn--primary btn--sm', onClick: () => switchView('list') }, 'List');
 
-  // Date range slider
-  const dateSlider = buildDateRangeSlider(dateMin, dateMax, (min, max) => {
-    filters.dateMin = min;
-    filters.dateMax = max;
-    refreshContent();
+  // Date range inputs (From / To)
+  const dateInputs = buildDateRangeInputs({
+    onChange: (fromTs, toTs) => {
+      filters.dateFrom = fromTs;
+      filters.dateTo = toTs;
+      refreshContent();
+    },
   });
 
   const viewContainer = el('div', { id: 'opps-view-container' });
@@ -298,16 +385,17 @@ function renderView(container, opportunities, filterBar) {
 
     // Filter + view toggle
     el('div', { class: 'filter-section' },
-      el('div', { class: 'filter-bar' },
+      el('div', { class: 'filter-bar filter-bar--wrap' },
         el('div', { class: 'filter-bar__search' },
           el('span', { class: 'search-bar__icon', html: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M12.5 12.5L16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
           searchInput
         ),
         partnerSelect,
+        stageMultiSelect,
         statusSelect,
+        dateInputs,
         el('div', { class: 'view-toggle', style: { marginBottom: '0' } }, boardBtn, listBtn),
       ),
-      closeDates.length > 1 ? dateSlider : null,
     ),
 
     viewContainer,
@@ -460,7 +548,7 @@ function createOppCard(opp) {
   });
 
   card.addEventListener('click', () => {
-    openOppModal(opp, document.getElementById('view-container'));
+    openOppDetailsModal(opp);
   });
 
   return card;
@@ -497,7 +585,11 @@ function renderList(opportunities) {
         ...sorted.map(opp =>
           el('tr', {},
             el('td', {},
-              el('div', { style: { fontWeight: 'var(--font-semibold)' } }, opp.deal_name),
+              el('a', {
+                href: '#',
+                class: 'deal-name-link',
+                onClick: (e) => { e.preventDefault(); openOppDetailsModal(opp); },
+              }, opp.deal_name),
               el('div', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' } }, opp.customer_name)
             ),
             el('td', {}, el('span', { class: 'badge badge--admin' }, getPartnerName(opp.partner_id))),
@@ -535,6 +627,168 @@ function getLeadSourceLabel(leadSource) {
     el('svg', { width: '10', height: '10', viewBox: '0 0 10 10', html: '<path d="M5 1v8M1 5l4 4 4-4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' }),
     el('span', {}, evt.title)
   );
+}
+
+// ============================================
+// Opportunity Details Modal (read-only)
+// ============================================
+
+function getLeadSourceDisplay(opp) {
+  if (!opp.lead_source || opp.lead_source === 'salesperson') return 'Salesperson Created';
+  const evt = (cachedEvents || []).find(e => e.event_id === opp.lead_source);
+  if (!evt) return opp.lead_source;
+  const typeLabel = evt.event_type ? `[${evt.event_type}] ` : '';
+  const dateLabel = evt.event_date ? ` - ${formatDate(evt.event_date)}` : '';
+  return `${typeLabel}${evt.title}${dateLabel}`;
+}
+
+function detailRow(label, value) {
+  return el('div', { class: 'details-modal__row' },
+    el('div', { class: 'details-modal__label' }, label),
+    el('div', { class: 'details-modal__value' }, value == null || value === '' ? '—' : value),
+  );
+}
+
+function buildDetailsDescriptionsSection(descriptions) {
+  const list = el('div', { class: 'details-modal__descriptions' });
+
+  if (!descriptions || descriptions.length === 0) {
+    list.appendChild(el('div', { class: 'details-modal__empty' }, 'No descriptions yet.'));
+    return list;
+  }
+
+  descriptions.forEach(desc => {
+    const isOpenRef = { value: false };
+    const dateStr = desc.description_date ? formatDate(desc.description_date) : '—';
+    const plainText = stripHtml(desc.description_text || '');
+    const preview = plainText
+      ? plainText.slice(0, 120) + (plainText.length > 120 ? '...' : '')
+      : 'Empty';
+
+    const toggleIcon = el('span', {
+      class: 'transcript-card__toggle',
+      html: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    });
+
+    const body = el('div', { class: 'transcript-card__body' },
+      el('div', { class: 'transcript-card__text', html: ensureHtml(desc.description_text || '') }),
+    );
+    body.style.display = 'none';
+
+    const header = el('div', {
+      class: 'transcript-card__header',
+      onClick: () => {
+        isOpenRef.value = !isOpenRef.value;
+        body.style.display = isOpenRef.value ? '' : 'none';
+        toggleIcon.classList.toggle('transcript-card__toggle--open', isOpenRef.value);
+        body.classList.toggle('transcript-card__body--open', isOpenRef.value);
+      },
+    },
+      el('span', { class: 'transcript-card__date' }, dateStr),
+      el('span', { class: 'transcript-card__preview' }, preview),
+      toggleIcon,
+    );
+
+    list.appendChild(el('div', { class: 'transcript-card' }, header, body));
+  });
+
+  return list;
+}
+
+function buildDetailsDocumentsSection(files) {
+  const list = el('div', { class: 'documents-list' });
+
+  if (!files || files.length === 0) {
+    list.appendChild(el('div', { class: 'details-modal__empty' }, 'No documents yet.'));
+    return list;
+  }
+
+  files.forEach(file => {
+    list.appendChild(el('div', { class: 'document-row' },
+      el('span', { class: 'document-row__icon', html: fileIconSvg() }),
+      el('a', {
+        href: file.drive_url || '#',
+        target: '_blank',
+        rel: 'noopener',
+        class: 'document-row__name',
+      }, file.file_name || 'Untitled'),
+      el('span', { class: 'document-row__date' }, file.date_added ? formatDate(file.date_added) : ''),
+    ));
+  });
+
+  return list;
+}
+
+export async function openOppDetailsModal(opp) {
+  if (!cachedPartners || !cachedEvents) {
+    const [partners, events] = await Promise.all([
+      cachedPartners ? Promise.resolve(null) : readSheetAsObjects(CONFIG.SHEET_PARTNERS),
+      cachedEvents ? Promise.resolve(null) : readSheetAsObjects(CONFIG.SHEET_EVENTS),
+    ]);
+    if (partners) cachedPartners = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
+    if (events) cachedEvents = events;
+  }
+
+  const [descResult, docsResult] = await Promise.allSettled([
+    readSheetAsObjects(CONFIG.SHEET_OPP_DESCRIPTIONS),
+    listOpportunityDocuments(opp.opportunity_id),
+  ]);
+
+  let descriptions = [];
+  if (descResult.status === 'fulfilled') {
+    descriptions = descResult.value
+      .filter(d => d.opportunity_id === opp.opportunity_id)
+      .sort((a, b) => new Date(b.description_date || b.created_at) - new Date(a.description_date || a.created_at));
+  }
+  // Legacy: fall back to the opp row description if no separate records exist.
+  if (descriptions.length === 0 && opp.description) {
+    descriptions = [{
+      description_date: toISODateOnly(opp.updated_at || opp.created_at) || todayISO(),
+      description_text: opp.description,
+    }];
+  }
+
+  const files = docsResult.status === 'fulfilled' ? docsResult.value : [];
+
+  const editBtn = el('button', {
+    class: 'btn btn--primary btn--sm details-modal__edit-btn',
+    onClick: () => {
+      closeModal();
+      // Wait for close animation before opening edit modal
+      setTimeout(() => openOppModal(opp, document.getElementById('view-container')), 260);
+    },
+  }, 'Edit');
+
+  const grid = el('div', { class: 'details-modal__grid' },
+    detailRow('Deal Name', opp.deal_name),
+    detailRow('Customer Name', opp.customer_name),
+    detailRow('Partner', getPartnerName(opp.partner_id)),
+    detailRow('Deal Value', formatCurrency(parseFloat(opp.deal_value) || 0)),
+    detailRow('Expected Close', opp.expected_close ? formatDate(opp.expected_close) : '—'),
+    detailRow('Stage', opp.stage || '—'),
+    detailRow('Status', opp.status || '—'),
+    detailRow('Lead Source', getLeadSourceDisplay(opp)),
+  );
+
+  const content = el('div', { class: 'details-modal' },
+    el('div', { class: 'details-modal__top-actions' }, editBtn),
+    grid,
+    el('div', { class: 'details-modal__section' },
+      el('h3', { class: 'details-modal__section-title' }, 'Descriptions'),
+      buildDetailsDescriptionsSection(descriptions),
+    ),
+    el('div', { class: 'details-modal__section' },
+      el('h3', { class: 'details-modal__section-title' }, 'Documents'),
+      buildDetailsDocumentsSection(files),
+    ),
+  );
+
+  openModal({
+    title: opp.deal_name || 'Opportunity Details',
+    content,
+    className: 'modal--wide',
+    footer: el('button', { class: 'btn btn--secondary', onClick: closeModal }, 'Close'),
+  });
 }
 
 // ============================================
