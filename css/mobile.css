@@ -217,11 +217,6 @@ html {
     font-size: 13px;
   }
 
-  /* ---------- 9. Meeting docs sticky header ---------- */
-  .meeting-docs__header {
-    top: var(--safe-top);
-  }
-
   /* ---------- 10. Form row stacking already handled elsewhere ---------- */
   .form-row {
     grid-template-columns: 1fr;

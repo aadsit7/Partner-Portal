@@ -6,7 +6,7 @@ import { readSheetAsObjects, appendRow, updateRow, deleteRow, isConfigured, addD
 import { CONFIG } from '../config.js';
 import { el, mount, formatCurrency, uuid } from '../utils/dom.js';
 import { formatDate, todayISO, nowISO } from '../utils/date.js';
-import { navigate, getCurrentPath, getQueryParams } from '../router.js';
+import { navigate } from '../router.js';
 import { tierSlug, TIER_ICONS } from '../utils/tiers.js';
 import { dealCard, statCard } from '../components/card.js';
 import { openModal, closeModal, confirmDialog } from '../components/modal.js';
@@ -16,8 +16,6 @@ import { setTopbarTitle } from '../components/sidebar.js';
 import { showToast } from '../components/toast.js';
 import { filterOpportunities, filterEvents } from '../utils/filters.js';
 import { stripHtml, ensureHtml, initQuillEditor } from '../components/quill-editor.js';
-import { openMeetingDocs } from '../components/meeting-docs.js';
-import { openMapEditorModal, docTypeClass, docTypeLabel } from '../components/map-editor.js';
 
 export const title = 'Partner Detail';
 
@@ -33,12 +31,11 @@ export async function render(container, params) {
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
 
   try {
-    const [partners, opportunities, events, transcripts, documents] = await Promise.all([
+    const [partners, opportunities, events, transcripts] = await Promise.all([
       readSheetAsObjects(CONFIG.SHEET_PARTNERS),
       readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES),
       readSheetAsObjects(CONFIG.SHEET_EVENTS),
       readSheetAsObjects(CONFIG.SHEET_TRANSCRIPTS),
-      readSheetAsObjects(CONFIG.SHEET_PARTNER_DOCUMENTS).catch(() => []),
     ]);
 
     const partner = partners.find(p => p.partner_id === partnerId);
@@ -55,11 +52,8 @@ export async function render(container, params) {
     const partnerTranscripts = transcripts
       .filter(t => t.partner_id === partnerId)
       .sort((a, b) => new Date(b.conversation_date || b.created_at) - new Date(a.conversation_date || a.created_at));
-    const partnerDocs = documents
-      .filter(d => d.partner_id === partnerId && d.status !== 'deleted')
-      .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
 
-    renderDetail(container, partner, partnerOpps, partnerEvents, partnerTranscripts, partnerDocs);
+    renderDetail(container, partner, partnerOpps, partnerEvents, partnerTranscripts);
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },
       el('div', { class: 'empty-state__title' }, 'Error loading data'),
@@ -73,25 +67,13 @@ function reRender(partnerId) {
   render(viewContainer, { id: partnerId });
 }
 
-function renderDetail(container, partner, opportunities, partnerEvents, transcripts, documents = []) {
+function renderDetail(container, partner, opportunities, partnerEvents, transcripts) {
   const tierClass = tierSlug(partner.tier);
   const pipelineValue = opportunities.filter(o => o.status !== 'Won').reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
   const wonDeals = opportunities.filter(o => o.status === 'Won');
   const wonValue = wonDeals.reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
   const totalValue = pipelineValue + wonValue;
   const sortedEvents = [...partnerEvents].sort((a, b) => new Date(b.event_date) - new Date(a.event_date));
-
-  // Background MAP saves (triggered by closing the Meeting Docs popup while
-  // a generation is in-flight) can fire their onSaved callback long after
-  // the user has navigated away from this page. reRender() blindly
-  // overwrites #view-container, so we guard with the current route before
-  // re-rendering to avoid clobbering a different view.
-  const safeReRender = () => {
-    const params = getQueryParams();
-    if (getCurrentPath() === '/admin/partner-detail' && params.id === partner.partner_id) {
-      reRender(partner.partner_id);
-    }
-  };
 
   const content = el('div', {},
     // Back button
@@ -185,8 +167,10 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
           )
     ),
 
-    // Section 3: Call Transcripts + Mutual Action Plans (50/50 split)
-    buildBottomSplitSection(partner, transcripts, documents, safeReRender),
+    // Section 3: Call Transcripts
+    el('div', { class: 'detail-section' },
+      buildTranscriptsPanel(partner, transcripts),
+    ),
   );
 
   mount(container, content);
@@ -468,17 +452,8 @@ function copyAllTranscripts(partner, transcripts) {
 }
 
 // ============================================
-// Bottom 50/50 Split: Transcripts + MAPs
+// Call Transcripts Panel
 // ============================================
-
-function buildBottomSplitSection(partner, transcripts, documents, safeReRender) {
-  return el('div', { class: 'detail-section' },
-    el('div', { class: 'partner-bottom-grid' },
-      buildTranscriptsPanel(partner, transcripts),
-      buildMapPanel(partner, transcripts, documents, safeReRender),
-    )
-  );
-}
 
 function buildTranscriptsPanel(partner, transcripts) {
   const actions = el('div', { class: 'partner-bottom-panel__actions' },
@@ -515,96 +490,6 @@ function buildTranscriptsPanel(partner, transcripts) {
       actions,
     ),
     el('div', { class: 'partner-bottom-panel__body' }, body),
-  );
-}
-
-function buildMapPanel(partner, transcripts, documents, safeReRender) {
-  const activeDocs = documents.filter(d => d.status !== 'archived' && d.status !== 'deleted');
-
-  const actions = el('div', { class: 'partner-bottom-panel__actions' },
-    el('button', {
-      class: 'btn btn--primary btn--sm',
-      onClick: () => openMeetingDocs({
-        partner,
-        transcripts,
-        mode: 'create',
-        // Route-guarded: if the user has navigated away by the time a
-        // background MAP save fires, skip the re-render.
-        onSaved: safeReRender,
-      }),
-    },
-      el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-      'Create New'
-    ),
-  );
-
-  // Always render a stable .map-list container so meeting-docs.js can
-  // inject "Generating…" placeholder cards at submit time (via
-  // `.map-list[data-partner-id="…"]`).
-  const listEl = el('div', {
-    class: 'map-list',
-    'data-partner-id': partner.partner_id,
-  }, ...activeDocs.map(d => mapCard(d, partner, transcripts, safeReRender)));
-
-  const emptyStateEl = activeDocs.length === 0
-    ? el('div', { class: 'empty-state map-list__empty', style: { padding: 'var(--space-6) var(--space-2)' } },
-        el('div', { class: 'empty-state__title' }, 'No mutual action plans yet'),
-        el('div', { class: 'empty-state__description' }, 'Click "Create New" and tell the assistant what you want — e.g., "Build a MAP from the last two meetings".')
-      )
-    : null;
-
-  return el('div', {
-    class: 'partner-bottom-panel partner-bottom-panel--map',
-    'data-partner-id': partner.partner_id,
-  },
-    el('div', { class: 'partner-bottom-panel__header' },
-      el('div', { class: 'partner-bottom-panel__title-group' },
-        el('h3', { class: 'partner-bottom-panel__title' }, 'Mutual Action Plans'),
-        el('span', { class: 'partner-bottom-panel__count' }, String(activeDocs.length)),
-      ),
-      actions,
-    ),
-    el('div', { class: 'partner-bottom-panel__body' }, listEl, emptyStateEl),
-  );
-}
-
-function mapCard(doc, partner, transcripts, safeReRender) {
-  const typeSlug = docTypeClass(doc.doc_type);
-  const typeLabel = docTypeLabel(doc.doc_type);
-  const createdDate = formatDate(doc.created_at);
-  const updatedDate = formatDate(doc.updated_at);
-  const showUpdated = updatedDate && updatedDate !== createdDate;
-
-  return el('div', {
-    class: 'map-card',
-    onClick: () => openMapEditorModal({
-      partner,
-      doc,
-      transcripts,
-      onSaved: safeReRender,
-      onDeleted: safeReRender,
-      onAskAssistant: ({ html, doc: editedDoc }) => {
-        // Hand the (possibly unsaved) edited HTML to the chatbot in update mode.
-        openMeetingDocs({
-          partner,
-          transcripts,
-          mode: 'update',
-          existingDoc: { ...editedDoc, html_content: html },
-          // Route-guarded for the same reason as Create New above.
-          onSaved: safeReRender,
-        });
-      },
-    }),
-  },
-    el('div', { class: 'map-card__row' },
-      el('div', { class: 'map-card__title' }, doc.title || 'Untitled Document'),
-      el('span', { class: `doc-type-badge doc-type-badge--${typeSlug}` }, typeLabel),
-    ),
-    el('div', { class: 'map-card__meta' },
-      el('span', { class: 'map-card__meta-item' }, `Created ${createdDate || '—'}`),
-      showUpdated ? el('span', { class: 'map-card__meta-item' }, `Updated ${updatedDate}`) : null,
-      el('span', { class: `map-status-badge map-status-badge--${doc.status || 'active'}` }, doc.status === 'archived' ? 'Archived' : 'Active'),
-    ),
   );
 }
 
