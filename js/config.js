@@ -44,6 +44,10 @@ export const CONFIG = {
   SPREADSHEET_ID: '18Yhe3Yiq9_eI7kBxtFOzdu6Pb0_VUx730TYjq1xPjzI',
   SHEETS_BASE_URL: 'https://sheets.googleapis.com/v4/spreadsheets',
 
+  // Apps Script Web App for file uploads to Google Drive.
+  // Separate from the Sheets API above — handles listFiles / uploadFile / deleteFile.
+  FILE_API_URL: 'https://script.google.com/macros/s/AKfycbwFURmpvnwu6Ge5Pyt2zJVMwwV4jcRIR8Q9BmUwQJyRM3l5Aq9PsFjdA-ysoDL1jQeK/exec',
+
   // Google OAuth (for Admin SSO login)
   GOOGLE_CLIENT_ID: '206815760499-ip5cgia4j8fk9nb5qq83fdv3cfd95lvp.apps.googleusercontent.com',
 

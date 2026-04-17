@@ -554,17 +554,28 @@ export async function openOppModal(opp, container, onSaved) {
     if (events) cachedEvents = events;
   }
 
-  // Load existing descriptions for this opportunity
+  // Load existing descriptions + documents for this opportunity in parallel.
   let workingDescriptions = [];
+  let initialDocuments = [];
   if (isEdit) {
-    try {
-      const allDescriptions = await readSheetAsObjects(CONFIG.SHEET_OPP_DESCRIPTIONS);
-      workingDescriptions = allDescriptions
+    const [descResult, docsResult] = await Promise.allSettled([
+      readSheetAsObjects(CONFIG.SHEET_OPP_DESCRIPTIONS),
+      listOpportunityDocuments(opp.opportunity_id),
+    ]);
+
+    if (descResult.status === 'fulfilled') {
+      workingDescriptions = descResult.value
         .filter(d => d.opportunity_id === opp.opportunity_id)
         .map(d => ({ ...d }))
         .sort((a, b) => new Date(b.description_date || b.created_at) - new Date(a.description_date || a.created_at));
-    } catch (err) {
-      console.warn('Failed to load opportunity descriptions', err);
+    } else {
+      console.warn('Failed to load opportunity descriptions', descResult.reason);
+    }
+
+    if (docsResult.status === 'fulfilled') {
+      initialDocuments = docsResult.value;
+    } else {
+      console.warn('Failed to load opportunity documents', docsResult.reason);
     }
 
     // Legacy migration: if no separate description records exist but the
@@ -810,7 +821,19 @@ export async function openOppModal(opp, container, onSaved) {
   // Descriptions panel (replaces the old single-description textarea)
   const descriptionsPanel = buildDescriptionsPanel(workingDescriptions);
 
-  const modalContent = el('div', {}, form, descriptionsPanel);
+  // Documents panel — drag-and-drop uploads to Google Drive via the file API.
+  // For new (unsaved) opportunities there's no opportunity_id to attach to yet,
+  // so the upload zone is hidden with a helper note.
+  const documentsPanel = buildDocumentsPanel({
+    opportunityId: isEdit ? opp.opportunity_id : null,
+    getCustomerName: () => {
+      const input = form.querySelector('[name="customer_name"]');
+      return (input && input.value) || (isEdit ? (opp.customer_name || '') : '');
+    },
+    initialFiles: initialDocuments,
+  });
+
+  const modalContent = el('div', {}, form, descriptionsPanel, documentsPanel);
 
   openModal({
     title: isEdit ? 'Edit Opportunity' : 'New Opportunity',
@@ -1185,4 +1208,232 @@ export function cleanup() {
   cachedPartners = null;
   cachedOpps = null;
   cachedEvents = null;
+}
+
+// ============================================
+// Documents Panel (Google Drive uploads)
+// ============================================
+
+const ALLOWED_FILE_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.pptx', '.png', '.jpg', '.jpeg'];
+
+/**
+ * POST to the Apps Script file endpoint.
+ * No Content-Type header is set: that keeps Apps Script web apps on a
+ * simple-CORS path and avoids the preflight that a JSON Content-Type triggers.
+ */
+async function fileApiRequest(payload) {
+  const res = await fetch(CONFIG.FILE_API_URL, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error(`File API returned ${res.status}`);
+  }
+  const data = await res.json();
+  if (!data.ok) {
+    throw new Error(data.error || 'File API request failed');
+  }
+  return data;
+}
+
+async function listOpportunityDocuments(opportunityId) {
+  if (!opportunityId) return [];
+  const data = await fileApiRequest({ action: 'listFiles', opportunityId });
+  return Array.isArray(data.files) ? data.files : [];
+}
+
+/**
+ * Read a File as base64 (strips the data:<mime>;base64, prefix).
+ */
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const commaIdx = result.indexOf(',');
+      resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function isAllowedFile(file) {
+  const name = (file.name || '').toLowerCase();
+  return ALLOWED_FILE_EXTENSIONS.some(ext => name.endsWith(ext));
+}
+
+function fileIconSvg() {
+  return '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 1.5H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5.5L9 1.5z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M9 1.5V5.5H13" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/></svg>';
+}
+
+function buildDocumentsPanel({ opportunityId, getCustomerName, initialFiles }) {
+  const files = [...(initialFiles || [])];
+  const list = el('div', { class: 'documents-list' });
+  const countBadge = el('span', { class: 'descriptions-panel__count' }, '0');
+
+  function rebuildList() {
+    list.innerHTML = '';
+    countBadge.textContent = String(files.length);
+
+    if (files.length === 0) {
+      list.appendChild(
+        el('div', { class: 'empty-state', style: { padding: 'var(--space-5) var(--space-2)' } },
+          el('div', { class: 'empty-state__title' }, 'No documents yet'),
+          el('div', { class: 'empty-state__description' }, 'Drop a file below to attach it to this opportunity.')
+        )
+      );
+      return;
+    }
+
+    files.forEach(f => list.appendChild(documentRow(f)));
+  }
+
+  function documentRow(file) {
+    const removeLink = el('a', {
+      href: '#',
+      class: 'document-row__remove',
+      onClick: async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          await fileApiRequest({ action: 'deleteFile', docId: file.doc_id });
+          const idx = files.findIndex(f => f.doc_id === file.doc_id);
+          if (idx >= 0) files.splice(idx, 1);
+          rebuildList();
+          showToast('File removed', 'success');
+        } catch (err) {
+          showToast(err.message || 'Failed to remove file', 'error');
+        }
+      },
+    }, 'Remove');
+
+    const nameLink = el('a', {
+      href: file.drive_url || '#',
+      target: '_blank',
+      rel: 'noopener',
+      class: 'document-row__name',
+    }, file.file_name || 'Untitled');
+
+    return el('div', { class: 'document-row' },
+      el('span', { class: 'document-row__icon', html: fileIconSvg() }),
+      nameLink,
+      el('span', { class: 'document-row__date' }, file.date_added ? formatDate(file.date_added) : ''),
+      removeLink,
+    );
+  }
+
+  // Drop zone
+  const dropzoneLabel = el('span', { class: 'document-dropzone__label' },
+    'Drag files here or click to browse'
+  );
+  const dropzoneHint = el('span', { class: 'document-dropzone__hint' },
+    'PDF, Word, Excel, PowerPoint, or images'
+  );
+
+  const fileInput = el('input', {
+    type: 'file',
+    multiple: true,
+    accept: ALLOWED_FILE_EXTENSIONS.join(','),
+    style: { display: 'none' },
+    onChange: (e) => {
+      const selected = Array.from(e.target.files || []);
+      if (selected.length) uploadFiles(selected);
+      e.target.value = '';
+    },
+  });
+
+  const dropzone = el('div', {
+    class: 'document-dropzone',
+    onClick: () => fileInput.click(),
+  }, dropzoneLabel, dropzoneHint, fileInput);
+
+  function setDropzoneMessage(message) {
+    dropzoneLabel.textContent = message;
+    dropzoneHint.style.display = 'none';
+  }
+  function resetDropzone() {
+    dropzoneLabel.textContent = 'Drag files here or click to browse';
+    dropzoneHint.style.display = '';
+  }
+
+  dropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.classList.add('document-dropzone--dragover');
+  });
+  dropzone.addEventListener('dragleave', () => {
+    dropzone.classList.remove('document-dropzone--dragover');
+  });
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('document-dropzone--dragover');
+    const dropped = Array.from(e.dataTransfer?.files || []);
+    if (dropped.length) uploadFiles(dropped);
+  });
+
+  async function uploadFiles(selected) {
+    const customerName = (getCustomerName() || '').trim();
+    if (!customerName) {
+      showToast('Set a customer name before uploading files', 'error');
+      return;
+    }
+
+    for (const file of selected) {
+      if (!isAllowedFile(file)) {
+        showToast(`Unsupported file type: ${file.name}`, 'error');
+        continue;
+      }
+
+      setDropzoneMessage(`Uploading ${file.name}...`);
+      try {
+        const fileData = await readFileAsBase64(file);
+        const data = await fileApiRequest({
+          action: 'uploadFile',
+          opportunityId,
+          customerName,
+          fileName: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          fileData,
+        });
+        const newFile = data.file || {
+          doc_id: data.doc_id,
+          file_name: data.file_name || file.name,
+          drive_url: data.drive_url,
+          date_added: data.date_added || nowISO(),
+        };
+        files.unshift(newFile);
+        rebuildList();
+        showToast('File uploaded', 'success');
+      } catch (err) {
+        showToast(err.message || `Failed to upload ${file.name}`, 'error');
+      } finally {
+        resetDropzone();
+      }
+    }
+  }
+
+  const panel = el('div', { class: 'descriptions-panel documents-panel' },
+    el('div', { class: 'descriptions-panel__header' },
+      el('div', { class: 'descriptions-panel__title-group' },
+        el('h3', { class: 'descriptions-panel__title' }, 'Documents'),
+        countBadge,
+      ),
+    ),
+    list,
+  );
+
+  if (opportunityId) {
+    panel.appendChild(dropzone);
+  } else {
+    panel.appendChild(
+      el('div', { class: 'document-dropzone document-dropzone--disabled' },
+        el('span', { class: 'document-dropzone__label' },
+          'Save this opportunity first to attach documents'
+        )
+      )
+    );
+  }
+
+  rebuildList();
+  return panel;
 }
