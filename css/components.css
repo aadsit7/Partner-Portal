@@ -3769,6 +3769,21 @@
   padding: var(--space-3) 0;
 }
 
+.details-modal__loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.details-modal__loading-spinner {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+
 .details-modal__descriptions .transcript-card {
   margin-bottom: var(--space-2);
 }
