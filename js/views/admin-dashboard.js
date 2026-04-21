@@ -321,7 +321,7 @@ function renderDashboard(container, partners, opportunities, events) {
 
 function buildActivityView(container, partnerStats, upcomingEvents, allEvents, opportunities, viewContainer) {
   // Partner Activity Cards
-  const partnerHubTitle = el('div', { class: 'section-header', style: { marginBottom: 'var(--space-4)' } },
+  const partnerHubTitle = el('div', { class: 'section-header', style: { marginBottom: 'var(--space-2)' } },
     el('div', {},
       el('h3', { class: 'section-header__title' }, 'Partner Activity'),
       el('p', { class: 'section-header__subtitle' }, 'Joint events and opportunities by partner')
@@ -407,7 +407,7 @@ function buildActivityView(container, partnerStats, upcomingEvents, allEvents, o
     });
 
   // Upcoming Events Timeline
-  const timelineTitle = el('div', { class: 'section-header', style: { marginBottom: 'var(--space-4)', marginTop: 'var(--space-8)' } },
+  const timelineTitle = el('div', { class: 'section-header', style: { marginBottom: 'var(--space-2)', marginTop: 'var(--space-5)' } },
     el('div', {},
       el('h3', { class: 'section-header__title' }, 'Upcoming Joint Events'),
       el('p', { class: 'section-header__subtitle' }, 'Next 60 days')

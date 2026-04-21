@@ -26,7 +26,7 @@
   border: 1px solid #E2E6F4;
   border-left: 3px solid #D5DAE8;
   border-radius: 12px;
-  padding: 24px;
+  padding: 16px 20px;
   box-shadow: 0 1px 3px rgba(11, 22, 64, 0.07), 0 1px 2px rgba(0, 0, 0, 0.03);
   transition: box-shadow 0.2s, transform 0.2s;
 }
@@ -40,7 +40,7 @@
 }
 
 .dashboard-top__stats .stat-card__value {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
   color: #0D1229;
   letter-spacing: -0.02em;
@@ -90,8 +90,8 @@
    Dashboard Top Zone — spacing
    ----------------------------------------------- */
 .dashboard-top {
-  gap: 20px;
-  margin-bottom: 32px;
+  gap: 16px;
+  margin-bottom: 20px;
 }
 
 /* -----------------------------------------------
@@ -103,7 +103,7 @@
   border-radius: 0;
   padding: 0;
   gap: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
 }
 
 .view-toggle:not(.type-filter-bar) .btn {
@@ -139,7 +139,7 @@
   border: none;
   padding: 0;
   gap: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
   flex-wrap: wrap;
 }
 
@@ -184,7 +184,7 @@
 #dashboard-activity-view .section-header__subtitle {
   font-size: 14px;
   color: #9ca3af;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 /* Spacing between the two major sections */
@@ -216,13 +216,22 @@
   border-color: #D5DAE8;
 }
 
+/* Activity card padding — tighter than default */
+.activity-card {
+  padding: 16px;
+}
+
+.activity-card__header {
+  margin-bottom: 0;
+}
+
 /* Stats row — spacing and dividers */
 .activity-card__metrics {
   gap: 0;
-  padding: 12px 0;
+  padding: 10px 0;
   border-top: 1px solid #EDF0F7;
   border-bottom: 1px solid #EDF0F7;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .activity-card__metric {
