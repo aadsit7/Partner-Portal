@@ -367,12 +367,29 @@ function onStateEnter(state, prevState) {
       stopAll();
       break;
     case STATES.PASSIVE:
-      stopAll();
-      startRecognition();
+      if (isTypeModeActive) {
+        // In type mode: stop audio/recognition but preserve conversation history
+        if (recognition) { try { recognition.abort(); } catch { /* ok */ } }
+        if (currentElevenLabsHandle) { currentElevenLabsHandle.stop(); currentElevenLabsHandle = null; }
+        if (synth.speaking) synth.cancel();
+        speechChainCancelled = true;
+        if (autoSendTimer) { clearTimeout(autoSendTimer); autoSendTimer = null; }
+        if (confirmTimeout) { clearTimeout(confirmTimeout); confirmTimeout = null; }
+        isRandySpeaking = false;
+        currentSpokenText = '';
+        currentSpeechOnComplete = null;
+        pendingActions = null;
+        confirmAttempts = 0;
+        accumulatedTranscript = '';
+        voiceEnabled = false;
+      } else {
+        stopAll();
+        startRecognition();
+      }
       break;
     case STATES.ACTIVE_LISTENING:
       accumulatedTranscript = '';
-      if (prevState === STATES.PASSIVE || prevState === STATES.SPEAKING || prevState === STATES.CONFIRMING) {
+      if (!isTypeModeActive && (prevState === STATES.PASSIVE || prevState === STATES.SPEAKING || prevState === STATES.CONFIRMING)) {
         startRecognition();
       }
       break;
@@ -384,7 +401,7 @@ function onStateEnter(state, prevState) {
       break;
     case STATES.CONFIRMING:
       startConfirmTimeout();
-      startRecognition();
+      if (!isTypeModeActive) startRecognition();
       break;
   }
 }
@@ -567,6 +584,7 @@ function scheduleRestart() {
 
 function startRecognition() {
   if (currentState === STATES.OFF || currentState === STATES.PROCESSING) return;
+  if (isTypeModeActive) return;
   // Pause if the existing voice widget (chat mic) is active — only one SpeechRecognition at a time
   if (isVoiceModeActive()) return;
 
@@ -762,7 +780,7 @@ async function processUserInput(text) {
   // Re-entry guard — prevent parallel API calls
   if (isProcessing) return;
 
-  transition(STATES.PROCESSING);
+  transition(STATES.PROCESSING, isTypeModeActive);
   renderMessage('user', text);
   renderTypingIndicator();
 
@@ -782,6 +800,7 @@ async function processUserInput(text) {
     const summaryPromise = new Promise(resolve => { summaryDone = resolve; });
 
     const trySpeakSummary = (accumulated) => {
+      if (isTypeModeActive) return;
       if (summarySpoken) return;
       // Don't speak early if an action block is already streaming —
       // the confirmation text ("I'll do X, should I go ahead?") has to
@@ -848,7 +867,12 @@ async function processUserInput(text) {
       confirmAttempts = 0;
       const summaries = actions.map(a => a.summary).filter(Boolean).join(', and ') || 'make that change';
       const confirmSuffix = `I'll ${summaries}. Should I go ahead?`;
-      if (summarySpoken) {
+      if (isTypeModeActive) {
+        // Type mode: show response text then confirmation prompt, no TTS
+        renderMessage('assistant', cleanText);
+        renderMessage('assistant', confirmSuffix + ' (Type **yes** or **no**)');
+        transition(STATES.CONFIRMING, true);
+      } else if (summarySpoken) {
         // Summary is already playing. Queue the confirmation to play
         // right after it finishes — don't cancel the in-flight audio.
         (async () => {
@@ -857,18 +881,22 @@ async function processUserInput(text) {
             transition(STATES.CONFIRMING);
           });
         })();
+        renderMessage('assistant', cleanText);
       } else {
         speakText(`${voiceText}. ${confirmSuffix}`, () => {
           transition(STATES.CONFIRMING);
         });
+        renderMessage('assistant', cleanText);
       }
-    } else if (!summarySpoken) {
-      // No Summary marker or too-short response — speak the full clean text.
-      speakText(voiceText);
+    } else {
+      if (!summarySpoken && !isTypeModeActive) {
+        // No Summary marker or too-short response — speak the full clean text.
+        speakText(voiceText);
+      }
+      // Render HTML into DOM AFTER speech is triggered
+      renderMessage('assistant', cleanText);
+      if (isTypeModeActive) transition(STATES.PASSIVE, true);
     }
-
-    // Render HTML into DOM AFTER speech is triggered
-    renderMessage('assistant', cleanText);
 
     // Schedule navigation after a short delay so user hears context first
     if (navs.length > 0) {
@@ -922,7 +950,11 @@ async function processUserInput(text) {
     }
 
     renderMessage('assistant', errorDisplay);
-    speakText(errorSpeak);
+    if (isTypeModeActive) {
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText(errorSpeak);
+    }
   } finally {
     isProcessing = false;
   }
@@ -943,9 +975,14 @@ function handleConfirmation(lower) {
 
   if (isDeny) {
     pendingActions = null;
-    speakText("OK, skipping that one.", () => {
-      transition(STATES.ACTIVE_LISTENING, true);
-    });
+    if (isTypeModeActive) {
+      renderMessage('assistant', "OK, skipping that one.");
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText("OK, skipping that one.", () => {
+        transition(STATES.ACTIVE_LISTENING, true);
+      });
+    }
     return;
   }
 
@@ -953,15 +990,25 @@ function handleConfirmation(lower) {
   confirmAttempts++;
   if (confirmAttempts >= 2) {
     pendingActions = null;
-    speakText("I'll leave it for now, you can do it in the chat.", () => {
-      transition(STATES.ACTIVE_LISTENING, true);
-    });
+    if (isTypeModeActive) {
+      renderMessage('assistant', "I'll leave it for now, you can do it in the chat.");
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText("I'll leave it for now, you can do it in the chat.", () => {
+        transition(STATES.ACTIVE_LISTENING, true);
+      });
+    }
     return;
   }
 
-  speakText("Sorry, was that a yes or no?", () => {
+  if (isTypeModeActive) {
+    renderMessage('assistant', "Sorry, was that a yes or no? (Type yes or no)");
     transition(STATES.CONFIRMING, true);
-  });
+  } else {
+    speakText("Sorry, was that a yes or no?", () => {
+      transition(STATES.CONFIRMING, true);
+    });
+  }
 }
 
 async function executeConfirmedAction() {
@@ -972,21 +1019,36 @@ async function executeConfirmedAction() {
   // Safety checks on all actions before executing any
   for (const action of actions) {
     if (action.changes && ('password_hash' in action.changes || 'is_admin' in action.changes)) {
-      speakText("Whoa, can't touch that field. Security thing.", () => {
-        transition(STATES.ACTIVE_LISTENING, true);
-      });
+      if (isTypeModeActive) {
+        renderMessage('assistant', "Whoa, can't touch that field. Security thing.");
+        transition(STATES.PASSIVE, true);
+      } else {
+        speakText("Whoa, can't touch that field. Security thing.", () => {
+          transition(STATES.ACTIVE_LISTENING, true);
+        });
+      }
       return;
     }
     if (action.type === 'delete' && action.sheet === 'Partners') {
-      speakText("Can't delete partners, only status changes. Portal rules.", () => {
-        transition(STATES.ACTIVE_LISTENING, true);
-      });
+      if (isTypeModeActive) {
+        renderMessage('assistant', "Can't delete partners, only status changes. Portal rules.");
+        transition(STATES.PASSIVE, true);
+      } else {
+        speakText("Can't delete partners, only status changes. Portal rules.", () => {
+          transition(STATES.ACTIVE_LISTENING, true);
+        });
+      }
       return;
     }
     if (action.row_match && Object.keys(action.row_match).length === 0 && action.type !== 'create') {
-      speakText("I don't have enough info to find that row. Try being more specific.", () => {
-        transition(STATES.ACTIVE_LISTENING, true);
-      });
+      if (isTypeModeActive) {
+        renderMessage('assistant', "I don't have enough info to find that row. Try being more specific.");
+        transition(STATES.PASSIVE, true);
+      } else {
+        speakText("I don't have enough info to find that row. Try being more specific.", () => {
+          transition(STATES.ACTIVE_LISTENING, true);
+        });
+      }
       return;
     }
   }
@@ -1003,7 +1065,12 @@ async function executeConfirmedAction() {
     const msg = "Done! Got it all updated.";
     conversationHistory.push({ role: 'assistant', content: msg });
     saveRandyConversation();
-    speakText(msg);
+    if (isTypeModeActive) {
+      renderMessage('assistant', msg);
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText(msg);
+    }
   } catch (err) {
     console.error('Randy write error:', err);
     let errMsg;
@@ -1014,7 +1081,12 @@ async function executeConfirmedAction() {
     }
     conversationHistory.push({ role: 'assistant', content: errMsg });
     saveRandyConversation();
-    speakText(errMsg);
+    if (isTypeModeActive) {
+      renderMessage('assistant', errMsg);
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText(errMsg);
+    }
   }
 }
 
@@ -1023,9 +1095,14 @@ function startConfirmTimeout() {
   confirmTimeout = setTimeout(() => {
     if (currentState === STATES.CONFIRMING) {
       pendingActions = null;
-      speakText("OK, I'll leave it for now.", () => {
-        transition(STATES.ACTIVE_LISTENING, true);
-      });
+      if (isTypeModeActive) {
+        renderMessage('assistant', "OK, I'll leave it for now.");
+        transition(STATES.PASSIVE, true);
+      } else {
+        speakText("OK, I'll leave it for now.", () => {
+          transition(STATES.ACTIVE_LISTENING, true);
+        });
+      }
     }
   }, 15000);
 }
@@ -1743,11 +1820,12 @@ function createWidget() {
     inputRow.hidden = !isTypeModeActive;
     if (isTypeModeActive) {
       textInput.focus();
-      // Deactivate voice listening when switching to type mode
+      // Stop all voice activity when entering type mode
+      if (autoSendTimer) { clearTimeout(autoSendTimer); autoSendTimer = null; }
+      removeInterimBubble();
+      voiceEnabled = false;
+      if (recognition) { try { recognition.abort(); } catch { /* ok */ } }
       if (currentState === STATES.ACTIVE_LISTENING) {
-        if (autoSendTimer) { clearTimeout(autoSendTimer); autoSendTimer = null; }
-        removeInterimBubble();
-        voiceEnabled = false;
         transition(STATES.PASSIVE, true);
       }
     }
@@ -1774,7 +1852,11 @@ function createWidget() {
     const text = textInput.value.trim();
     if (!text || isProcessing) return;
     textInput.value = '';
-    inputRow.hidden = true;
+    // Route yes/no typed replies to the confirmation handler
+    if (currentState === STATES.CONFIRMING) {
+      handleConfirmation(text.toLowerCase());
+      return;
+    }
     // Strip wake word prefix if present (e.g., "hey Randy, show me Nerdio" → "show me Nerdio")
     const lower = text.toLowerCase();
     const wakeMatch = lower.match(WAKE_PATTERN);
