@@ -4,37 +4,37 @@
 
 :root {
   /* Primary palette (Recast brand) */
-  --color-primary: #0000CC;
-  --color-primary-light: #0000AA;
-  --color-primary-lighter: #00BFFF;
-  --color-accent: #00BFFF;
+  --color-primary: #1E30CC;           /* Recast cobalt — matches hero blue */
+  --color-primary-light: #1523B8;     /* Deeper hover/pressed state */
+  --color-primary-lighter: #00CFFF;   /* Recast vibrant cyan accent */
+  --color-accent: #00CFFF;
   --color-success: #0F7A3F;
   --color-warning: #CC8800;
   --color-danger: #CC2222;
 
   /* Neutrals */
-  --color-bg: #f5f6fa;
+  --color-bg: #EDF0F7;                /* Cool blue-tinted off-white */
   --color-surface: #FFFFFF;
-  --color-sidebar-bg: #111128;
-  --color-sidebar-hover: rgba(255,255,255,0.06);
-  --color-sidebar-active: rgba(255,255,255,0.09);
-  --color-sidebar-text: rgba(255,255,255,0.45);
+  --color-sidebar-bg: #0B1640;        /* Deep Recast footer navy */
+  --color-sidebar-hover: rgba(255,255,255,0.07);
+  --color-sidebar-active: rgba(30,48,204,0.22);
+  --color-sidebar-text: rgba(255,255,255,0.50);
   --color-sidebar-text-active: #FFFFFF;
-  --color-text-primary: #1A1A2E;
-  --color-text-secondary: #555570;
-  --color-text-muted: #8b8ba0;
-  --color-border: #E0E0E0;
-  --color-border-light: #e4e4ee;
+  --color-text-primary: #0D1229;      /* Deep ink blue */
+  --color-text-secondary: #4A4E6A;
+  --color-text-muted: #7E82A0;
+  --color-border: #D5DAE8;            /* Blue-tinted border */
+  --color-border-light: #E2E6F4;
 
   /* Status colors */
-  --color-status-registered: #0000CC;
-  --color-status-in-progress: #00BFFF;
+  --color-status-registered: #1E30CC;
+  --color-status-in-progress: #00CFFF;
   --color-status-won: #0F7A3F;
   --color-status-lost: #CC2222;
 
   /* Tier colors */
-  --color-tier-premier: #0000CC;
-  --color-tier-value: #00BFFF;
+  --color-tier-premier: #1E30CC;
+  --color-tier-value: #00CFFF;
   --color-tier-registered: #9B9A9B;
 
   /* Typography */
@@ -73,21 +73,21 @@
   --space-16: 4rem;
   --space-20: 5rem;
 
-  /* Border radii (subtle, not heavily rounded) */
+  /* Border radii */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 12px;
   --radius-xl: 8px;
   --radius-full: 9999px;
 
-  /* Shadows */
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.03);
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
-  --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.12);
+  /* Shadows — blue-tinted for Recast feel */
+  --shadow-xs: 0 1px 2px rgba(11, 22, 64, 0.05);
+  --shadow-sm: 0 1px 3px rgba(11, 22, 64, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(11, 22, 64, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(11, 22, 64, 0.09), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 20px 25px -5px rgba(11, 22, 64, 0.11), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 1px 3px rgba(11, 22, 64, 0.07), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-card-hover: 0 6px 20px rgba(11, 22, 64, 0.11);
 
   /* Layout */
   --sidebar-width: 260px;
