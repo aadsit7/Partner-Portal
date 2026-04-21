@@ -1412,6 +1412,25 @@ function renderMessage(role, text) {
     bubble.innerHTML = renderMarkdown(text);
   }
 
+  if (!isUser) {
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'randy-copy-btn';
+    copyBtn.title = 'Copy response';
+    copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+    copyBtn.addEventListener('click', () => {
+      const textContent = bubble.innerText || bubble.textContent;
+      navigator.clipboard.writeText(textContent).then(() => {
+        copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+        copyBtn.classList.add('randy-copy-btn--copied');
+        setTimeout(() => {
+          copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+          copyBtn.classList.remove('randy-copy-btn--copied');
+        }, 1500);
+      });
+    });
+    bubble.appendChild(copyBtn);
+  }
+
   msg.appendChild(bubble);
   chat.appendChild(msg);
   chat.scrollTop = chat.scrollHeight;
