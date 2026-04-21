@@ -23,43 +23,44 @@
    ----------------------------------------------- */
 .dashboard-top__stats .stat-card {
   background: #ffffff;
-  border: none;
-  border-left: 3px solid #e5e7eb; /* fallback; JS sets accent color as borderLeft */
+  border: 1px solid #E2E6F4;
+  border-left: 3px solid #D5DAE8;
   border-radius: 12px;
   padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(11, 22, 64, 0.07), 0 1px 2px rgba(0, 0, 0, 0.03);
   transition: box-shadow 0.2s, transform 0.2s;
 }
 
 .dashboard-top__stats .stat-card__label {
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #6b7280;
+  letter-spacing: 0.07em;
+  color: #7E82A0;
   font-weight: 600;
 }
 
 .dashboard-top__stats .stat-card__value {
   font-size: 28px;
   font-weight: 700;
-  color: #111827;
+  color: #0D1229;
   letter-spacing: -0.02em;
 }
 
 .dashboard-top__stats .stat-card--clickable:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 6px 20px rgba(11, 22, 64, 0.11);
   transform: translateY(-2px);
   background: #ffffff;
 }
 
 .dashboard-top__stats .stat-card--active {
-  background: rgba(0, 0, 204, 0.04);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background: rgba(30, 48, 204, 0.045);
+  border-left-color: #1E30CC;
+  box-shadow: 0 4px 16px rgba(30, 48, 204, 0.12);
   transform: translateY(-1px);
 }
 
 .dashboard-top__stats .stat-card--active .stat-card__value {
-  color: #0000cc;
+  color: #1E30CC;
 }
 
 /* -----------------------------------------------
@@ -67,17 +68,17 @@
    ----------------------------------------------- */
 .dashboard-top__chart .demandgen-chart {
   background: #ffffff;
-  border: none;
+  border: 1px solid #E2E6F4;
   border-radius: 12px;
   padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(11, 22, 64, 0.07);
   transition: box-shadow 0.2s;
 }
 
 .dashboard-top__chart .demandgen-chart__title {
   font-size: 16px;
   font-weight: 600;
-  color: #111827;
+  color: #0D1229;
 }
 
 .dashboard-top__chart .demandgen-chart__subtitle {
@@ -117,7 +118,7 @@
 }
 
 .view-toggle:not(.type-filter-bar) .btn--primary {
-  background: #111827;
+  background: #0D1229;
   color: #ffffff;
   box-shadow: none;
 }
@@ -144,8 +145,8 @@
 
 .view-toggle.type-filter-bar .btn {
   background: #f9fafb;
-  color: #6b7280;
-  border: 1px solid #e5e7eb;
+  color: #4A4E6A;
+  border: 1px solid #D5DAE8;
   border-radius: 8px;
   padding: 6px 14px;
   height: auto;
@@ -153,9 +154,9 @@
 }
 
 .view-toggle.type-filter-bar .btn--primary {
-  background: #111827;
+  background: #0D1229;
   color: #ffffff;
-  border-color: #111827;
+  border-color: #0D1229;
   box-shadow: none;
 }
 
@@ -176,7 +177,7 @@
 #dashboard-activity-view .section-header__title {
   font-size: 20px;
   font-weight: 600;
-  color: #111827;
+  color: #0D1229;
   margin-bottom: 8px;
 }
 
@@ -197,30 +198,30 @@
    ----------------------------------------------- */
 .activity-grid {
   gap: 16px;
-  align-items: stretch; /* equal height cards */
+  align-items: stretch;
 }
 
 .activity-card {
-  border: none;
+  border: 1px solid #E2E6F4;
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(11, 22, 64, 0.07);
   transition: box-shadow 0.2s, transform 0.2s;
   display: flex;
   flex-direction: column;
 }
 
 .activity-card:hover {
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 6px 20px rgba(11, 22, 64, 0.11);
   transform: translateY(-2px);
-  border-color: transparent;
+  border-color: #D5DAE8;
 }
 
 /* Stats row — spacing and dividers */
 .activity-card__metrics {
   gap: 0;
   padding: 12px 0;
-  border-top: 1px solid #f3f4f6;
-  border-bottom: 1px solid #f3f4f6;
+  border-top: 1px solid #EDF0F7;
+  border-bottom: 1px solid #EDF0F7;
   margin-bottom: 12px;
 }
 
@@ -236,7 +237,7 @@
   top: 20%;
   height: 60%;
   width: 1px;
-  background: #e5e7eb;
+  background: #E2E6F4;
 }
 
 .activity-card__metric:first-child {
@@ -265,23 +266,23 @@
    Upcoming Joint Events (Timeline) Cards
    ----------------------------------------------- */
 .timeline-card {
-  border: none;
+  border: 1px solid #E2E6F4;
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  border-left: 3px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(11, 22, 64, 0.07);
+  border-left: 3px solid #D5DAE8;
   transition: box-shadow 0.2s, transform 0.2s;
 }
 
 .timeline-card:hover {
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 6px 20px rgba(11, 22, 64, 0.11);
   transform: translateY(-2px);
-  border-color: transparent;
-  border-left-color: transparent;
+  border-color: #D5DAE8;
+  border-left-color: #1E30CC;
 }
 
 /* Date box */
 .timeline-card__date-col {
-  background: #f3f4f6;
+  background: #EDF0F7;
   border-radius: 10px;
 }
 
@@ -291,7 +292,7 @@
   letter-spacing: 0.5px;
 }
 
-/* Event type badges (Roundtable, Conference, etc.) */
+/* Event type badges */
 .timeline-card .badge--xs {
   border-radius: 6px;
   padding: 2px 7px;
@@ -300,7 +301,7 @@
 /* Progress bar */
 .timeline-card__checklist-bar {
   height: 4px;
-  background: #e5e7eb;
+  background: #E2E6F4;
   border-radius: 99px;
   overflow: hidden;
 }
@@ -316,12 +317,12 @@
   border-radius: 10px;
   border-width: 1px;
   border-style: solid;
-  border-color: #e5e7eb;
+  border-color: #D5DAE8;
 }
 
 .type-card--active {
-  border-color: #0000cc;
-  box-shadow: 0 0 0 1px #0000cc;
+  border-color: #1E30CC;
+  box-shadow: 0 0 0 1px #1E30CC;
 }
 
 .type-card__pipeline {
