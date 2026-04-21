@@ -829,3 +829,32 @@
   background: var(--pill-color, #0000CC);
   color: #fff;
 }
+
+/* Copy button on assistant messages */
+.randy-copy-btn {
+  display: block;
+  margin-top: 6px;
+  padding: 2px 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #aaaabd;
+  border-radius: 4px;
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+  opacity: 0;
+  pointer-events: none;
+}
+.randy-bubble:hover .randy-copy-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+.randy-copy-btn:hover {
+  color: #0000CC;
+  background: #e8e8f0;
+}
+.randy-copy-btn--copied {
+  color: #28a745 !important;
+  opacity: 1;
+  pointer-events: auto;
+}
