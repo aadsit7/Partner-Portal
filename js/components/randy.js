@@ -1128,7 +1128,10 @@ function startBackgroundPdfGeneration(result) {
 
       updatePillStage(pill, 'Building PDF…');
       const pdfBlob = await buildMapPdf(json, opportunity);
-      const filename = mapFilename(json.customer_name || opportunity.customerName || opportunity.name, json.document_date);
+      // Filename always uses ISO generation date (today) — never the
+      // human-readable document_date from the JSON, which may be a
+      // phrase like "April 22, 2026" that produces garbage when sliced.
+      const filename = mapFilename(json.customer_name || opportunity.customerName || opportunity.name);
 
       updatePillStage(pill, 'Saving to Drive…');
       const base64 = await blobToBase64(pdfBlob);
@@ -1141,11 +1144,36 @@ function startBackgroundPdfGeneration(result) {
         fileData: base64,
       });
 
-      const uploaded = uploadResp.file || {
-        doc_id: uploadResp.doc_id,
-        file_name: uploadResp.file_name || filename,
-        drive_url: uploadResp.drive_url,
-        date_added: uploadResp.date_added || new Date().toISOString(),
+      // Diagnostic: dump the raw Apps Script response so we can see
+      // exactly which field names and nesting the server actually uses.
+      // Leave this log in place — the field names aren't documented
+      // outside the Apps Script source, and rare response variations
+      // have snuck past us before.
+      console.log('[MAP PDF] Apps Script upload response:', JSON.stringify(uploadResp, null, 2));
+
+      // Field-name resolution for the Drive URL. Apps Script has
+      // surfaced slight variations across deployments; try every
+      // known path in order and take the first non-empty string.
+      const driveUrl =
+        uploadResp?.file?.drive_url ||
+        uploadResp?.drive_url ||
+        uploadResp?.file?.driveUrl ||
+        uploadResp?.driveUrl ||
+        uploadResp?.file?.webViewLink ||
+        uploadResp?.webViewLink ||
+        uploadResp?.file?.url ||
+        uploadResp?.url ||
+        '';
+      if (!driveUrl) {
+        console.warn('[MAP PDF] No Drive URL in upload response — success card will fall back to in-portal navigation. Response keys:',
+          Object.keys(uploadResp || {}), 'file keys:', Object.keys(uploadResp?.file || {}));
+      }
+
+      const uploaded = {
+        doc_id:     uploadResp?.file?.doc_id     || uploadResp?.doc_id,
+        file_name:  uploadResp?.file?.file_name  || uploadResp?.file_name  || filename,
+        drive_url:  driveUrl,
+        date_added: uploadResp?.file?.date_added || uploadResp?.date_added || new Date().toISOString(),
       };
 
       // If the user has the opportunity's edit modal open, inject the
@@ -1156,8 +1184,8 @@ function startBackgroundPdfGeneration(result) {
       announceMapPdfReady({
         opportunityName: opportunity.name,
         opportunityId:   opportunity.opportunityId,
-        driveUrl:        uploaded.drive_url,
-        filename:        uploaded.file_name || filename,
+        driveUrl,
+        filename:        uploaded.file_name,
       });
     } catch (err) {
       markPillFailure(pill, 'Failed — see card');
@@ -1181,14 +1209,19 @@ function announceMapPdfReady({ opportunityName, opportunityId, driveUrl, filenam
   }
   const msgEl = renderMessage('assistant', cardHtml);
 
-  // Wire the "Open the opportunity" link post-render — sanitizeHTML()
-  // strips on* handlers from the string, so we attach the listener now.
+  // Wire every in-portal navigation link post-render — sanitizeHTML()
+  // strips on* handlers from the string, so we attach listeners now.
+  // Covers both the fallback primary button (when Drive URL is missing)
+  // and the secondary "Open the opportunity" link.
   if (msgEl && opportunityId) {
-    const link = msgEl.querySelector('.randy-map-card__secondary-link');
-    if (link) link.addEventListener('click', (e) => {
-      e.preventDefault();
-      openOppForRandy(opportunityId);
-    });
+    const selectors = ['.randy-map-card__btn--in-portal', '.randy-map-card__secondary-link'];
+    for (const sel of selectors) {
+      const link = msgEl.querySelector(sel);
+      if (link) link.addEventListener('click', (e) => {
+        e.preventDefault();
+        openOppForRandy(opportunityId);
+      });
+    }
   }
 }
 
@@ -1285,11 +1318,21 @@ function buildMapSuccessCardHtml({ opportunityName, opportunityId, driveUrl, fil
   // handlers, so interactive bits get wired up post-render.
   const safeName = escapeMapHtml(opportunityName);
   const safeFile = escapeMapHtml(filename);
-  const safeUrl  = driveUrl ? escapeMapHtml(driveUrl) : '#';
-  const driveBtn = driveUrl
-    ? `<a class="randy-map-card__btn" href="${safeUrl}" target="_blank" rel="noopener">View in Drive</a>`
-    : `<span class="randy-map-card__btn" aria-disabled="true" style="opacity:0.6;cursor:not-allowed">Drive link unavailable</span>`;
-  const secondary = opportunityId
+  // Primary CTA: prefer the direct Drive link. If Apps Script didn't
+  // return one, fall back to opening the Opportunity detail inside
+  // the portal — the file definitely lives there (we just uploaded it
+  // and the Documents panel listFiles call will surface it). Avoid a
+  // disabled "Drive link unavailable" button — it reads as broken.
+  let primaryBtn;
+  if (driveUrl) {
+    const safeUrl = escapeMapHtml(driveUrl);
+    primaryBtn = `<a class="randy-map-card__btn" href="${safeUrl}" target="_blank" rel="noopener">View in Drive</a>`;
+  } else if (opportunityId) {
+    primaryBtn = `<a class="randy-map-card__btn randy-map-card__btn--in-portal" href="#" data-opportunity-id="${escapeMapHtml(opportunityId)}">Open in Opportunity</a>`;
+  } else {
+    primaryBtn = `<span class="randy-map-card__btn" aria-disabled="true" style="opacity:0.6;cursor:not-allowed">Saved (no link)</span>`;
+  }
+  const secondary = opportunityId && driveUrl
     ? `<a class="randy-map-card__secondary-link" href="#" data-opportunity-id="${escapeMapHtml(opportunityId)}">Open the opportunity to see all its documents →</a>`
     : '';
   return `<div class="response-container randy-map-card randy-map-card--success">
@@ -1299,7 +1342,7 @@ function buildMapSuccessCardHtml({ opportunityName, opportunityId, driveUrl, fil
 </div>
 <div class="randy-map-card__subline">${safeName}</div>
 <div class="randy-map-card__filename">${safeFile}</div>
-${driveBtn}
+${primaryBtn}
 ${secondary}
 </div>`;
 }

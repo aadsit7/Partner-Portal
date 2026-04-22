@@ -900,6 +900,16 @@
 .randy-map-card__btn:active {
   transform: translateY(1px);
 }
+/* Fallback variant used when the Apps Script upload response didn't
+   surface a Drive URL. Still the primary action, still Recast-brand,
+   but nudges the user toward the in-portal Documents list instead of
+   a broken external link. */
+.randy-map-card__btn--in-portal {
+  background: #1A1A2E;
+}
+.randy-map-card__btn--in-portal:hover {
+  background: #0e0e1a;
+}
 .randy-map-card__filename {
   font-size: 11px;
   color: #888;

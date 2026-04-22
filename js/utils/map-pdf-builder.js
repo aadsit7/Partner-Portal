@@ -40,16 +40,28 @@ const CONTENT_W = PAGE_W - MARGIN * 2;
 export function slugName(name) {
   const raw = String(name || '').trim();
   if (!raw) return 'opportunity';
-  return raw
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 60) || 'opportunity';
+  const cleaned = raw
+    .replace(/[^\w\s-]/g, '')        // drop punctuation (commas, dots, apostrophes, etc.)
+    .replace(/\s+/g, '_')             // whitespace runs → single _
+    .replace(/_+/g, '_')              // collapse consecutive _
+    .replace(/^[_-]+|[_-]+$/g, '')    // trim leading/trailing _ or - from cleanup
+    .slice(0, 60);                    // cap length before a final trim
+  return cleaned.replace(/^[_-]+|[_-]+$/g, '') || 'opportunity';
 }
 
+/**
+ * ISO-only filename. The date is ALWAYS today's generation date in
+ * YYYY-MM-DD — never a human-readable form like "April 22, 2026" that
+ * might sneak through from the JSON payload and slugify into garbage
+ * (`April_20_`). The optional dateISO arg is accepted for caller
+ * convenience but validated: anything that isn't YYYY-MM-DD is ignored
+ * in favour of today.
+ */
 export function mapFilename(customerName, dateISO) {
-  const d = (dateISO || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  const d = (typeof dateISO === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateISO))
+    ? dateISO.slice(0, 10)
+    : today;
   return `MAP_${slugName(customerName)}_${d}.pdf`;
 }
 

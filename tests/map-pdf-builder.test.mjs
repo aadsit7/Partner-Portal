@@ -43,6 +43,23 @@ test('mapFilename trims timestamp precision if full ISO provided', () => {
     'MAP_Acme_2026-04-22.pdf',
   );
 });
+test('mapFilename IGNORES non-ISO date strings and uses today — the Bug 2 regression', () => {
+  // Previous behaviour sliced the first 10 chars of "April 22, 2026"
+  // and produced "MAP_Greenshield_April_22_.pdf" (with trailing _).
+  // Now we validate the shape and fall through to today's ISO date.
+  const today = new Date().toISOString().slice(0, 10);
+  assert.equal(mapFilename('Greenshield', 'April 22, 2026'), `MAP_Greenshield_${today}.pdf`);
+  assert.equal(mapFilename('Greenshield', '4/22/2026'),      `MAP_Greenshield_${today}.pdf`);
+  assert.equal(mapFilename('Greenshield'),                   `MAP_Greenshield_${today}.pdf`);
+  assert.equal(mapFilename('Greenshield', null),             `MAP_Greenshield_${today}.pdf`);
+  assert.equal(mapFilename('Greenshield', ''),               `MAP_Greenshield_${today}.pdf`);
+});
+test('mapFilename has no trailing underscore between slug and .pdf', () => {
+  // Extra tight guard: even if slug + date produced weird edges, the
+  // literal filename can never end in `_.pdf`.
+  const name = mapFilename('Greenshield', 'April 22, 2026');
+  assert.ok(!/_\.pdf$/.test(name), `filename should not end in _.pdf, got ${name}`);
+});
 
 // ── blobToBase64 ─────────────────────────────────────────────
 
