@@ -892,3 +892,357 @@ export async function callClaude(messages, sheetData, userMessage, signal, syste
     .map(block => block.text)
     .join('\n');
 }
+
+// ── MAP PDF helpers ────────────────────────────────────────────────
+//
+// These support the voice-triggered MAP PDF feature. They deliberately
+// sit alongside the other AI helpers so they can reuse loadSheetData()
+// and stripHtml without a second Sheets read path.
+
+const MAP_PDF_BETA_HEADER = 'code-execution-2025-08-25,skills-2025-10-02,files-api-2025-04-14';
+const MAP_PDF_MODEL = 'claude-opus-4-7';
+const MAP_PDF_TIMEOUT_MS = 120_000;
+const MAP_PDF_MAX_PAUSE_ITERATIONS = 10;
+
+function acronymOf(name) {
+  return String(name || '')
+    .split(/\s+/)
+    .map(w => w.replace(/[^\p{L}\p{N}]/gu, ''))
+    .filter(w => w.length > 0)
+    .map(w => w[0].toUpperCase())
+    .join('');
+}
+
+function sharesPrefix(a, b, minLen = 3) {
+  if (!a || !b) return false;
+  const len = Math.min(a.length, b.length);
+  if (len < minLen) return false;
+  return a.slice(0, len) === b.slice(0, len);
+}
+
+// Three-pass match: exact → partial includes → acronym. Each pass short-
+// circuits the moment it returns any results. Runs only over the cached
+// opportunities array — no network cost.
+function findOpportunityMatches(opportunities, hint) {
+  const h = String(hint || '').toLowerCase().trim();
+  if (!h) return [];
+
+  const exact = opportunities.filter(o =>
+    (o.customer_name || '').toLowerCase() === h ||
+    (o.deal_name || '').toLowerCase() === h
+  );
+  if (exact.length > 0) return exact;
+
+  const partial = opportunities.filter(o =>
+    (o.customer_name || '').toLowerCase().includes(h) ||
+    (o.deal_name || '').toLowerCase().includes(h)
+  );
+  if (partial.length > 0) return partial;
+
+  const hintUpper = h.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (hintUpper.length < 2) return [];
+  return opportunities.filter(o => {
+    const names = [o.customer_name, o.deal_name].filter(Boolean);
+    return names.some(n => sharesPrefix(hintUpper, acronymOf(n), 3));
+  });
+}
+
+/**
+ * Look up an opportunity and its full dated description history by a
+ * loose name hint the user spoke aloud ("ANICO", "American National",
+ * "Fabrikam deal", etc).
+ *
+ * Matching order: exact → partial includes → acronym prefix.
+ *
+ * Returns `matchCount: 0` when no opportunity matches, `matchCount: n`
+ * with a `matches` array when multiple do (caller should disambiguate),
+ * and a populated record when exactly one matches. `allDescriptions` is
+ * sorted newest-first; it may be empty if the opportunity has no rows
+ * in the Opportunity_Descriptions sheet — in that case the caller
+ * should refuse rather than fall back to the summary field.
+ *
+ * @param {string} opportunityHint
+ */
+export async function getOpportunityDescription(opportunityHint) {
+  if (!opportunityHint || typeof opportunityHint !== 'string') {
+    return { matchCount: 0, matches: [] };
+  }
+
+  const data = await loadSheetData();
+  const opportunities = data.opportunities || [];
+  const fullDescriptions = data.fullOppDescriptions || [];
+
+  const matches = findOpportunityMatches(opportunities, opportunityHint);
+
+  if (matches.length === 0) {
+    return { matchCount: 0, matches: [] };
+  }
+
+  if (matches.length > 1) {
+    return {
+      matchCount: matches.length,
+      matches: matches.map(o => ({
+        opportunityId: o.opportunity_id,
+        opportunityName: o.customer_name || o.deal_name || '(unnamed opportunity)',
+        dealName: o.deal_name || '',
+        customerName: o.customer_name || '',
+      })),
+    };
+  }
+
+  const opp = matches[0];
+  const opportunityName = opp.customer_name || opp.deal_name || '(unnamed opportunity)';
+
+  const allDescriptions = fullDescriptions
+    .filter(d => String(d.opportunity_id) === String(opp.opportunity_id))
+    .map(d => ({
+      date: d.description_date || d.created_at || '',
+      text: stripHtml(d.description_text || '').trim(),
+    }))
+    .filter(d => d.text.length > 0)
+    .sort((a, b) => {
+      const ad = Date.parse(a.date) || 0;
+      const bd = Date.parse(b.date) || 0;
+      return bd - ad;
+    });
+
+  const latest = allDescriptions[0];
+
+  return {
+    matchCount: 1,
+    opportunityId: opp.opportunity_id,
+    opportunityName,
+    dealName: opp.deal_name || '',
+    customerName: opp.customer_name || '',
+    latestDescription: latest?.text || '',
+    descriptionDate: latest?.date || '',
+    allDescriptions,
+  };
+}
+
+// Exported for the unit tests, which feed in a synthetic opportunities
+// array instead of hitting the Sheets cache.
+export const __mapPdfInternals = {
+  findOpportunityMatches,
+  acronymOf,
+  sharesPrefix,
+};
+
+function slugifyForFilename(s) {
+  return String(s || 'opportunity')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'opportunity';
+}
+
+function buildMapPdfPrompt(opportunityName, descriptionText, descriptionDate, priorEntries) {
+  const priorBlock = (priorEntries && priorEntries.length > 0)
+    ? `
+
+PRIOR DESCRIPTION ENTRIES (for context only — the CURRENT entry above is what this MAP is being generated from; the entries below help the P.C.P. analysis):
+
+${priorEntries.map((e, i) => `--- Prior entry ${i + 1} (${e.date}) ---\n${e.text}`).join('\n\n')}`
+    : '';
+
+  return `Generate a Recast-branded Mutual Action Plan PDF for the opportunity below.
+
+Opportunity: ${opportunityName}
+Current Description Date: ${descriptionDate}
+
+CURRENT DESCRIPTION (this is the meeting this MAP is generated from):
+
+${descriptionText}${priorBlock}
+
+Follow the recast-map-pdf skill exactly. Use the reference_map_pdf.py template in the skill folder as your layout source — adapt the CONTENT constants to this opportunity while keeping the layout, colors, fonts, and spacing from the reference script unchanged. The output must be a 2-page PDF matching the visual style of the reference.
+
+Before generating, silently apply the P.C.P. Model to analyze the content. Run the accuracy verification checklist and the client-safe filtering checklist. If any tool names, dates, or owners are ambiguous in the source text, surface them in a plain-text response section before the PDF file, prefixed with "AMBIGUITY FLAGS:" — do NOT put them in the PDF itself.
+
+Produce the PDF and include it as a generated file in your response.`;
+}
+
+// Walk the Anthropic response and pull out: (a) any PDF file that was
+// produced via code_execution, (b) the AMBIGUITY FLAGS operator hint.
+function extractPdfAndFlags(messageContent) {
+  let fileId = null;
+  let filename = null;
+  const textChunks = [];
+
+  const visit = (block) => {
+    if (!block || typeof block !== 'object') return;
+    if (block.type === 'text' && typeof block.text === 'string') {
+      textChunks.push(block.text);
+    }
+    // Code-execution tool result: contains a `content` array which may hold
+    // file blocks. Shape of code_execution results has evolved across SDK
+    // versions; check several candidate fields.
+    if (block.type === 'code_execution_tool_result' || block.type === 'tool_result') {
+      const inner = block.content || block.output?.content;
+      if (Array.isArray(inner)) inner.forEach(visit);
+      if (Array.isArray(block.output?.files)) block.output.files.forEach(visit);
+    }
+    // Direct file reference blocks.
+    if (block.type === 'container_upload' || block.type === 'file' || block.type === 'code_execution_output_file') {
+      const id = block.file_id || block.id || block.file?.id;
+      const nm = block.filename || block.file?.filename || block.name || null;
+      if (id && /\.pdf$/i.test(nm || '')) {
+        fileId = id;
+        filename = nm;
+      } else if (id && !fileId) {
+        // Fallback: first file if no explicit .pdf
+        fileId = id;
+        filename = nm;
+      }
+    }
+  };
+
+  if (Array.isArray(messageContent)) messageContent.forEach(visit);
+
+  const joined = textChunks.join('\n');
+  const flagMatch = joined.match(/AMBIGUITY FLAGS:\s*([\s\S]+?)(?:\n\n|$)/i);
+  const ambiguityFlags = flagMatch ? flagMatch[1].trim() : '';
+
+  return { fileId, filename, ambiguityFlags };
+}
+
+/**
+ * Generate a Recast-branded MAP PDF for the given opportunity by invoking
+ * the recast-map-pdf skill in the sandbox. This is a NON-streaming call —
+ * streaming + code_execution don't mix with Randy's text-delta flow.
+ *
+ * Steps:
+ *   1. POST to /v1/messages with container.skills + code_execution tool.
+ *   2. Follow pause_turn hops up to MAP_PDF_MAX_PAUSE_ITERATIONS times,
+ *      reusing the container across hops so files persist.
+ *   3. Walk the final response for a PDF file_id, download via Files API.
+ *   4. Return the PDF as a Blob plus a download filename.
+ *
+ * Caller supplies the skill ID — this function throws a clearly-tagged
+ * error when the caller hasn't set it up yet so the UI can show the
+ * "run the upload script" message instead of a raw 400.
+ *
+ * @param {object} opts
+ * @param {string} opts.skillId
+ * @param {string} opts.opportunityName
+ * @param {string} opts.descriptionText
+ * @param {string} opts.descriptionDate
+ * @param {Array<{date: string, text: string}>} [opts.priorDescriptions]
+ * @param {AbortSignal} [opts.signal]
+ * @returns {Promise<{ pdfBlob: Blob, filename: string, ambiguityFlags: string }>}
+ */
+export async function callClaudePdfGeneration({
+  skillId,
+  opportunityName,
+  descriptionText,
+  descriptionDate,
+  priorDescriptions = [],
+  signal,
+} = {}) {
+  if (!skillId || skillId === 'PASTE_SKILL_ID_HERE') {
+    const err = new Error('MAP skill not configured');
+    err.code = 'MAP_SKILL_NOT_CONFIGURED';
+    throw err;
+  }
+  if (!opportunityName) throw new Error('opportunityName is required');
+  if (!descriptionText) throw new Error('descriptionText is required');
+
+  const apiKey = requireApiKey();
+  const headers = {
+    ...buildRequestHeaders(apiKey),
+    'anthropic-beta': MAP_PDF_BETA_HEADER,
+  };
+
+  const userText = buildMapPdfPrompt(
+    opportunityName,
+    descriptionText,
+    descriptionDate || '',
+    priorDescriptions
+  );
+
+  const conversation = [{ role: 'user', content: userText }];
+  let container = {
+    skills: [
+      { type: 'custom', skill_id: skillId, version: 'latest' },
+      { type: 'anthropic', skill_id: 'pdf', version: 'latest' },
+    ],
+  };
+
+  // First request gets a 2-minute timeout; subsequent pause_turn hops
+  // reuse the same AbortSignal-composed timeout window so a stuck
+  // generation doesn't loop forever.
+  const composedSignal = withTimeout(signal, MAP_PDF_TIMEOUT_MS);
+
+  let lastResponse = null;
+  for (let hop = 0; hop <= MAP_PDF_MAX_PAUSE_ITERATIONS; hop++) {
+    const body = {
+      model: MAP_PDF_MODEL,
+      max_tokens: 8192,
+      container,
+      tools: [{ type: 'code_execution_20250825', name: 'code_execution' }],
+      messages: conversation,
+    };
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: composedSignal,
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      const msg = errBody.error?.message || `API error: ${response.status}`;
+      const err = new Error(msg);
+      err.status = response.status;
+      if (/skill/i.test(msg)) err.code = 'MAP_SKILL_ERROR';
+      throw err;
+    }
+
+    lastResponse = await response.json();
+
+    // Reuse the returned container on subsequent hops so files survive.
+    if (lastResponse.container?.id) {
+      container = { id: lastResponse.container.id };
+    }
+
+    if (lastResponse.stop_reason !== 'pause_turn') break;
+
+    // pause_turn: append the assistant turn and loop.
+    conversation.push({ role: 'assistant', content: lastResponse.content });
+    if (hop === MAP_PDF_MAX_PAUSE_ITERATIONS) {
+      throw new Error('MAP PDF generation exceeded the pause-turn loop limit.');
+    }
+  }
+
+  const { fileId, filename: apiFilename, ambiguityFlags } = extractPdfAndFlags(lastResponse?.content || []);
+
+  if (!fileId) {
+    const err = new Error('Claude did not return a PDF file in its response.');
+    err.code = 'MAP_PDF_MISSING';
+    throw err;
+  }
+
+  const fileResp = await fetch(`https://api.anthropic.com/v1/files/${encodeURIComponent(fileId)}/content`, {
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+      'anthropic-beta': MAP_PDF_BETA_HEADER,
+    },
+    signal: composedSignal,
+  });
+  if (!fileResp.ok) {
+    const err = new Error(`Failed to download PDF (HTTP ${fileResp.status}).`);
+    err.code = 'MAP_PDF_DOWNLOAD_FAILED';
+    err.status = fileResp.status;
+    throw err;
+  }
+  const pdfBlob = await fileResp.blob();
+
+  const datePart = (descriptionDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const filename = apiFilename && /\.pdf$/i.test(apiFilename)
+    ? apiFilename
+    : `recast-map-${slugifyForFilename(opportunityName)}-${datePart}.pdf`;
+
+  return { pdfBlob, filename, ambiguityFlags };
+}

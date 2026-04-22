@@ -4,8 +4,10 @@
 // Persistent floating widget in the app shell.
 // Separate from the voice-widget.js chat mic feature.
 
-import { SYSTEM_PROMPT, loadSheetData, callClaudeStream, warmSheetData } from '../utils/ai.js';
+import { SYSTEM_PROMPT, loadSheetData, callClaudeStream, warmSheetData, getOpportunityDescription, callClaudePdfGeneration } from '../utils/ai.js';
 import { parseActions, executeAction } from '../utils/ai-actions.js';
+import { detectMapPdfIntent } from '../utils/map-pdf-intent.js';
+import { RECAST_MAP_SKILL_ID, RECAST_MAP_SKILL_ID_PLACEHOLDER } from '../config/skill_config.js';
 import { CONFIG } from '../config.js';
 import { getCurrentUser } from '../auth.js';
 import { appendRow, updateRow, readSheetAsObjects, loadCustomPrompts } from '../sheets.js';
@@ -243,6 +245,15 @@ let isMuted = false;
 let isTypeModeActive = false;
 let loadedPresets = [];
 let activePresetId = null;
+
+// MAP PDF follow-up state. When set, Randy's next user turn is treated
+// as either an opportunity name (awaiting: 'opportunity') or a pick
+// from a disambiguation list (awaiting: 'opportunity', matches: [...]).
+// null whenever no MAP flow is pending.
+let pendingMapIntent = null;
+// Track blob URLs for generated PDFs so they can be revoked when the
+// widget closes / clears the chat.
+const mapPdfBlobUrls = new Set();
 
 // Listening recovery
 let restartCount = 0;
@@ -783,6 +794,40 @@ async function processUserInput(text) {
   // Re-entry guard — prevent parallel API calls
   if (isProcessing) return;
 
+  // ── MAP PDF intent routing ────────────────────────────────────────
+  // Intercept before the regular Claude flow. Two paths:
+  //   (a) A prior MAP turn asked "which opportunity?" / "which one of
+  //       these?" — this message answers the follow-up.
+  //   (b) The user just gave a MAP trigger phrase ("create a MAP for
+  //       ANICO"). detectMapPdfIntent() does pure regex matching on
+  //       the text; when `triggered` is false we fall through and the
+  //       existing chat flow runs byte-identical to before.
+  if (pendingMapIntent) {
+    const _pending = pendingMapIntent;
+    pendingMapIntent = null;
+    isProcessing = true;
+    transition(STATES.PROCESSING, isTypeModeActive);
+    renderMessage('user', text);
+    try {
+      await runMapPdfFlow({ hint: text, followUp: _pending });
+    } finally {
+      isProcessing = false;
+    }
+    return;
+  }
+  const mapIntent = detectMapPdfIntent(text);
+  if (mapIntent.triggered) {
+    isProcessing = true;
+    transition(STATES.PROCESSING, isTypeModeActive);
+    renderMessage('user', text);
+    try {
+      await runMapPdfFlow({ hint: mapIntent.opportunityHint });
+    } finally {
+      isProcessing = false;
+    }
+    return;
+  }
+
   transition(STATES.PROCESSING, isTypeModeActive);
   renderMessage('user', text);
   renderTypingIndicator();
@@ -961,6 +1006,210 @@ async function processUserInput(text) {
   } finally {
     isProcessing = false;
   }
+}
+
+// ── MAP PDF Flow ──────────────────────────────────────────────────
+// See processUserInput() for the interception point. This function runs
+// inside the processing lock up to the point where it kicks off the
+// background PDF generation, then releases — so the user can keep
+// talking to Randy while the skill generates.
+
+async function runMapPdfFlow({ hint }) {
+  // Skill not yet configured — friendly, actionable error
+  if (!RECAST_MAP_SKILL_ID || RECAST_MAP_SKILL_ID === RECAST_MAP_SKILL_ID_PLACEHOLDER) {
+    const msg = "The MAP skill isn't set up yet, boss. Run the upload script and paste the skill ID into js/config/skill_config.js.";
+    const spoken = "The MAP skill isn't set up yet, boss. Run the upload script and paste the skill ID into the config.";
+    if (isTypeModeActive) {
+      renderMessage('assistant', msg);
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText(spoken, () => transition(STATES.ACTIVE_LISTENING));
+      renderMessage('assistant', msg);
+    }
+    return;
+  }
+
+  // No opportunity named — ask and stash a pending flag
+  if (!hint || !hint.trim()) {
+    const msg = "Which opportunity should I pull the MAP from, boss?";
+    pendingMapIntent = { awaiting: 'opportunity' };
+    if (isTypeModeActive) {
+      renderMessage('assistant', msg);
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText(msg, () => transition(STATES.ACTIVE_LISTENING));
+      renderMessage('assistant', msg);
+    }
+    return;
+  }
+
+  let result;
+  try {
+    result = await getOpportunityDescription(hint);
+  } catch (err) {
+    console.error('Randy MAP: opportunity lookup failed', err);
+    const msg = "I couldn't pull the opportunities from the sheet, boss. Try again in a sec.";
+    if (isTypeModeActive) {
+      renderMessage('assistant', msg);
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText(msg, () => transition(STATES.ACTIVE_LISTENING));
+      renderMessage('assistant', msg);
+    }
+    return;
+  }
+
+  if (result.matchCount === 0) {
+    const msg = "I couldn't find that opportunity in the sheet, boss. Can you give me the exact name?";
+    pendingMapIntent = { awaiting: 'opportunity' };
+    if (isTypeModeActive) {
+      renderMessage('assistant', msg);
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText(msg, () => transition(STATES.ACTIVE_LISTENING));
+      renderMessage('assistant', msg);
+    }
+    return;
+  }
+
+  if (result.matchCount > 1) {
+    const names = result.matches.map(m => m.opportunityName);
+    const spokenList = names.length === 2
+      ? `${names[0]}, or ${names[1]}`
+      : `${names.slice(0, -1).join(', ')}, or ${names[names.length - 1]}`;
+    const display = `I found a few, boss — which one: ${names.join(', ')}?`;
+    const spoken = `I found a few, boss. Is it ${spokenList}?`;
+    pendingMapIntent = { awaiting: 'opportunity', matches: names };
+    if (isTypeModeActive) {
+      renderMessage('assistant', display);
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText(spoken, () => transition(STATES.ACTIVE_LISTENING));
+      renderMessage('assistant', display);
+    }
+    return;
+  }
+
+  // Single match — but refuse if no description history exists (per
+  // the decided V1 behavior: don't fall back to Opportunities.description
+  // or notes JSON, those aren't structured as meeting content and would
+  // produce a bad MAP).
+  if (!result.allDescriptions || result.allDescriptions.length === 0) {
+    const msg = `No meeting descriptions found for ${result.opportunityName} yet, boss. I need at least one description entry in the Opportunity_Descriptions sheet before I can generate a MAP.`;
+    const spoken = `No meeting descriptions yet for ${result.opportunityName}, boss. I need at least one description entry in the Opportunity Descriptions sheet before I can generate a MAP.`;
+    if (isTypeModeActive) {
+      renderMessage('assistant', msg);
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText(spoken, () => transition(STATES.ACTIVE_LISTENING));
+      renderMessage('assistant', msg);
+    }
+    return;
+  }
+
+  // Happy path: kick off background generation and let Randy go back
+  // to listening immediately. The background task announces itself when
+  // ready — or appends silently if Randy is busy with something else.
+  const kickoff = `On it, boss. Generating the MAP PDF for ${result.opportunityName} now — this will take a few seconds.`;
+  if (isTypeModeActive) {
+    renderMessage('assistant', kickoff);
+    transition(STATES.PASSIVE, true);
+  } else {
+    speakText(kickoff, () => transition(STATES.ACTIVE_LISTENING));
+    renderMessage('assistant', kickoff);
+  }
+  startBackgroundPdfGeneration(result);
+}
+
+function startBackgroundPdfGeneration(result) {
+  // Send the newest description entry as the primary MAP content and
+  // up to 5 prior entries as context for the P.C.P. analysis step.
+  const primary = result.allDescriptions[0];
+  const prior = result.allDescriptions.slice(1, 6);
+
+  (async () => {
+    try {
+      const out = await callClaudePdfGeneration({
+        skillId: RECAST_MAP_SKILL_ID,
+        opportunityName: result.opportunityName,
+        descriptionText: primary.text,
+        descriptionDate: primary.date,
+        priorDescriptions: prior,
+      });
+      announceMapPdfReady({ ...out, opportunityName: result.opportunityName });
+    } catch (err) {
+      announceMapPdfError(err, result.opportunityName);
+    }
+  })();
+}
+
+function randyIsIdle() {
+  return currentState === STATES.ACTIVE_LISTENING || currentState === STATES.PASSIVE;
+}
+
+function announceMapPdfReady({ pdfBlob, filename, ambiguityFlags, opportunityName }) {
+  const url = URL.createObjectURL(pdfBlob);
+  mapPdfBlobUrls.add(url);
+
+  const cardHtml = buildMapPdfCardHtml({ url, filename, opportunityName, ambiguityFlags });
+
+  // TTS-before-DOM ordering: start speech first, then render. Only
+  // interrupt with speech when Randy is idle — if the user is mid-task
+  // the card still appears in the chat history, just silently.
+  if (!isTypeModeActive && randyIsIdle()) {
+    speakText(`Your MAP PDF for ${opportunityName} is ready, boss. Click the download button to save it.`);
+  }
+  renderMessage('assistant', cardHtml);
+}
+
+function announceMapPdfError(err, opportunityName) {
+  console.error('Randy MAP PDF error:', err);
+  let display;
+  let spoken;
+  const msg = err?.message || '';
+  if (err?.code === 'MAP_SKILL_NOT_CONFIGURED') {
+    display = "The MAP skill isn't set up yet, boss. Run the upload script and paste the skill ID into js/config/skill_config.js.";
+    spoken = "The MAP skill isn't set up yet, boss. Run the upload script and paste the skill ID into the config.";
+  } else if (err?.code === 'MAP_SKILL_ERROR' || (err?.status === 400 && /skill/i.test(msg))) {
+    display = "I hit a snag with the MAP skill, boss. It might need to be re-uploaded.";
+    spoken = display;
+  } else if (err?.code === 'MAP_PDF_MISSING' || err?.code === 'MAP_PDF_DOWNLOAD_FAILED') {
+    display = "The PDF was generated but I couldn't download it, boss. Check the browser console.";
+    spoken = display;
+  } else if (err?.name === 'TimeoutError' || /timeout|timed out/i.test(msg)) {
+    display = "That's taking too long, boss. Want me to try again?";
+    spoken = display;
+  } else {
+    display = `Ran into an issue generating the MAP for ${opportunityName}, boss. ${msg || 'Check the console.'}`;
+    spoken = "Ran into an issue generating the MAP, boss. Give it another try.";
+  }
+  if (!isTypeModeActive && randyIsIdle()) speakText(spoken);
+  renderMessage('assistant', display);
+}
+
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+function buildMapPdfCardHtml({ url, filename, opportunityName, ambiguityFlags }) {
+  // The `response-container` class is the marker that tells
+  // renderMessage() to route through sanitizeHTML() instead of the
+  // markdown renderer. sanitizeHTML strips <script>/<iframe>/etc but
+  // allows <a href download>, <div>, <details>, <summary>.
+  const safeUrl = String(url);  // blob: URL produced by URL.createObjectURL
+  const safeFile = escapeHtml(filename);
+  const safeName = escapeHtml(opportunityName);
+  const flagsBlock = ambiguityFlags && ambiguityFlags.trim()
+    ? `<details class="randy-map-card__flags"><summary>Heads up — I flagged a few things for you before sending anything to the client</summary><div>${escapeHtml(ambiguityFlags)}</div></details>`
+    : '';
+  return `<div class="response-container randy-map-card">
+<div class="randy-map-card__header">MAP PDF Ready — ${safeName}</div>
+<a class="randy-map-card__btn" href="${safeUrl}" download="${safeFile}">Download PDF</a>
+<div class="randy-map-card__filename">${safeFile}</div>
+${flagsBlock}
+</div>`;
 }
 
 // ── Confirmation Handling ─────────────────────────────────────────
@@ -1814,6 +2063,11 @@ function createWidget() {
     currentConvRow = null;
     convStartedAt = null;
     voiceEnabled = false;
+    // Revoke any outstanding MAP PDF blob URLs so they don't leak
+    // memory after the chat is torn down.
+    mapPdfBlobUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch { /* ignore */ } });
+    mapPdfBlobUrls.clear();
+    pendingMapIntent = null;
     const chat = document.getElementById('randy-chat');
     if (chat) chat.innerHTML = '';
     setWindowState('collapsed');

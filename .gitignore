@@ -1,0 +1,17 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Local environment
+.env
+.env.local
+
+# Skill artifacts — the uploaded skill ID identifies a skill in a private
+# Anthropic workspace. Not a credential, but keep it out of this public repo
+# so forks don't accidentally publish versions under it.
+skills/.skill_id
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
