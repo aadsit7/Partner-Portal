@@ -5,7 +5,7 @@
 /* ── Panel container ─────────────────────────────────────────────── */
 .qf-panel {
   position: fixed;
-  width: 380px;
+  width: 340px;
   max-height: min(600px, 90vh);
   background: #fff;
   border: 1px solid #e5e7eb;
@@ -78,7 +78,6 @@
 /* ── Type selector tabs ─────────────────────────────────────────── */
 .qf-type-selector {
   display: flex;
-  flex-wrap: wrap;
   border-bottom: 1px solid #e5e7eb;
   background: #f9fafb;
   flex-shrink: 0;
@@ -108,6 +107,58 @@
   border-bottom-color: #0000CC;
   background: #fff;
   font-weight: 600;
+}
+
+/* ── Mode toggle (New? No / Yes) ────────────────────────────────── */
+.qf-mode-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: #f0f4ff;
+  border-radius: 8px;
+  border: 1px solid #dde5ff;
+  flex-shrink: 0;
+}
+
+.qf-mode-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.qf-toggle-group {
+  display: flex;
+  border: 1.5px solid #d1d5db;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.qf-toggle-btn {
+  height: 26px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  border: none;
+  background: #fff;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background 150ms, color 150ms;
+}
+
+.qf-toggle-btn + .qf-toggle-btn {
+  border-left: 1.5px solid #d1d5db;
+}
+
+.qf-toggle-btn--active {
+  background: #0000CC;
+  color: #fff;
+}
+
+/* Mode body — children participate in the body's flex column layout */
+.qf-mode-body {
+  display: contents;
 }
 
 /* ── Body / scrollable form area ────────────────────────────────── */

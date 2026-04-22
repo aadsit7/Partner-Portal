@@ -3,7 +3,9 @@
 // ============================================
 // Surfaced via the form icon button on the Randy assistant widget.
 // Lets admins create Opportunities, Partners, or Events without
-// navigating to their respective admin pages.
+// navigating to their respective admin pages. Partner and Opportunity
+// tabs include a "New?" toggle: No (default) appends to an existing
+// record; Yes shows the full new-record creation fields.
 
 import { CONFIG } from '../config.js';
 import { appendRow, updateRow, isConfigured, addDemoRow, readSheetAsObjects } from '../sheets.js';
@@ -14,19 +16,16 @@ import { getCurrentUser } from '../auth.js';
 import { sha256 } from '../utils/hash.js';
 import { TIER_OPTIONS } from '../utils/tiers.js';
 
-const OPP_STAGES   = ['Prospect', 'Qualified', 'Proposal', 'Negotiation', 'Closed'];
-const OPP_STATUSES = ['Registered', 'In Progress', 'Won', 'Lost'];
+const OPP_STAGES    = ['Prospect', 'Qualified', 'Proposal', 'Negotiation', 'Closed'];
+const OPP_STATUSES  = ['Registered', 'In Progress', 'Won', 'Lost'];
 const PARTNER_TYPES = ['Technology', 'MSP/SI', 'OEM', 'MENA Regional Distributor'];
 const EVENT_TYPES   = ['Webinar', 'Workshop', 'Conference', 'Campaign', 'Other'];
 const EVENT_STATUSES = ['Upcoming', 'In Progress', 'Completed', 'Cancelled'];
 
-const SUBMIT_LABELS = {
-  opportunity: 'Add Opportunity',
-  partner:     'Add Partner',
-  event:       'Create Event',
-  transcript:  'Add Transcript',
-  opp_note:    'Add Note',
-};
+const SUBMIT_LABELS = { event: 'Create Event' };
+
+// false = append-to-existing (default); true = create new
+const modeIsNew = { partner: false, opportunity: false };
 
 let panelEl             = null;
 let isVisible           = false;
@@ -139,15 +138,13 @@ function buildPanel() {
       <button class="qf-type-btn qf-type-btn--active" data-type="opportunity" role="tab" aria-selected="true">Opportunity</button>
       <button class="qf-type-btn" data-type="partner" role="tab" aria-selected="false">Partner</button>
       <button class="qf-type-btn" data-type="event" role="tab" aria-selected="false">Event</button>
-      <button class="qf-type-btn" data-type="transcript" role="tab" aria-selected="false">Transcript</button>
-      <button class="qf-type-btn" data-type="opp_note" role="tab" aria-selected="false">Opp Note</button>
     </div>
 
     <div class="qf-body" id="qf-body"></div>
 
     <div class="qf-footer">
       <button class="qf-btn qf-btn--secondary" id="qf-cancel-btn">Cancel</button>
-      <button class="qf-btn qf-btn--primary"   id="qf-submit-btn">Add Opportunity</button>
+      <button class="qf-btn qf-btn--primary"   id="qf-submit-btn">Add Note</button>
     </div>
   `;
 
@@ -177,6 +174,9 @@ function onDocKeydown(e) {
 function switchType(type) {
   activeType = type;
 
+  // Reset to append mode (No) whenever the tab changes
+  if (type in modeIsNew) modeIsNew[type] = false;
+
   panelEl.querySelectorAll('.qf-type-btn').forEach(btn => {
     const active = btn.dataset.type === type;
     btn.classList.toggle('qf-type-btn--active', active);
@@ -184,9 +184,15 @@ function switchType(type) {
   });
 
   const submitBtn = panelEl.querySelector('#qf-submit-btn');
-  if (submitBtn) submitBtn.textContent = SUBMIT_LABELS[type] || 'Submit';
+  if (submitBtn) submitBtn.textContent = getSubmitLabel();
 
   renderTypeForm(type);
+}
+
+function getSubmitLabel() {
+  if (activeType === 'partner')     return modeIsNew.partner     ? 'Add Partner'     : 'Add Transcript';
+  if (activeType === 'opportunity') return modeIsNew.opportunity ? 'Add Opportunity' : 'Add Note';
+  return SUBMIT_LABELS[activeType] || 'Submit';
 }
 
 // ── Data loading ──────────────────────────────────────────────────
@@ -222,70 +228,42 @@ function renderTypeForm(type) {
     opportunity: buildOpportunityFields,
     partner:     buildPartnerFields,
     event:       buildEventFields,
-    transcript:  buildTranscriptFields,
-    opp_note:    buildOppNoteFields,
   }[type]?.() || document.createDocumentFragment();
 
   body.appendChild(frag);
-
-  if (type === 'opp_note')                        wireOppNoteFilters();
-  if (type === 'transcript' || type === 'opp_note') setDateDefaults(type);
+  postRenderSetup(type);
 }
+
+function postRenderSetup(type) {
+  if (type === 'partner') {
+    const modeBody = panelEl.querySelector('.qf-mode-body');
+    if (modeBody) renderPartnerModeBody(modeBody, modeIsNew.partner);
+  } else if (type === 'opportunity') {
+    const modeBody = panelEl.querySelector('.qf-mode-body');
+    if (modeBody) {
+      renderOppModeBody(modeBody, modeIsNew.opportunity);
+      if (!modeIsNew.opportunity) wireOppNoteFilters();
+    }
+  }
+}
+
+// ── Tab form builders ─────────────────────────────────────────────
 
 function buildOpportunityFields() {
   const frag = document.createDocumentFragment();
-
-  frag.appendChild(field('deal_name',     'Deal Name',     'text',   true,  'e.g., Enterprise Cloud Migration'));
-  frag.appendChild(field('customer_name', 'Customer Name', 'text',   true,  'e.g., Acme Corp'));
-  frag.appendChild(selectField('partner_id', 'Partner', true, [
-    { value: '', label: 'Select partner…' },
-    ...(cachedPartners || []).map(p => ({ value: p.partner_id, label: p.display_name })),
-  ]));
-
-  const row1 = row();
-  row1.appendChild(field('deal_value',     'Deal Value ($)',  'number', true, '0'));
-  row1.appendChild(field('expected_close', 'Expected Close',  'date',   true));
-  frag.appendChild(row1);
-
-  const row2 = row();
-  row2.appendChild(selectField('stage', 'Stage', true, [
-    { value: '', label: 'Select stage…' },
-    ...OPP_STAGES.map(s => ({ value: s, label: s })),
-  ]));
-  row2.appendChild(selectField('status', 'Status', false,
-    OPP_STATUSES.map(s => ({ value: s, label: s })), 'Registered'
-  ));
-  frag.appendChild(row2);
-
+  frag.appendChild(buildModeToggle('New Opportunity?', 'opportunity'));
+  const modeBody = document.createElement('div');
+  modeBody.className = 'qf-mode-body';
+  frag.appendChild(modeBody);
   return frag;
 }
 
 function buildPartnerFields() {
   const frag = document.createDocumentFragment();
-
-  frag.appendChild(field('username',     'Username',     'text', true, 'e.g., nerdio'));
-  frag.appendChild(field('display_name', 'Company Name', 'text', true, 'e.g., Nerdio'));
-
-  const row1 = row();
-  row1.appendChild(selectField('partner_type', 'Partner Type', true, [
-    { value: '', label: 'Select type…' },
-    ...PARTNER_TYPES.map(t => ({ value: t, label: t })),
-  ]));
-  row1.appendChild(selectField('tier', 'Tier', true, [
-    { value: '', label: 'Select tier…' },
-    ...TIER_OPTIONS.map(t => ({ value: t, label: t })),
-  ]));
-  frag.appendChild(row1);
-
-  const row2 = row();
-  row2.appendChild(field('region', 'Region', 'text', true, 'e.g., North America'));
-  row2.appendChild(selectField('status', 'Status', false,
-    [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }], 'active'
-  ));
-  frag.appendChild(row2);
-
-  frag.appendChild(field('hq_location', 'HQ Location', 'text', false, 'e.g., Chicago, Illinois, USA'));
-
+  frag.appendChild(buildModeToggle('New Partner?', 'partner'));
+  const modeBody = document.createElement('div');
+  modeBody.className = 'qf-mode-body';
+  frag.appendChild(modeBody);
   return frag;
 }
 
@@ -320,46 +298,148 @@ function buildEventFields() {
   return frag;
 }
 
-function buildTranscriptFields() {
-  const frag = document.createDocumentFragment();
+// ── Mode toggle widget ────────────────────────────────────────────
 
-  frag.appendChild(selectField('partner_id', 'Partner', true, [
-    { value: '', label: 'Select partner…' },
-    ...(cachedPartners || []).map(p => ({ value: p.partner_id, label: p.display_name })),
-  ]));
+function buildModeToggle(label, stateKey) {
+  const wrap = document.createElement('div');
+  wrap.className = 'qf-mode-toggle';
 
-  frag.appendChild(field('conversation_date', 'Conversation Date', 'date', true));
+  const lbl = document.createElement('span');
+  lbl.className = 'qf-mode-label';
+  lbl.textContent = label;
+  wrap.appendChild(lbl);
 
-  const transcriptField = field('transcript_text', 'Transcript', 'textarea', true, 'Paste or type the call transcript here…');
-  const textarea = transcriptField.querySelector('textarea');
-  if (textarea) textarea.rows = 7;
-  frag.appendChild(transcriptField);
+  const grp = document.createElement('div');
+  grp.className = 'qf-toggle-group';
 
-  return frag;
+  ['No', 'Yes'].forEach(val => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'qf-toggle-btn' + (val === 'No' ? ' qf-toggle-btn--active' : '');
+    btn.textContent = val;
+
+    btn.addEventListener('click', () => {
+      const isNew = val === 'Yes';
+      if (modeIsNew[stateKey] === isNew) return;
+      modeIsNew[stateKey] = isNew;
+
+      grp.querySelectorAll('.qf-toggle-btn').forEach(b => {
+        b.classList.toggle('qf-toggle-btn--active', b === btn);
+      });
+
+      const modeBody = panelEl.querySelector('.qf-mode-body');
+      if (modeBody) {
+        modeBody.innerHTML = '';
+        if (stateKey === 'partner') {
+          renderPartnerModeBody(modeBody, isNew);
+        } else {
+          renderOppModeBody(modeBody, isNew);
+          if (!isNew) wireOppNoteFilters();
+        }
+      }
+
+      const submitBtn = panelEl.querySelector('#qf-submit-btn');
+      if (submitBtn) submitBtn.textContent = getSubmitLabel();
+    });
+
+    grp.appendChild(btn);
+  });
+
+  wrap.appendChild(grp);
+  return wrap;
 }
 
-function buildOppNoteFields() {
-  const frag = document.createDocumentFragment();
+// ── Mode body renderers ───────────────────────────────────────────
 
-  frag.appendChild(selectField('filter_partner_id', 'Filter by Partner', false, [
-    { value: '', label: 'All partners…' },
-    ...(cachedPartners || []).map(p => ({ value: p.partner_id, label: p.display_name })),
-  ]));
+function renderPartnerModeBody(container, isNew) {
+  if (isNew) {
+    container.appendChild(field('username',     'Username',     'text', true, 'e.g., nerdio'));
+    container.appendChild(field('display_name', 'Company Name', 'text', true, 'e.g., Nerdio'));
 
-  frag.appendChild(selectField('opportunity_id', 'Opportunity', true, [
-    { value: '', label: 'Select opportunity…' },
-    ...(cachedOpportunities || []).map(o => ({ value: o.opportunity_id, label: o.deal_name })),
-  ]));
+    const r1 = row();
+    r1.appendChild(selectField('partner_type', 'Partner Type', true, [
+      { value: '', label: 'Select type…' },
+      ...PARTNER_TYPES.map(t => ({ value: t, label: t })),
+    ]));
+    r1.appendChild(selectField('tier', 'Tier', true, [
+      { value: '', label: 'Select tier…' },
+      ...TIER_OPTIONS.map(t => ({ value: t, label: t })),
+    ]));
+    container.appendChild(r1);
 
-  frag.appendChild(field('description_date', 'Note Date', 'date', true));
+    const r2 = row();
+    r2.appendChild(field('region', 'Region', 'text', true, 'e.g., North America'));
+    r2.appendChild(selectField('status', 'Status', false,
+      [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }], 'active'
+    ));
+    container.appendChild(r2);
 
-  const noteField = field('description_text', 'Note / Description', 'textarea', true, 'Add a note or update the opportunity description…');
-  const textarea = noteField.querySelector('textarea');
-  if (textarea) textarea.rows = 6;
-  frag.appendChild(noteField);
+    container.appendChild(field('hq_location', 'HQ Location', 'text', false, 'e.g., Chicago, Illinois, USA'));
+  } else {
+    container.appendChild(selectField('partner_id', 'Partner', true, [
+      { value: '', label: 'Select partner…' },
+      ...(cachedPartners || []).map(p => ({ value: p.partner_id, label: p.display_name })),
+    ]));
 
-  return frag;
+    const dateWrap = field('conversation_date', 'Conversation Date', 'date', true);
+    const dateInput = dateWrap.querySelector('input');
+    if (dateInput) dateInput.value = todayISO();
+    container.appendChild(dateWrap);
+
+    const transcriptField = field('transcript_text', 'Transcript', 'textarea', true, 'Paste or type the call transcript here…');
+    const textarea = transcriptField.querySelector('textarea');
+    if (textarea) textarea.rows = 7;
+    container.appendChild(transcriptField);
+  }
 }
+
+function renderOppModeBody(container, isNew) {
+  if (isNew) {
+    container.appendChild(field('deal_name',     'Deal Name',     'text',   true,  'e.g., Enterprise Cloud Migration'));
+    container.appendChild(field('customer_name', 'Customer Name', 'text',   true,  'e.g., Acme Corp'));
+    container.appendChild(selectField('partner_id', 'Partner', true, [
+      { value: '', label: 'Select partner…' },
+      ...(cachedPartners || []).map(p => ({ value: p.partner_id, label: p.display_name })),
+    ]));
+
+    const r1 = row();
+    r1.appendChild(field('deal_value',     'Deal Value ($)',  'number', true, '0'));
+    r1.appendChild(field('expected_close', 'Expected Close',  'date',   true));
+    container.appendChild(r1);
+
+    const r2 = row();
+    r2.appendChild(selectField('stage', 'Stage', true, [
+      { value: '', label: 'Select stage…' },
+      ...OPP_STAGES.map(s => ({ value: s, label: s })),
+    ]));
+    r2.appendChild(selectField('status', 'Status', false,
+      OPP_STATUSES.map(s => ({ value: s, label: s })), 'Registered'
+    ));
+    container.appendChild(r2);
+  } else {
+    container.appendChild(selectField('filter_partner_id', 'Filter by Partner', false, [
+      { value: '', label: 'All partners…' },
+      ...(cachedPartners || []).map(p => ({ value: p.partner_id, label: p.display_name })),
+    ]));
+
+    container.appendChild(selectField('opportunity_id', 'Opportunity', true, [
+      { value: '', label: 'Select opportunity…' },
+      ...(cachedOpportunities || []).map(o => ({ value: o.opportunity_id, label: o.deal_name })),
+    ]));
+
+    const dateWrap = field('description_date', 'Note Date', 'date', true);
+    const dateInput = dateWrap.querySelector('input');
+    if (dateInput) dateInput.value = todayISO();
+    container.appendChild(dateWrap);
+
+    const noteField = field('description_text', 'Note / Description', 'textarea', true, 'Add a note or update the opportunity description…');
+    const textarea = noteField.querySelector('textarea');
+    if (textarea) textarea.rows = 5;
+    container.appendChild(noteField);
+  }
+}
+
+// ── Filter cascade (opp note mode) ───────────────────────────────
 
 function wireOppNoteFilters() {
   const partnerFilter = panelEl.querySelector('#qf-filter_partner_id');
@@ -379,13 +459,6 @@ function wireOppNoteFilters() {
         oppSelect.appendChild(opt);
       });
   });
-}
-
-function setDateDefaults(type) {
-  const today = todayISO();
-  const dateId = type === 'transcript' ? '#qf-conversation_date' : '#qf-description_date';
-  const input  = panelEl.querySelector(dateId);
-  if (input && !input.value) input.value = today;
 }
 
 // ── Field helpers ─────────────────────────────────────────────────
@@ -515,18 +588,22 @@ async function handleSubmit() {
 
   try {
     switch (activeType) {
-      case 'opportunity': await submitOpportunity(data); break;
-      case 'partner':     await submitPartner(data);     break;
-      case 'event':       await submitEvent(data);       break;
-      case 'transcript':  await submitTranscript(data);  break;
-      case 'opp_note':    await submitOppNote(data);     break;
+      case 'opportunity':
+        modeIsNew.opportunity ? await submitOpportunity(data) : await submitOppNote(data);
+        break;
+      case 'partner':
+        modeIsNew.partner ? await submitPartner(data) : await submitTranscript(data);
+        break;
+      case 'event':
+        await submitEvent(data);
+        break;
     }
     hidePanel();
   } catch (err) {
     showToast(err.message || 'Failed to save. Please try again.', 'error');
   } finally {
     submitBtn.disabled    = false;
-    submitBtn.textContent = SUBMIT_LABELS[activeType] || 'Submit';
+    submitBtn.textContent = getSubmitLabel();
   }
 }
 
