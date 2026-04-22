@@ -1038,6 +1038,10 @@ export const __mapPdfInternals = {
 // Hardcoded inline so the model receives the exact shape the browser
 // PDF builder expects. If this shape changes, update buildMapPdf()
 // in js/utils/map-pdf-builder.js at the same time.
+//
+// Every field except customer_name and meeting_recap may be an empty
+// array or empty string. The renderer skips empty sections silently —
+// see parseMapJsonResponse() and buildMapPdf() for the full rule set.
 const MAP_JSON_SCHEMA_EXAMPLE = `{
   "customer_name": "Example Customer, Inc.",
   "document_date": "April 22, 2026",
@@ -1050,22 +1054,24 @@ const MAP_JSON_SCHEMA_EXAMPLE = `{
     "infrastructure": [
       { "name": "Citrix XenApp / XenDesktop", "subline": "~900 daily users License expires EOY 2026" },
       { "name": "NetScaler",                  "subline": "Load balancing, SSO Replacement pending" },
-      { "name": "SCCM / ConfigMgr",           "subline": "On-prem Windows device management" }
+      { "name": "SCCM / ConfigMgr",           "subline": "" }
     ],
     "current_state_pain": [
       "Application packaging consumes 40+ hours per week",
-      "Patch deployment windows take 5-7 days",
-      "No unified visibility into compliance status"
+      "Patch deployment windows take 5-7 days"
     ],
     "stakeholders_and_decision_process": [
       "Sponsor: VP of End User Computing (final decision authority)",
-      "Technical evaluator: Director of Application Services",
-      "Procurement: requires 3-vendor comparison + ARB review"
+      "Technical evaluator: Director of Application Services"
     ]
   },
+  "end_users_personas": [
+    { "label": "Office Workers",  "subline": "Standard desktops" },
+    { "label": "Remote / Hybrid", "subline": "Home + travel" }
+  ],
+  "what_changes": "RES eliminated. Per-platform packaging eliminated. Citrix-to-AVD migration absorbed without user disruption.",
   "mutual_action_plan": [
     { "phase": "Discovery",    "action": "Joint discovery session",       "owner": "Recast",   "due_date": "2026-04-29", "status": "Complete" },
-    { "phase": "Discovery",    "action": "Application portfolio analysis","owner": "Customer", "due_date": "2026-05-06", "status": "Complete" },
     { "phase": "POC Setup",    "action": "Provision POC environment",     "owner": "Customer", "due_date": "2026-05-13", "status": "In Progress" }
   ]
 }`;
@@ -1089,6 +1095,25 @@ function buildMapJsonPrompt(opportunity, descriptionEntries) {
 
   return `Generate a Mutual Action Plan for the opportunity below and return it as a single JSON object.
 
+GOLDEN RULE — THE MOST IMPORTANT INSTRUCTION:
+
+Every single field you return in the JSON must be traceable to a specific phrase or sentence in the source description below. This is non-negotiable.
+
+You are NOT allowed to:
+- Infer tool names that aren't in the source (e.g., don't add "Intune" just because the source mentions "Microsoft endpoint management")
+- Fabricate user counts, license dates, or decision-maker titles that aren't in the source
+- Generalize from "common enterprise patterns" — every customer is different
+- Pad sections with likely-but-unverified content
+
+You ARE expected to:
+- Return EMPTY ARRAYS for sections the source doesn't support
+- Return EMPTY STRINGS for sublines and free-text fields when the source doesn't provide the detail
+- Err toward less content, not more. A shorter, accurate MAP is ALWAYS better than a longer fabricated one.
+
+When uncertain: leave it out. If you can't point to a specific phrase in the source that supports a claim, don't include the claim. The renderer will silently skip any empty section — an empty array is a feature, not a failure.
+
+---
+
 Customer: ${opportunity?.name || opportunity?.customerName || ''}
 Current description date: ${primaryDate}${extrasBlock}
 
@@ -1101,25 +1126,19 @@ Return ONLY a single valid JSON object. No prose. No markdown. No code fences. N
 
 ${MAP_JSON_SCHEMA_EXAMPLE}
 
-Rules:
+Field-level guidance (every one of these is subordinate to the Golden Rule above):
 - Use the exact field names shown. Nested objects and array shapes must match.
-- For "mutual_action_plan", generate 12-16 rows covering the natural lifecycle: Discovery → POC Setup → Validation → Business Case → Decision → Rollout.
-- Each row's "status" must be one of: "Complete", "In Progress", "Pending", "Blocked", "Not Started".
-- Dates in ISO format YYYY-MM-DD.
-- For "meeting_recap", return 4-7 entries as {label, detail} objects. Each "label" is a 2-5 word bolded title (e.g., "Pricing delivered", "Total Users", "Biweekly cadence established"). Each "detail" is a single concise sentence with the specifics (numbers, names, dates, decisions). Do not write narrative paragraph-style bullets. Skim-readable only.
-- For "current_environment.infrastructure", return 6-10 entries as {name, subline} objects. "name" is the tool/system name (e.g., "Citrix XenApp / XenDesktop", "NetScaler", "SCCM / ConfigMgr", "Microsoft Intune", "Nerdio + AVD"). "subline" is a short factual context detail (user counts, license info, deployment scope, replacement status). When no supporting detail exists in the source, return an empty string for "subline".
-- Keep each "current_environment.current_state_pain" and "stakeholders_and_decision_process" subsection to 3-5 plain-string bullets.
-- "document_date" should be the current description date in "Month DD, YYYY" format.
-- Return the JSON object and nothing else.
+- "customer_name": always populated (this is always known).
+- "document_date": the current description date in "Month DD, YYYY" format.
+- "meeting_recap": 4-7 {label, detail} entries if the source supports it. If the source is very thin, 1-3 entries is fine. Each "label" is a 2-5 word bolded title (e.g., "Pricing delivered", "Total Users"). Each "detail" is a single concise sentence with the specifics (numbers, names, dates, decisions). Skim-readable — not narrative paragraphs. At least 1 entry is required.
+- "current_environment.infrastructure": return 0 entries if the source doesn't discuss architecture. Return 3-10 {name, subline} entries when grounded in source content. Do NOT pad. "name" is the tool/system name only; "subline" is a short factual context detail — empty string when no supporting detail exists in the source.
+- "current_environment.current_state_pain": return 0 entries if the source doesn't discuss pain. Return 2-5 plain-string bullets when grounded. Do NOT infer pain from neutral language.
+- "current_environment.stakeholders_and_decision_process": return 0 entries if the source doesn't name anyone. Return 3-6 plain-string bullets when grounded. Real names and roles only — no generic "VP-level leadership" placeholders.
+- "end_users_personas": return an empty array unless the source explicitly describes end-user segments. When grounded, return {label, subline} objects naming those segments.
+- "what_changes": return an empty string unless the source explicitly describes transformation outcomes. When grounded, return a single sentence summarizing what changes for the customer.
+- "mutual_action_plan": always populated (at least 3 entries) if the source contains ANY action items, dates, or next steps. If the source contains none, return an empty array. When populated, cover the natural lifecycle: Discovery → POC Setup → Validation → Business Case → Decision → Rollout. Each row's "status" must be one of: "Complete", "In Progress", "Pending", "Blocked", "Not Started". Dates in ISO format YYYY-MM-DD.
 
-GROUNDING RULES (these are mandatory):
-- Every fact you place in the JSON must be traceable to the source description content provided above.
-- When a field would require fabricating specifics not in the source (a tool name, a user count, a date, a decision), prefer in this order:
-  1. Omit the field if the schema allows
-  2. Return an empty string for optional sublines
-  3. Use a generic placeholder ONLY when the schema requires a value
-- NEVER invent: license expiration dates, user counts, employee names, decision dates, or tool names not mentioned in the source.
-- It is better to return a shorter, more accurate MAP than a longer fabricated one.`;
+Return the JSON object and nothing else.`;
 }
 
 // Pull a JSON object out of the model's text response. Tolerant of
@@ -1156,20 +1175,36 @@ function parseMapJsonResponse(rawText) {
     throw err;
   }
 
-  // Minimal schema validation — give specific error names so the UI
-  // can tell the user which field is missing.
+  // Hard-fail schema validation — only the two truly universal facts
+  // are required. Everything else is allowed to be empty under the
+  // Golden Rule ("when in doubt, leave it out" — empty sections are
+  // skipped silently by the renderer).
+  //
+  //   customer_name   → required, non-empty (this is always known)
+  //   meeting_recap   → required, at least 1 entry (empty indicates a
+  //                     generation failure, not a thin source)
   const missing = [];
-  if (!parsed.customer_name)       missing.push('customer_name');
-  if (!parsed.document_date)       missing.push('document_date');
-  if (!Array.isArray(parsed.meeting_recap))        missing.push('meeting_recap');
-  if (!parsed.current_environment || typeof parsed.current_environment !== 'object') missing.push('current_environment');
-  if (!Array.isArray(parsed.mutual_action_plan))   missing.push('mutual_action_plan');
+  if (!parsed.customer_name || typeof parsed.customer_name !== 'string' || !parsed.customer_name.trim()) {
+    missing.push('customer_name');
+  }
+  if (!Array.isArray(parsed.meeting_recap) || parsed.meeting_recap.length === 0) {
+    missing.push('meeting_recap');
+  }
   if (missing.length > 0) {
     const err = new Error(`Claude's JSON is missing required fields: ${missing.join(', ')}`);
     err.code = 'MAP_JSON_SCHEMA';
     err.rawText = rawText;
     throw err;
   }
+
+  // Coerce optional fields to safe defaults so the renderer can rely
+  // on shape without repeating guards. Missing-but-accepted is NOT a
+  // fabrication — it's just "the source didn't support this section".
+  if (typeof parsed.document_date !== 'string') parsed.document_date = '';
+  if (!parsed.current_environment || typeof parsed.current_environment !== 'object') {
+    parsed.current_environment = {};
+  }
+  if (!Array.isArray(parsed.mutual_action_plan)) parsed.mutual_action_plan = [];
 
   // Normalize meeting_recap to the {label, detail} shape. Back-compat:
   // if an entry is a flat string (old schema), promote it to
@@ -1186,22 +1221,79 @@ function parseMapJsonResponse(rawText) {
     return { label: '', detail: '' };
   }).filter(e => e.label || e.detail);
 
+  // After normalization, meeting_recap still has to be non-empty —
+  // otherwise the generation effectively failed.
+  if (parsed.meeting_recap.length === 0) {
+    const err = new Error(`Claude's JSON is missing required fields: meeting_recap`);
+    err.code = 'MAP_JSON_SCHEMA';
+    err.rawText = rawText;
+    throw err;
+  }
+
   // Normalize infrastructure similarly — {name, subline} shape, with
   // flat-string back-compat converting to { name: string, subline: '' }.
   const env = parsed.current_environment;
-  if (Array.isArray(env.infrastructure)) {
-    env.infrastructure = env.infrastructure.map(entry => {
-      if (typeof entry === 'string') {
-        return { name: entry, subline: '' };
-      }
-      if (entry && typeof entry === 'object') {
-        const name = typeof entry.name === 'string' ? entry.name : '';
-        const subline = typeof entry.subline === 'string' ? entry.subline : '';
-        return { name, subline };
-      }
-      return { name: '', subline: '' };
-    }).filter(e => e.name);
-  }
+  env.infrastructure = Array.isArray(env.infrastructure)
+    ? env.infrastructure.map(entry => {
+        if (typeof entry === 'string') return { name: entry, subline: '' };
+        if (entry && typeof entry === 'object') {
+          const name = typeof entry.name === 'string' ? entry.name : '';
+          const subline = typeof entry.subline === 'string' ? entry.subline : '';
+          return { name, subline };
+        }
+        return { name: '', subline: '' };
+      }).filter(e => e.name)
+    : [];
+  env.current_state_pain = Array.isArray(env.current_state_pain)
+    ? env.current_state_pain.map(s => String(s || '').trim()).filter(Boolean)
+    : [];
+  env.stakeholders_and_decision_process = Array.isArray(env.stakeholders_and_decision_process)
+    ? env.stakeholders_and_decision_process.map(s => String(s || '').trim()).filter(Boolean)
+    : [];
+
+  // Page 3 architecture fields. All optional — if empty, the renderer
+  // suppresses the corresponding visual element (or the whole page).
+  parsed.end_users_personas = Array.isArray(parsed.end_users_personas)
+    ? parsed.end_users_personas.map(entry => {
+        if (typeof entry === 'string') return { label: entry, subline: '' };
+        if (entry && typeof entry === 'object') {
+          const label = typeof entry.label === 'string' ? entry.label : '';
+          const subline = typeof entry.subline === 'string' ? entry.subline : '';
+          return { label, subline };
+        }
+        return { label: '', subline: '' };
+      }).filter(e => e.label)
+    : [];
+  parsed.what_changes = typeof parsed.what_changes === 'string'
+    ? parsed.what_changes.trim()
+    : '';
+
+  parsed.mutual_action_plan = parsed.mutual_action_plan
+    .filter(r => r && typeof r === 'object');
+
+  // meta.sections_rendered — precomputed so the renderer doesn't
+  // re-derive these predicates. NOT from Claude; it's a parser-side
+  // summary of what the PDF will actually show under the Golden Rule.
+  const hasInfra = env.infrastructure.length > 0;
+  const hasPain = env.current_state_pain.length > 0;
+  const hasStakeholders = env.stakeholders_and_decision_process.length > 0;
+  const hasMapRows = parsed.mutual_action_plan.length > 0;
+  const hasPersonas = parsed.end_users_personas.length > 0;
+  const hasWhatChanges = parsed.what_changes.length > 0;
+  parsed.meta = {
+    ...(parsed.meta && typeof parsed.meta === 'object' ? parsed.meta : {}),
+    sections_rendered: {
+      recap: true,
+      infrastructure: hasInfra,
+      pain: hasPain,
+      stakeholders: hasStakeholders,
+      environment: hasInfra || hasPain || hasStakeholders,
+      map_table: hasMapRows,
+      architecture_page: hasInfra || hasPain,
+      personas: hasPersonas,
+      what_changes: hasWhatChanges,
+    },
+  };
 
   return parsed;
 }
@@ -1307,6 +1399,25 @@ function buildMapJsonPromptFromMultiple(opportunity, descriptionEntries) {
 
   return `You are generating a Mutual Action Plan for ${customer}. The source material below consists of ${n} separate description entries from the opportunity history, each with its own date. Treat all of these entries as equally important source material. Your job is to synthesize and condense across ALL of them into one cohesive MAP — NOT just the most recent. If the entries contain conflicting information (e.g., an action item marked "pending" in an earlier entry that's "complete" in a later one), the more recent entry wins. Preserve the full spectrum of context: early-phase discovery notes, mid-phase decisions, and late-phase status updates all contribute to the final MAP.
 
+GOLDEN RULE — THE MOST IMPORTANT INSTRUCTION:
+
+Every single field you return in the JSON must be traceable to a specific phrase or sentence in the source description entries below. This is non-negotiable.
+
+You are NOT allowed to:
+- Infer tool names that aren't in any source entry (e.g., don't add "Intune" just because an entry mentions "Microsoft endpoint management")
+- Fabricate user counts, license dates, or decision-maker titles that aren't in any source entry
+- Generalize from "common enterprise patterns" — every customer is different
+- Pad sections with likely-but-unverified content
+
+You ARE expected to:
+- Return EMPTY ARRAYS for sections none of the entries support
+- Return EMPTY STRINGS for sublines and free-text fields when no entry provides the detail
+- Err toward less content, not more. A shorter, accurate MAP is ALWAYS better than a longer fabricated one.
+
+When uncertain: leave it out. If you can't point to a specific phrase in one of the source entries that supports a claim, don't include the claim. The renderer will silently skip any empty section — an empty array is a feature, not a failure.
+
+---
+
 Customer: ${customer}
 Generation date: ${todayISO}
 Source entry count: ${n}${extrasBlock}
@@ -1318,26 +1429,19 @@ Return ONLY a single valid JSON object. No prose. No markdown. No code fences. N
 
 ${MAP_JSON_SCHEMA_EXAMPLE}
 
-Rules:
+Field-level guidance (every one of these is subordinate to the Golden Rule above):
 - Use the exact field names shown. Nested objects and array shapes must match.
-- For "mutual_action_plan", generate 12-16 rows covering the natural lifecycle: Discovery → POC Setup → Validation → Business Case → Decision → Rollout.
-- Each row's "status" must be one of: "Complete", "In Progress", "Pending", "Blocked", "Not Started".
-- Dates in ISO format YYYY-MM-DD.
-- For "meeting_recap", return 4-7 entries as {label, detail} objects. Each "label" is a 2-5 word bolded title (e.g., "Pricing delivered", "Total Users", "Biweekly cadence established"). Each "detail" is a single concise sentence with the specifics (numbers, names, dates, decisions). Do not write narrative paragraph-style bullets. Skim-readable only.
-- For "current_environment.infrastructure", return 6-10 entries as {name, subline} objects. "name" is the tool/system name (e.g., "Citrix XenApp / XenDesktop", "NetScaler", "SCCM / ConfigMgr", "Microsoft Intune", "Nerdio + AVD"). "subline" is a short factual context detail (user counts, license info, deployment scope, replacement status). When no supporting detail exists in the source, return an empty string for "subline".
-- Keep each "current_environment.current_state_pain" and "stakeholders_and_decision_process" subsection to 3-5 plain-string bullets.
-- "document_date" should be today's date in "Month DD, YYYY" format.
-- Return the JSON object and nothing else.
+- "customer_name": always populated (this is always known).
+- "document_date": today's date in "Month DD, YYYY" format.
+- "meeting_recap": 4-7 {label, detail} entries if the entries support it. If the source is very thin, 1-3 entries is fine. Each "label" is a 2-5 word bolded title; each "detail" is a single concise sentence with specifics. At least 1 entry is required.
+- "current_environment.infrastructure": return 0 entries if none of the entries discuss architecture. Return 3-10 {name, subline} entries when grounded. Do NOT pad. "subline" is empty string when no supporting detail exists.
+- "current_environment.current_state_pain": return 0 entries if none of the entries discuss pain. Return 2-5 plain-string bullets when grounded. Do NOT infer pain from neutral language.
+- "current_environment.stakeholders_and_decision_process": return 0 entries if no entry names anyone. Return 3-6 plain-string bullets when grounded. Real names and roles only — no generic placeholders.
+- "end_users_personas": return an empty array unless an entry explicitly describes end-user segments. When grounded, return {label, subline} objects.
+- "what_changes": return an empty string unless an entry explicitly describes transformation outcomes. When grounded, return a single sentence.
+- "mutual_action_plan": always populated (at least 3 entries) if any entry contains action items, dates, or next steps. If no entry contains any of those, return an empty array. When populated, cover the natural lifecycle: Discovery → POC Setup → Validation → Business Case → Decision → Rollout. Each row's "status" must be one of: "Complete", "In Progress", "Pending", "Blocked", "Not Started". Dates in ISO format YYYY-MM-DD. When entries disagree on a row's status or date, the most recent DATE-marked entry wins.
 
-GROUNDING RULES (these are mandatory):
-- Every fact you place in the JSON must be traceable to the source description content provided above.
-- When the entries disagree on a concrete detail, use the value from the most recent DATE-marked entry.
-- When a field would require fabricating specifics not in ANY source entry (a tool name, a user count, a date, a decision), prefer in this order:
-  1. Omit the field if the schema allows
-  2. Return an empty string for optional sublines
-  3. Use a generic placeholder ONLY when the schema requires a value
-- NEVER invent: license expiration dates, user counts, employee names, decision dates, or tool names not mentioned in any source entry.
-- It is better to return a shorter, more accurate MAP than a longer fabricated one.`;
+Return the JSON object and nothing else.`;
 }
 
 /**

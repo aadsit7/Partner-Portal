@@ -228,6 +228,13 @@ test('buildMapPdf renders the new {label, detail} + {name, subline} shapes witho
         'Sponsor: VP of End User Computing',
       ],
     },
+    // V1.6: Page 3 personas + What Changes callout are now grounded in
+    // JSON. Populate both so this test exercises the full architecture
+    // page — the conditional-rendering tests below cover the empty paths.
+    end_users_personas: [
+      { label: 'Packaging Engineers', subline: 'Own application delivery workflow' },
+    ],
+    what_changes: 'Per-platform packaging eliminated; single console across delivery targets.',
     mutual_action_plan: [
       { phase: 'Discovery', action: 'Kickoff', owner: 'Recast', due_date: '2026-05-01', status: 'Complete' },
     ],
@@ -235,8 +242,7 @@ test('buildMapPdf renders the new {label, detail} + {name, subline} shapes witho
   const blob = await buildMapPdf(json, { name: 'Test Customer' });
   assert.equal(blob.type, 'application/pdf');
   const calls = blob.__calls;
-  // Architecture page adds a fresh page regardless of what the MAP
-  // table left behind.
+  // Architecture page adds a fresh page because the JSON has infra + pain.
   assert.ok(calls.some(c => c.op === 'addPage'), 'buildMapPdf must call addPage for the architecture page');
   // Customer name must appear in the Layer-1 heading of the architecture page.
   assert.ok(
@@ -253,10 +259,11 @@ test('buildMapPdf renders the new {label, detail} + {name, subline} shapes witho
     calls.some(c => c.op === 'text' && /APPLICATION WORKSPACE/.test(String(c.a?.[0] || ''))),
     'architecture page Layer 6 must render the APPLICATION WORKSPACE centerpiece',
   );
-  // Layer 8 "What Changes:" callout must be rendered.
+  // Layer 8 "What Changes:" callout must be rendered because the JSON
+  // supplied a non-empty what_changes string.
   assert.ok(
     calls.some(c => c.op === 'text' && /What Changes:/.test(String(c.a?.[0] || ''))),
-    'architecture page Layer 8 must render the What Changes callout',
+    'architecture page Layer 8 must render the What Changes callout when what_changes is populated',
   );
   // Priority 6: the V1 "Tailored for ..." footer line must be gone.
   assert.ok(
@@ -286,4 +293,296 @@ test('waitForJsPdf flags autotable specifically when jsPDF is present but plugin
     () => waitForJsPdf({ timeoutMs: 30, pollMs: 10 }),
     (err) => /jspdf-autotable/i.test(err.message),
   );
+});
+
+// ─────────────────────────────────────────────────────────────
+// V1.6 — Golden Rule conditional rendering
+// ─────────────────────────────────────────────────────────────
+//
+// Every section of the PDF is allowed to be empty. When it is, the
+// renderer omits it silently — no heading bar, no placeholder copy,
+// no "[Environment details to be collected]" narrative. These tests
+// lock in each branch of the section-skip contract so future edits
+// can't accidentally re-introduce fabricated fallback content.
+
+function textOps(calls) {
+  return calls.filter(c => c.op === 'text').map(c => String(c.a?.[0] || ''));
+}
+function hasText(calls, re) {
+  return textOps(calls).some(t => re.test(t));
+}
+
+test('V1.6 thin-source MAP: only Page 1 recap + MAP table render — no Current Environment heading, no Page 3', async () => {
+  installJsPdfShim();
+  const json = {
+    customer_name: 'Greenshield',
+    document_date: 'April 22, 2026',
+    meeting_recap: [
+      { label: 'Attendees', detail: 'Met with Joe' },
+      { label: 'Pricing',   detail: 'Pricing discussed' },
+      { label: 'Follow-up', detail: 'Sent follow-up email' },
+    ],
+    current_environment: {
+      infrastructure: [],
+      current_state_pain: [],
+      stakeholders_and_decision_process: [],
+    },
+    end_users_personas: [],
+    what_changes: '',
+    mutual_action_plan: [
+      { phase: 'Discovery', action: 'Follow up with Joe', owner: 'Recast', due_date: '2026-05-01', status: 'Pending' },
+    ],
+  };
+  const blob = await buildMapPdf(json, { name: 'Greenshield' });
+  const calls = blob.__calls;
+
+  // Meeting Recap heading renders.
+  assert.ok(hasText(calls, /^MEETING RECAP$/),
+    'Meeting Recap heading must always render');
+  // MAP table heading renders (autoTable is invoked once for the MAP).
+  assert.ok(calls.some(c => c.op === 'autoTable'),
+    'MAP table must render when there are rows');
+  assert.ok(hasText(calls, /^MUTUAL ACTION PLAN$/),
+    'MAP heading must render when there are rows');
+
+  // The blue "YOUR CURRENT ENVIRONMENT" heading must NOT render.
+  assert.ok(!hasText(calls, /^YOUR CURRENT ENVIRONMENT$/),
+    'Current Environment heading must be skipped when all three subsections are empty');
+  // No Infrastructure / Pain Points / Stakeholders sub-labels either.
+  assert.ok(!hasText(calls, /^Infrastructure$/),
+    'Infrastructure sub-label must be skipped when infra is empty');
+  assert.ok(!hasText(calls, /^Current State Pain Points$/),
+    'Pain Points sub-label must be skipped when pain is empty');
+  assert.ok(!hasText(calls, /^Stakeholders & Decision Process$/),
+    'Stakeholders sub-label must be skipped when stakeholders is empty');
+
+  // Page 3 must not be added at all — no doc.addPage() call.
+  assert.ok(!calls.some(c => c.op === 'addPage'),
+    'Architecture page must NOT render for a thin source with no infra and no pain');
+  // And none of Page 3's visuals leaked onto Page 1.
+  assert.ok(!hasText(calls, /APPLICATION WORKSPACE/),
+    'APPLICATION WORKSPACE centerpiece must not render when Page 3 is skipped');
+  assert.ok(!hasText(calls, /What Changes:/),
+    'What Changes callout must not render when Page 3 is skipped');
+});
+
+test('V1.6 full MAP renders all three pages like today', async () => {
+  installJsPdfShim();
+  const json = {
+    customer_name: 'Full Customer',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'Attendees', detail: 'Full call' }],
+    current_environment: {
+      infrastructure: [{ name: 'Citrix', subline: '~900 daily users' }],
+      current_state_pain: ['Packaging overhead'],
+      stakeholders_and_decision_process: ['Sponsor: VP EUC'],
+    },
+    end_users_personas: [
+      { label: 'Packaging Engineers', subline: '' },
+    ],
+    what_changes: 'RES eliminated; single console across delivery targets.',
+    mutual_action_plan: [
+      { phase: 'Discovery', action: 'Kickoff', owner: 'Recast', due_date: '2026-05-01', status: 'Complete' },
+    ],
+  };
+  const blob = await buildMapPdf(json, { name: 'Full Customer' });
+  const calls = blob.__calls;
+
+  assert.ok(hasText(calls, /^YOUR CURRENT ENVIRONMENT$/),
+    'full MAP must render the Current Environment heading');
+  assert.ok(hasText(calls, /^Infrastructure$/), 'full MAP must render Infrastructure sub-label');
+  assert.ok(hasText(calls, /^Current State Pain Points$/), 'full MAP must render Pain sub-label');
+  assert.ok(hasText(calls, /^Stakeholders & Decision Process$/), 'full MAP must render Stakeholders sub-label');
+  assert.ok(calls.some(c => c.op === 'addPage'), 'full MAP must render Page 3');
+  assert.ok(hasText(calls, /What Changes:/), 'full MAP must render What Changes callout');
+  assert.ok(hasText(calls, /Packaging Engineers/), 'full MAP must render grounded personas');
+});
+
+test('V1.6 infra-only MAP: Page 3 current-state boxes render but Key Friction callout is skipped', async () => {
+  installJsPdfShim();
+  const json = {
+    customer_name: 'Infra Only',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'Env', detail: 'Reviewed systems' }],
+    current_environment: {
+      infrastructure: [{ name: 'Citrix', subline: '~900 daily users' }],
+      current_state_pain: [],
+      stakeholders_and_decision_process: [],
+    },
+    end_users_personas: [],
+    what_changes: '',
+    mutual_action_plan: [],
+  };
+  const blob = await buildMapPdf(json, { name: 'Infra Only' });
+  const calls = blob.__calls;
+
+  // Page 3 exists (anchor is infrastructure).
+  assert.ok(calls.some(c => c.op === 'addPage'),
+    'Page 3 must render when infrastructure has content');
+  // Layer 2 (tools grid heading) renders.
+  assert.ok(hasText(calls, /PER-PLATFORM DELIVERY/i),
+    'Layer 2 per-platform-delivery heading must render when infra is populated');
+  // Key Friction callout is skipped (no pains in source).
+  assert.ok(!hasText(calls, /Key Friction:/),
+    'Key Friction callout must be skipped when pain array is empty');
+});
+
+test('V1.6 pain-only MAP: Page 3 Key Friction callout renders but current-state boxes are skipped', async () => {
+  installJsPdfShim();
+  const json = {
+    customer_name: 'Pain Only',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'Pain', detail: 'Customer aired frustrations' }],
+    current_environment: {
+      infrastructure: [],
+      current_state_pain: ['Packaging consumes 40+ hours per week'],
+      stakeholders_and_decision_process: [],
+    },
+    end_users_personas: [],
+    what_changes: '',
+    mutual_action_plan: [],
+  };
+  const blob = await buildMapPdf(json, { name: 'Pain Only' });
+  const calls = blob.__calls;
+
+  // Page 3 exists (anchor is pain).
+  assert.ok(calls.some(c => c.op === 'addPage'),
+    'Page 3 must render when pain has content even if infra is empty');
+  // Key Friction callout renders.
+  assert.ok(hasText(calls, /Key Friction:/),
+    'Key Friction callout must render when pain is populated');
+  // Layer 2 current-state boxes heading is skipped.
+  assert.ok(!hasText(calls, /PER-PLATFORM DELIVERY/i),
+    'Layer 2 per-platform-delivery heading must be skipped when infra is empty');
+});
+
+test('V1.6 both infra + pain empty: buildMapPdf must NOT call addPage for Page 3', async () => {
+  installJsPdfShim();
+  const json = {
+    customer_name: 'No Arch',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'Intro call', detail: 'Short call, no tech details' }],
+    current_environment: {
+      infrastructure: [],
+      current_state_pain: [],
+      stakeholders_and_decision_process: ['Joe Richardson attended'],
+    },
+    end_users_personas: [],
+    what_changes: '',
+    mutual_action_plan: [],
+  };
+  const blob = await buildMapPdf(json, { name: 'No Arch' });
+  const calls = blob.__calls;
+
+  // Stakeholders alone is NOT enough to anchor Page 3 — the transformation
+  // narrative needs either a current state (infra) or a friction point.
+  assert.ok(!calls.some(c => c.op === 'addPage'),
+    'Page 3 must be skipped (no addPage) when infra AND pain are both empty');
+  // But the Current Environment section itself still renders because
+  // stakeholders is populated — whole-env gate is independent.
+  assert.ok(hasText(calls, /^YOUR CURRENT ENVIRONMENT$/),
+    'Current Environment heading renders when any subsection (incl. stakeholders) has content');
+  assert.ok(hasText(calls, /^Stakeholders & Decision Process$/),
+    'Stakeholders sub-label renders when stakeholders is populated');
+});
+
+test('V1.6 Page 3 without what_changes renders the diagram as the visual conclusion — no green callout', async () => {
+  installJsPdfShim();
+  const json = {
+    customer_name: 'Diagram Only',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'Env', detail: 'Reviewed systems' }],
+    current_environment: {
+      infrastructure: [{ name: 'Citrix', subline: '' }],
+      current_state_pain: ['Packaging is slow'],
+      stakeholders_and_decision_process: [],
+    },
+    end_users_personas: [],
+    what_changes: '',
+    mutual_action_plan: [],
+  };
+  const blob = await buildMapPdf(json, { name: 'Diagram Only' });
+  const calls = blob.__calls;
+
+  // Page 3 exists (anchor is infra + pain).
+  assert.ok(calls.some(c => c.op === 'addPage'),
+    'Page 3 must render when infra and pain are both populated');
+  // Architecture diagram centerpiece renders — visual conclusion.
+  assert.ok(hasText(calls, /APPLICATION WORKSPACE/),
+    'APPLICATION WORKSPACE centerpiece must render on Page 3');
+  // "What Changes:" callout must NOT render because the JSON didn't supply it.
+  assert.ok(!hasText(calls, /What Changes:/),
+    'What Changes callout must be skipped when what_changes is empty — no hardcoded fallback');
+  // No generic "Office Workers / Remote / VDI Users / External Users" fallback personas.
+  assert.ok(!hasText(calls, /Office Workers/),
+    'hardcoded "Office Workers" persona fallback must be removed');
+  assert.ok(!hasText(calls, /VDI Users/),
+    'hardcoded "VDI Users" persona fallback must be removed');
+});
+
+test('V1.6 empty MAP table: skip the heading bar entirely — no placeholder row', async () => {
+  installJsPdfShim();
+  const json = {
+    customer_name: 'No Action Items',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'Chat', detail: 'Informal call' }],
+    current_environment: {
+      infrastructure: [],
+      current_state_pain: [],
+      stakeholders_and_decision_process: [],
+    },
+    end_users_personas: [],
+    what_changes: '',
+    mutual_action_plan: [],
+  };
+  const blob = await buildMapPdf(json, { name: 'No Action Items' });
+  const calls = blob.__calls;
+
+  // MAP heading must NOT render.
+  assert.ok(!hasText(calls, /^MUTUAL ACTION PLAN$/),
+    'MAP heading must be skipped when the action plan array is empty');
+  // autoTable must not be called (no placeholder row, no "No action items captured yet").
+  assert.ok(!calls.some(c => c.op === 'autoTable'),
+    'autoTable must not be invoked when there are no MAP rows');
+  assert.ok(!hasText(calls, /No action items captured yet/),
+    'legacy "No action items captured yet" placeholder must not render — that was fabricated narrative');
+});
+
+test('V1.6 personas row: hardcoded generic personas are gone; grounded personas render when supplied', async () => {
+  installJsPdfShim();
+  // Grounded personas: Page 3 renders them verbatim.
+  const json1 = {
+    customer_name: 'C',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'x', detail: 'y' }],
+    current_environment: {
+      infrastructure: [{ name: 'Citrix', subline: '' }],
+      current_state_pain: ['slow'],
+      stakeholders_and_decision_process: [],
+    },
+    end_users_personas: [
+      { label: 'Packaging Engineers', subline: 'Own application delivery workflow' },
+      { label: 'Helpdesk',            subline: '' },
+    ],
+    what_changes: '',
+    mutual_action_plan: [],
+  };
+  const blob1 = await buildMapPdf(json1, { name: 'C' });
+  const calls1 = blob1.__calls;
+  assert.ok(hasText(calls1, /Packaging Engineers/),
+    'grounded persona label must render when supplied');
+  assert.ok(hasText(calls1, /Helpdesk/),
+    'grounded persona label must render even when its subline is empty');
+  // None of the legacy generic persona labels should appear.
+  assert.ok(!hasText(calls1, /Office Workers/),  'legacy "Office Workers" must not render');
+  assert.ok(!hasText(calls1, /^Remote \/ Hybrid$/), 'legacy "Remote / Hybrid" must not render');
+  assert.ok(!hasText(calls1, /External Users/),  'legacy "External Users" must not render');
+
+  // Empty personas: row is skipped entirely (no heading label, no boxes).
+  installJsPdfShim();
+  const json2 = { ...json1, end_users_personas: [] };
+  const blob2 = await buildMapPdf(json2, { name: 'C' });
+  const calls2 = blob2.__calls;
+  assert.ok(!hasText(calls2, /^End Users$/),
+    'End Users heading must be skipped when personas is empty');
 });

@@ -85,9 +85,12 @@ test('multi-desc prompt includes synthesis instruction and DATE markers for each
   assert.match(prompt, /--- DATE: 2026-04-15 ---/);
   assert.match(prompt, /--- DATE: 2026-03-10 ---/);
   assert.match(prompt, /--- DATE: 2026-01-04 ---/);
-  // Grounding rules preserved (spec: "keep all existing grounding rules intact")
-  assert.match(prompt, /GROUNDING RULES/);
-  assert.match(prompt, /NEVER invent: license expiration dates, user counts/);
+  // Golden Rule preserved across the multi-source prompt (V1.6 replaced
+  // the older "GROUNDING RULES" header with the top-level Golden Rule
+  // block — same intent, stronger language).
+  assert.match(prompt, /GOLDEN RULE/);
+  assert.match(prompt, /traceable to a specific phrase or sentence/i);
+  assert.match(prompt, /Infer tool names that aren't in/i);
 });
 
 test('multi-desc prompt sorts entries newest-first regardless of input order', () => {
