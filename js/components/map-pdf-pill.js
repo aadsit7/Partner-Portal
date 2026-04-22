@@ -22,8 +22,21 @@ const HARD_TIMEOUT_MS   = 240_000;  // 4:00 — hard fail state
 
 // Stack container — created lazily, sits under #randy-root. Each pill
 // appends itself here; new pills push existing pills upward.
-function getStackHost() {
+//
+// V1.5 adds an optional `scopeContainer` so the click-driven MAP flow
+// inside the Opportunity dialog can anchor its pill to the modal's
+// body instead of the global Randy root. Pass the modal element and
+// a stack is created (or reused) inside it.
+function getStackHost(scopeContainer = null) {
   if (typeof document === 'undefined') return null;
+  if (scopeContainer && typeof scopeContainer === 'object') {
+    let scoped = scopeContainer.querySelector('.randy-map-pill-stack--scoped');
+    if (scoped) return scoped;
+    scoped = document.createElement('div');
+    scoped.className = 'randy-map-pill-stack randy-map-pill-stack--scoped';
+    scopeContainer.appendChild(scoped);
+    return scoped;
+  }
   let host = document.getElementById('randy-map-pill-stack');
   if (host) return host;
   host = document.createElement('div');
@@ -58,8 +71,8 @@ function warnSvg() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2z" fill="currentColor" opacity="0.18"/><path d="M12 3l10 18H2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="17.5" r="1.1" fill="currentColor"/></svg>`;
 }
 
-export function createPill(initialStage = 'Starting…') {
-  const host = getStackHost();
+export function createPill(initialStage = 'Starting…', options = {}) {
+  const host = getStackHost(options.scopeContainer || null);
   if (!host) return { el: null, id: null };
 
   const id = `map-pill-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
