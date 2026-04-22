@@ -1042,15 +1042,15 @@ const MAP_JSON_SCHEMA_EXAMPLE = `{
   "customer_name": "Example Customer, Inc.",
   "document_date": "April 22, 2026",
   "meeting_recap": [
-    "Aligned on POC scope across Dev, Test, and Prod environments",
-    "Confirmed Q3 target for production rollout",
-    "Identified Citrix XenApp migration as primary use case"
+    { "label": "Total Users (Company-Wide)", "detail": "~4,000 (confirmed on call)" },
+    { "label": "Pricing delivered",           "detail": "Joe provided user counts Mar 6; David sent finalized tiered pricing and Application Workspace overview" },
+    { "label": "Biweekly cadence established","detail": "Recurring work-back meetings starting April 2, 2026" }
   ],
   "current_environment": {
     "infrastructure": [
-      "Citrix XenApp 7.15 LTSR on Windows Server 2016",
-      "~1,200 published applications",
-      "850 concurrent users at peak across two data centers"
+      { "name": "Citrix XenApp / XenDesktop", "subline": "~900 daily users License expires EOY 2026" },
+      { "name": "NetScaler",                  "subline": "Load balancing, SSO Replacement pending" },
+      { "name": "SCCM / ConfigMgr",           "subline": "On-prem Windows device management" }
     ],
     "current_state_pain": [
       "Application packaging consumes 40+ hours per week",
@@ -1106,11 +1106,20 @@ Rules:
 - For "mutual_action_plan", generate 12-16 rows covering the natural lifecycle: Discovery → POC Setup → Validation → Business Case → Decision → Rollout.
 - Each row's "status" must be one of: "Complete", "In Progress", "Pending", "Blocked", "Not Started".
 - Dates in ISO format YYYY-MM-DD.
-- If a section has no direct evidence in the source, populate it with reasonable inferred entries based on the customer and industry context — do not leave arrays empty.
-- Keep "meeting_recap" to 3-6 short bullet sentences.
-- Keep each "current_environment" subsection to 3-5 bullets.
+- For "meeting_recap", return 4-7 entries as {label, detail} objects. Each "label" is a 2-5 word bolded title (e.g., "Pricing delivered", "Total Users", "Biweekly cadence established"). Each "detail" is a single concise sentence with the specifics (numbers, names, dates, decisions). Do not write narrative paragraph-style bullets. Skim-readable only.
+- For "current_environment.infrastructure", return 6-10 entries as {name, subline} objects. "name" is the tool/system name (e.g., "Citrix XenApp / XenDesktop", "NetScaler", "SCCM / ConfigMgr", "Microsoft Intune", "Nerdio + AVD"). "subline" is a short factual context detail (user counts, license info, deployment scope, replacement status). When no supporting detail exists in the source, return an empty string for "subline".
+- Keep each "current_environment.current_state_pain" and "stakeholders_and_decision_process" subsection to 3-5 plain-string bullets.
 - "document_date" should be the current description date in "Month DD, YYYY" format.
-- Return the JSON object and nothing else.`;
+- Return the JSON object and nothing else.
+
+GROUNDING RULES (these are mandatory):
+- Every fact you place in the JSON must be traceable to the source description content provided above.
+- When a field would require fabricating specifics not in the source (a tool name, a user count, a date, a decision), prefer in this order:
+  1. Omit the field if the schema allows
+  2. Return an empty string for optional sublines
+  3. Use a generic placeholder ONLY when the schema requires a value
+- NEVER invent: license expiration dates, user counts, employee names, decision dates, or tool names not mentioned in the source.
+- It is better to return a shorter, more accurate MAP than a longer fabricated one.`;
 }
 
 // Pull a JSON object out of the model's text response. Tolerant of
@@ -1160,6 +1169,38 @@ function parseMapJsonResponse(rawText) {
     err.code = 'MAP_JSON_SCHEMA';
     err.rawText = rawText;
     throw err;
+  }
+
+  // Normalize meeting_recap to the {label, detail} shape. Back-compat:
+  // if an entry is a flat string (old schema), promote it to
+  // { label: '', detail: <string> } so the renderer can't crash.
+  parsed.meeting_recap = parsed.meeting_recap.map(entry => {
+    if (typeof entry === 'string') {
+      return { label: '', detail: entry };
+    }
+    if (entry && typeof entry === 'object') {
+      const label = typeof entry.label === 'string' ? entry.label : '';
+      const detail = typeof entry.detail === 'string' ? entry.detail : '';
+      return { label, detail };
+    }
+    return { label: '', detail: '' };
+  }).filter(e => e.label || e.detail);
+
+  // Normalize infrastructure similarly — {name, subline} shape, with
+  // flat-string back-compat converting to { name: string, subline: '' }.
+  const env = parsed.current_environment;
+  if (Array.isArray(env.infrastructure)) {
+    env.infrastructure = env.infrastructure.map(entry => {
+      if (typeof entry === 'string') {
+        return { name: entry, subline: '' };
+      }
+      if (entry && typeof entry === 'object') {
+        const name = typeof entry.name === 'string' ? entry.name : '';
+        const subline = typeof entry.subline === 'string' ? entry.subline : '';
+        return { name, subline };
+      }
+      return { name: '', subline: '' };
+    }).filter(e => e.name);
   }
 
   return parsed;

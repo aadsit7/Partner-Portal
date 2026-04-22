@@ -56,14 +56,18 @@ expects this exact shape — if you change either side, update both:
   "customer_name": "American National Insurance Company",
   "document_date": "April 22, 2026",
   "meeting_recap": [
-    "Aligned on POC scope across 3 environments (Dev, Test, Prod)",
-    "Confirmed delivery target of Q3 for production rollout",
-    "…3-6 short bullets total…"
+    { "label": "Total Users",          "detail": "~4,000 confirmed on the call" },
+    { "label": "Pricing delivered",    "detail": "Tiered pricing + Application Workspace overview sent March 6" },
+    { "label": "Biweekly cadence",     "detail": "Recurring work-back meetings starting April 2, 2026" }
   ],
   "current_environment": {
-    "infrastructure":                  [ "…3-5 bullets…" ],
-    "current_state_pain":              [ "…3-5 bullets…" ],
-    "stakeholders_and_decision_process":[ "…3-5 bullets…" ]
+    "infrastructure": [
+      { "name": "Citrix XenApp / XenDesktop", "subline": "~900 daily users License expires EOY 2026" },
+      { "name": "NetScaler",                  "subline": "Load balancing, SSO Replacement pending" },
+      { "name": "SCCM / ConfigMgr",           "subline": "" }
+    ],
+    "current_state_pain":              [ "…3-5 plain-string bullets…" ],
+    "stakeholders_and_decision_process":[ "…3-5 plain-string bullets…" ]
   },
   "mutual_action_plan": [
     { "phase": "Discovery", "action": "…", "owner": "Recast",   "due_date": "2026-04-29", "status": "Complete" },
@@ -79,12 +83,24 @@ Rules enforced by the prompt:
 - Each `status` is one of `Complete | In Progress | Pending | Blocked | Not Started`.
 - Dates are ISO `YYYY-MM-DD`.
 - `document_date` is the current description date in `Month DD, YYYY` format.
-- Empty sections are populated with reasonable inferred entries rather
-  than left blank, so the PDF never has empty bullet lists.
+- `meeting_recap` is 4-7 `{label, detail}` objects — skim-readable, not
+  narrative paragraphs. `label` is a 2-5 word bolded title; `detail` is
+  a single concise sentence.
+- `current_environment.infrastructure` is 6-10 `{name, subline}` objects.
+  `subline` may be empty when the source content does not support a
+  specific detail (user counts, license info, etc.).
+- **Grounding rules** live in the prompt: every fact must be traceable
+  to the source description. The model prefers empty sublines or
+  shorter MAPs over invented specifics (license dates, user counts,
+  employee names, tool names not in the source).
 
 Parsing is tolerant: even though the prompt says "no markdown fences",
 `parseMapJsonResponse()` strips ```` ```json … ``` ```` fences and
-trims leading/trailing prose before `JSON.parse()`.
+trims leading/trailing prose before `JSON.parse()`. It also handles the
+**legacy flat-string form** for `meeting_recap` and `infrastructure` —
+strings are promoted to `{ label: '', detail: string }` and
+`{ name: string, subline: '' }` respectively so V1-shaped responses
+don't crash the renderer.
 
 ---
 
@@ -223,4 +239,42 @@ in non-idle states to avoid talking over other speech.
 - Document types beyond MAP: meeting recap, biweekly update, pre-meeting agenda.
 - Persist a structured document record in `Partner_Documents` (currently Apps Script owns all upload metadata).
 - "Regenerate" button on the success card (today: delete the old file, re-trigger).
-- Visual refinement: logo-in-PDF (requires shipping a logo asset with the static site), personalised architecture page based on the customer's real environment.
+- Visual refinement: logo-in-PDF (requires shipping a logo asset with the static site).
+
+---
+
+## V1.1 layout polish (this PR)
+
+Shipped under `feat(map-pdf):`. Functional behaviour unchanged — the
+voice flow, intent detection, opportunity match, Drive upload, filename
+pattern, success/failure cards and progress pill all work exactly as in
+V1. Only the rendered PDF is different.
+
+- **Compact header band.** Page 1 header collapsed from ~180pt to
+  ~80pt: Recast wordmark left, "Meeting Recap & Mutual Action Plan" +
+  "Recast + {Customer} | {Date}" stacked right, coral divider below.
+  Page 1 now has space for all three sections without cramping.
+- **Blue heading bars.** Section titles render as solid Recast-blue
+  background bars with white text (replaces the V1 underlined text that
+  read like broken hyperlinks).
+- **Richer meeting recap.** Bullets are `{label, detail}` — bolded
+  title, concise detail — instead of long narrative sentences.
+- **Customer-specific infrastructure.** Infrastructure bullets are
+  `{name, subline}` — tool name in bold, context detail underneath in
+  muted type when present.
+- **8-layer architecture page.** The generic 3-box Page 3 diagram is
+  replaced with a customer-specific transformation story:
+  1. "Current Environment — {Customer}" blue heading + intro
+  2. 6-10 box grid of the customer's real tools (from
+     `current_environment.infrastructure`)
+  3. Amber "Key Friction" callout (from `current_state_pain`)
+  4. Down-pointing triangle transition
+  5. "Proposed State — Application Workspace…" blue heading
+  6. Three-column diagram: Applications → APPLICATION WORKSPACE → Targets
+  7. End Users persona row (4 boxes)
+  8. Green "What Changes" outcome callout
+- **Grounding rules in the prompt.** Explicit instructions prevent the
+  model from inventing license dates, user counts, employee names, or
+  tool names not in the source description.
+- **Removed** the V1 "Tailored for {Customer}" footer text on Page 3 —
+  the green callout is now the natural conclusion.
