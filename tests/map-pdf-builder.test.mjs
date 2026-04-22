@@ -110,6 +110,7 @@ function installJsPdfShim() {
     this.addPage      = (...a)   => calls.push({ op: 'addPage', a });
     this.setPage      = (...a)   => calls.push({ op: 'setPage', a });
     this.splitTextToSize = (s)   => String(s).split(/\s{80,}/);
+    this.getTextWidth = (s)      => String(s || '').length * 5;
     this.output = (kind) => {
       if (kind === 'blob') return { _isBlob: true, type: 'application/pdf', size: 42, __calls: calls };
       return '';
@@ -148,6 +149,67 @@ test('buildMapPdf returns a blob and hits autoTable once', async () => {
     'buildMapPdf must invoke autoTable for the MAP grid');
   assert.ok(calls.some(c => c.op === 'addPage'),
     'buildMapPdf must call addPage to force the architecture page');
+});
+
+test('buildMapPdf renders the new {label, detail} + {name, subline} shapes without crashing', async () => {
+  installJsPdfShim();
+  const json = {
+    customer_name: 'Test Customer',
+    document_date: 'April 22, 2026',
+    meeting_recap: [
+      { label: 'Total Users', detail: '~4,000 confirmed on the call' },
+      { label: 'Pricing delivered', detail: 'Tiered pricing sent March 6' },
+      { label: '', detail: 'Legacy-shaped fallback bullet' },
+    ],
+    current_environment: {
+      infrastructure: [
+        { name: 'Citrix XenApp', subline: '~900 daily users License expires EOY 2026' },
+        { name: 'NetScaler', subline: '' },
+        { name: 'SCCM / ConfigMgr', subline: 'On-prem Windows device management' },
+      ],
+      current_state_pain: [
+        'Application packaging consumes 40+ hours per week',
+        'No unified visibility into compliance status',
+      ],
+      stakeholders_and_decision_process: [
+        'Sponsor: VP of End User Computing',
+      ],
+    },
+    mutual_action_plan: [
+      { phase: 'Discovery', action: 'Kickoff', owner: 'Recast', due_date: '2026-05-01', status: 'Complete' },
+    ],
+  };
+  const blob = await buildMapPdf(json, { name: 'Test Customer' });
+  assert.equal(blob.type, 'application/pdf');
+  const calls = blob.__calls;
+  // Architecture page adds a fresh page regardless of what the MAP
+  // table left behind.
+  assert.ok(calls.some(c => c.op === 'addPage'), 'buildMapPdf must call addPage for the architecture page');
+  // Customer name must appear in the Layer-1 heading of the architecture page.
+  assert.ok(
+    calls.some(c => c.op === 'text' && /Test Customer/.test(String(c.a?.[0] || ''))),
+    'architecture page Layer 1 must name the customer',
+  );
+  // Layer 2 heading: "Current State — Per-Platform Delivery" (case-insensitive since it's uppercased).
+  assert.ok(
+    calls.some(c => c.op === 'text' && /PER-PLATFORM DELIVERY/i.test(String(c.a?.[0] || ''))),
+    'architecture page Layer 2 must carry the per-platform delivery heading',
+  );
+  // Layer 6 centerpiece must be rendered.
+  assert.ok(
+    calls.some(c => c.op === 'text' && /APPLICATION WORKSPACE/.test(String(c.a?.[0] || ''))),
+    'architecture page Layer 6 must render the APPLICATION WORKSPACE centerpiece',
+  );
+  // Layer 8 "What Changes:" callout must be rendered.
+  assert.ok(
+    calls.some(c => c.op === 'text' && /What Changes:/.test(String(c.a?.[0] || ''))),
+    'architecture page Layer 8 must render the What Changes callout',
+  );
+  // Priority 6: the V1 "Tailored for ..." footer line must be gone.
+  assert.ok(
+    !calls.some(c => c.op === 'text' && /Tailored for/.test(String(c.a?.[0] || ''))),
+    'orphaned "Tailored for" line must not appear anywhere in the PDF',
+  );
 });
 
 test('waitForJsPdf throws a clear timeout error when libraries are missing', async () => {

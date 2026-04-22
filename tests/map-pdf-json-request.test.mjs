@@ -12,9 +12,15 @@ const { buildMapJsonPrompt, parseMapJsonResponse } = __mapJsonInternals;
 const VALID_JSON_OBJ = {
   customer_name: 'Example Customer',
   document_date: 'April 22, 2026',
-  meeting_recap: ['Aligned on scope', 'Agreed on cadence'],
+  meeting_recap: [
+    { label: 'Aligned on scope',   detail: 'Confirmed POC covers Dev, Test, and Prod environments' },
+    { label: 'Cadence established', detail: 'Biweekly work-back sessions starting April 2' },
+  ],
   current_environment: {
-    infrastructure: ['Thing 1'],
+    infrastructure: [
+      { name: 'Citrix XenApp',  subline: '~900 daily users' },
+      { name: 'SCCM / ConfigMgr', subline: '' },
+    ],
     current_state_pain: ['Thing 2'],
     stakeholders_and_decision_process: ['Thing 3'],
   },
@@ -23,6 +29,22 @@ const VALID_JSON_OBJ = {
   ],
 };
 const VALID_JSON_STR = JSON.stringify(VALID_JSON_OBJ);
+
+// Legacy fixture — flat-string meeting_recap and infrastructure — used
+// to exercise the parser's backwards-compat conversion path.
+const LEGACY_JSON_OBJ = {
+  customer_name: 'Legacy Customer',
+  document_date: 'April 22, 2026',
+  meeting_recap: ['Aligned on scope', 'Agreed on cadence'],
+  current_environment: {
+    infrastructure: ['Citrix XenApp', 'SCCM'],
+    current_state_pain: ['Packaging overhead'],
+    stakeholders_and_decision_process: ['Sponsor: VP EUC'],
+  },
+  mutual_action_plan: [
+    { phase: 'Discovery', action: 'x', owner: 'Recast', due_date: '2026-05-01', status: 'Complete' },
+  ],
+};
 
 function messagesResponse(text) {
   return {
@@ -151,4 +173,59 @@ test('buildMapJsonPrompt includes prior entries as compact bullets', () => {
   assert.match(prompt, /Latest call/);
   assert.match(prompt, /Earlier call/);
   assert.match(prompt, /Stage: Proposal/);
+});
+
+// ── V1.1 schema: meeting_recap and infrastructure shape changes ──
+
+test('parseMapJsonResponse accepts the new {label, detail} meeting_recap shape', () => {
+  const parsed = parseMapJsonResponse(JSON.stringify(VALID_JSON_OBJ));
+  assert.equal(parsed.meeting_recap.length, 2);
+  assert.equal(parsed.meeting_recap[0].label, 'Aligned on scope');
+  assert.equal(parsed.meeting_recap[0].detail, 'Confirmed POC covers Dev, Test, and Prod environments');
+  assert.equal(parsed.meeting_recap[1].label, 'Cadence established');
+});
+
+test('parseMapJsonResponse converts legacy flat-string meeting_recap to {label, detail}', () => {
+  const parsed = parseMapJsonResponse(JSON.stringify(LEGACY_JSON_OBJ));
+  assert.equal(parsed.meeting_recap.length, 2);
+  // Each legacy string → { label: '', detail: <string> }
+  for (const e of parsed.meeting_recap) {
+    assert.equal(e.label, '');
+    assert.ok(typeof e.detail === 'string' && e.detail.length > 0);
+  }
+  assert.equal(parsed.meeting_recap[0].detail, 'Aligned on scope');
+});
+
+test('parseMapJsonResponse accepts the new {name, subline} infrastructure shape', () => {
+  const parsed = parseMapJsonResponse(JSON.stringify(VALID_JSON_OBJ));
+  const infra = parsed.current_environment.infrastructure;
+  assert.equal(infra.length, 2);
+  assert.equal(infra[0].name, 'Citrix XenApp');
+  assert.equal(infra[0].subline, '~900 daily users');
+  // Empty subline should be preserved (renderer hides it).
+  assert.equal(infra[1].name, 'SCCM / ConfigMgr');
+  assert.equal(infra[1].subline, '');
+});
+
+test('parseMapJsonResponse converts legacy flat-string infrastructure to {name, subline}', () => {
+  const parsed = parseMapJsonResponse(JSON.stringify(LEGACY_JSON_OBJ));
+  const infra = parsed.current_environment.infrastructure;
+  assert.equal(infra.length, 2);
+  for (const e of infra) {
+    assert.equal(e.subline, '');
+    assert.ok(typeof e.name === 'string' && e.name.length > 0);
+  }
+  assert.equal(infra[0].name, 'Citrix XenApp');
+});
+
+test('buildMapJsonPrompt includes the defensive grounding rules', () => {
+  const prompt = buildMapJsonPrompt(
+    { name: 'ANICO' },
+    [{ date: '2026-04-15', content: 'Discovery call.' }],
+  );
+  assert.match(prompt, /GROUNDING RULES/);
+  assert.match(prompt, /NEVER invent/);
+  // The new shape rules are also spelled out.
+  assert.match(prompt, /\{label, detail\}/);
+  assert.match(prompt, /\{name, subline\}/);
 });
