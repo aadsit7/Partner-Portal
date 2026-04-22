@@ -134,65 +134,91 @@ function wrapText(doc, text, maxW) {
 
 // ── Page 1 ───────────────────────────────────────────────────
 
-function drawHeaderBand(doc, customerName, documentDate) {
-  // Background
-  setFill(doc, RECAST_BLUE);
-  doc.rect(0, 0, PAGE_W, 90, 'F');
+// Compact header band: ~80pt of blue, Recast wordmark on the left,
+// title + subtitle stacked on the right, coral divider underneath.
+// Designed to reclaim vertical space on Page 1 relative to V1's
+// oversized customer-name treatment.
+const HEADER_BAND_H = 80;
+const HEADER_DIVIDER_H = 3;
+const HEADER_TOTAL_H = HEADER_BAND_H + HEADER_DIVIDER_H;
 
-  // Decorative dot pattern on the right edge — 4 columns × 6 rows of
-  // small white dots at low opacity, a quiet brand flourish.
-  setFill(doc, WHITE);
+function drawPlusMarks(doc) {
+  // Subtle "+" brand markers scattered in the upper band at low opacity.
   const saveGState = doc.saveGraphicsState ? doc.saveGraphicsState.bind(doc) : null;
   const restoreGState = doc.restoreGraphicsState ? doc.restoreGraphicsState.bind(doc) : null;
   if (saveGState) saveGState();
   if (doc.setGState && doc.GState) {
-    try { doc.setGState(new doc.GState({ opacity: 0.18 })); } catch { /* graceful degrade */ }
+    try { doc.setGState(new doc.GState({ opacity: 0.25 })); } catch { /* graceful degrade */ }
   }
-  for (let col = 0; col < 4; col++) {
-    for (let row = 0; row < 6; row++) {
-      const x = PAGE_W - 90 + col * 14;
-      const y = 14 + row * 12;
-      doc.circle(x, y, 1.4, 'F');
-    }
+  setStroke(doc, WHITE);
+  doc.setLineWidth(0.9);
+  // Deterministic-ish scatter so every MAP PDF looks the same but not
+  // mechanical. Positions are hand-picked to avoid colliding with text.
+  const marks = [
+    [150, 14, 4], [210, 28, 3], [275, 10, 4], [330, 24, 3],
+    [150, 52, 3], [225, 60, 4], [280, 46, 3], [345, 56, 4],
+    [180, 72, 3], [260, 72, 3],
+  ];
+  for (const [x, y, size] of marks) {
+    doc.line(x - size, y, x + size, y);
+    doc.line(x, y - size, x, y + size);
   }
   if (restoreGState) restoreGState();
-
-  // Eyebrow top-right
-  setText(doc, WHITE);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('MUTUAL ACTION PLAN', PAGE_W - MARGIN, 24, { align: 'right' });
-
-  // Customer name bottom-left (wrap if very long)
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(24);
-  const nameLines = wrapText(doc, customerName || 'Opportunity', CONTENT_W - 180);
-  const firstLine = nameLines[0] || 'Opportunity';
-  doc.text(firstLine, MARGIN, 64);
-  if (nameLines.length > 1) {
-    doc.setFontSize(14);
-    doc.text(nameLines[1], MARGIN, 80);
-  }
-
-  // Date bottom-right
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.text(documentDate || '', PAGE_W - MARGIN, 80, { align: 'right' });
-
-  // Coral divider under the header band
-  setFill(doc, CORAL);
-  doc.rect(0, 90, PAGE_W, 3, 'F');
 }
 
-function drawSectionHeading(doc, label, y) {
-  setText(doc, RECAST_BLUE);
+function drawHeaderBand(doc, customerName, documentDate) {
+  // Background
+  setFill(doc, RECAST_BLUE);
+  doc.rect(0, 0, PAGE_W, HEADER_BAND_H, 'F');
+
+  // Decorative plus-mark scatter in the upper part of the band.
+  drawPlusMarks(doc);
+
+  // Recast wordmark, left-aligned. "Recast" bold, "Software" lighter,
+  // stacked in two lines to mirror the brand lockup.
+  setText(doc, WHITE);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.text(String(label).toUpperCase(), MARGIN, y);
-  // underline rule
-  setStroke(doc, RECAST_BLUE);
-  doc.setLineWidth(0.6);
-  doc.line(MARGIN, y + 3, MARGIN + 110, y + 3);
+  doc.setFontSize(22);
+  doc.text('Recast', MARGIN, 40);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(13);
+  doc.text('Software', MARGIN, 58);
+
+  // Right-side title block: "Meeting Recap & Mutual Action Plan"
+  // on top, "Recast + [Customer] | [Date]" underneath, both white.
+  const rightX = PAGE_W - MARGIN;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.text('Meeting Recap & Mutual Action Plan', rightX, 36, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  const subtitleCustomer = String(customerName || 'Opportunity').trim();
+  const subtitleDate = String(documentDate || '').trim();
+  const subtitle = subtitleDate
+    ? `Recast + ${subtitleCustomer}  |  ${subtitleDate}`
+    : `Recast + ${subtitleCustomer}`;
+  doc.text(subtitle, rightX, 54, { align: 'right' });
+
+  // Coral divider bar under the header.
+  setFill(doc, CORAL);
+  doc.rect(0, HEADER_BAND_H, PAGE_W, HEADER_DIVIDER_H, 'F');
+}
+
+// Solid blue heading bar — the Priority-2 replacement for the underlined
+// text treatment. Full content-width rectangle in Recast Primary Blue
+// with white bolded label inside. Returns the y just below the bar so
+// callers can chain.
+const HEADING_BAR_H = 16;
+
+function drawSectionHeading(doc, label, y) {
+  setFill(doc, RECAST_BLUE);
+  doc.rect(MARGIN, y, CONTENT_W, HEADING_BAR_H, 'F');
+  setText(doc, WHITE);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text(String(label).toUpperCase(), MARGIN + 8, y + HEADING_BAR_H - 5);
+  return y + HEADING_BAR_H;
 }
 
 function drawCheckBullet(doc, x, y) {
@@ -211,20 +237,59 @@ function drawSquareBullet(doc, x, y, rgb) {
 }
 
 function drawMeetingRecap(doc, items, yStart) {
-  drawSectionHeading(doc, 'Meeting Recap', yStart);
-  let y = yStart + 18;
+  let y = drawSectionHeading(doc, 'Meeting Recap', yStart);
+  y += 14;
   setText(doc, INK);
-  doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
-  for (const line of (items || []).slice(0, 6)) {
-    const wrapped = wrapText(doc, line, CONTENT_W - 18);
+  for (const raw of (items || []).slice(0, 7)) {
+    // Tolerate either the new {label, detail} shape or a legacy flat
+    // string — the parser normalizes but a caller building the JSON
+    // directly might still pass strings.
+    const entry = typeof raw === 'string' ? { label: '', detail: raw } : (raw || {});
+    const label = String(entry.label || '').trim();
+    const detail = String(entry.detail || '').trim();
+    if (!label && !detail) continue;
+
     drawCheckBullet(doc, MARGIN + 4, y - 2);
-    doc.text(wrapped, MARGIN + 14, y);
-    y += wrapped.length * 12 + 3;
+
+    const textX = MARGIN + 14;
+    const textMaxW = CONTENT_W - 18;
+    if (label && detail) {
+      // Measure the bold label + ": " so the detail flows right after.
+      doc.setFont('helvetica', 'bold');
+      const labelText = `${label}:`;
+      doc.text(labelText, textX, y);
+      const labelW = doc.getTextWidth(labelText);
+      doc.setFont('helvetica', 'normal');
+      // If label+detail fits on one line, render inline; otherwise wrap
+      // the detail under the label from the same indent.
+      const detailW = doc.getTextWidth(' ' + detail);
+      if (labelW + detailW <= textMaxW) {
+        doc.text(' ' + detail, textX + labelW, y);
+        y += 13;
+      } else {
+        const wrapped = wrapText(doc, detail, textMaxW);
+        y += 12;
+        doc.text(wrapped, textX, y);
+        y += wrapped.length * 11 + 2;
+      }
+    } else if (label) {
+      doc.setFont('helvetica', 'bold');
+      const wrapped = wrapText(doc, label, textMaxW);
+      doc.text(wrapped, textX, y);
+      doc.setFont('helvetica', 'normal');
+      y += wrapped.length * 12 + 2;
+    } else {
+      doc.setFont('helvetica', 'normal');
+      const wrapped = wrapText(doc, detail, textMaxW);
+      doc.text(wrapped, textX, y);
+      y += wrapped.length * 12 + 2;
+    }
   }
   return y + 4;
 }
 
+// Draws a list of plain-string bullets under a bold subsection label.
 function drawEnvSubsection(doc, label, items, color, yStart) {
   setText(doc, INK);
   doc.setFont('helvetica', 'bold');
@@ -241,10 +306,47 @@ function drawEnvSubsection(doc, label, items, color, yStart) {
   return y + 6;
 }
 
+// Infrastructure is richer than the other env subsections — each entry
+// is {name, subline}. The name renders like a normal bullet; the subline
+// sits underneath in muted colour and is suppressed when empty.
+function drawInfrastructureSubsection(doc, items, yStart) {
+  setText(doc, INK);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Infrastructure', MARGIN, yStart);
+  let y = yStart + 14;
+  for (const raw of (items || []).slice(0, 10)) {
+    const entry = typeof raw === 'string' ? { name: raw, subline: '' } : (raw || {});
+    const name = String(entry.name || '').trim();
+    const subline = String(entry.subline || '').trim();
+    if (!name) continue;
+
+    drawSquareBullet(doc, MARGIN + 3, y - 2, CYAN);
+    setText(doc, INK);
+    doc.setFont('helvetica', 'bold');
+    const nameWrapped = wrapText(doc, name, CONTENT_W - 14);
+    doc.text(nameWrapped, MARGIN + 12, y);
+    y += nameWrapped.length * 11;
+
+    if (subline) {
+      setText(doc, MUTED);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      const subWrapped = wrapText(doc, subline, CONTENT_W - 14);
+      y += 9;
+      doc.text(subWrapped, MARGIN + 12, y);
+      y += subWrapped.length * 10;
+      doc.setFontSize(10);
+    }
+    y += 3;
+  }
+  return y + 6;
+}
+
 function drawCurrentEnvironment(doc, env, yStart) {
-  drawSectionHeading(doc, 'Your Current Environment', yStart);
-  let y = yStart + 18;
-  y = drawEnvSubsection(doc, 'Infrastructure',                 env?.infrastructure,                  CYAN, y);
+  let y = drawSectionHeading(doc, 'Your Current Environment', yStart);
+  y += 14;
+  y = drawInfrastructureSubsection(doc, env?.infrastructure, y);
   y = drawEnvSubsection(doc, 'Current State Pain Points',      env?.current_state_pain,              RED,  y);
   y = drawEnvSubsection(doc, 'Stakeholders & Decision Process', env?.stakeholders_and_decision_process, NAVY, y);
   return y;
@@ -292,7 +394,7 @@ function makeMapTableDidDrawCell(statusColIndex) {
 }
 
 function drawMapTable(doc, rows, yStart) {
-  drawSectionHeading(doc, 'Mutual Action Plan', yStart);
+  const headingBottom = drawSectionHeading(doc, 'Mutual Action Plan', yStart);
   const safeRows = (rows || []).filter(r => r && typeof r === 'object');
   // Autotable will render a bare header if body is empty; that looks
   // wrong. Insert a single placeholder row so the table has visual
@@ -308,7 +410,7 @@ function drawMapTable(doc, rows, yStart) {
     : [['—', 'No action items captured yet', '—', '—', 'Pending']];
   const statusColIndex = 4;
   doc.autoTable({
-    startY: yStart + 10,
+    startY: headingBottom + 6,
     head: [['Phase', 'Action', 'Owner', 'Due Date', 'Status']],
     body,
     theme: 'grid',
@@ -342,150 +444,314 @@ function drawMapTable(doc, rows, yStart) {
   return doc.lastAutoTable?.finalY || yStart + 100;
 }
 
-// ── Page 2 — Application Workspace infographic ───────────────
+// ── Architecture page — 8-layer transformation infographic ───
+//
+// Rebuilt from a generic 3-box diagram in V1 to a customer-specific
+// current-state → Application Workspace → proposed-state story. Layers
+// (top to bottom):
+//   1. "CURRENT ENVIRONMENT — [Customer]" blue heading + intro
+//   2. Grid of 6-10 customer tool boxes ({name, subline})
+//   3. Amber "Key Friction" callout (from current_state_pain)
+//   4. Down-pointing triangle transition
+//   5. "PROPOSED STATE — Application Workspace…" blue heading
+//   6. 3-column diagram: Applications → APPLICATION WORKSPACE → Targets
+//   7. "End Users" 4-box persona row
+//   8. Green "What Changes" outcome callout
 
-function drawSimpleHeader(doc, title) {
-  setFill(doc, RECAST_BLUE);
-  doc.rect(0, 0, PAGE_W, 60, 'F');
-  setText(doc, WHITE);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(18);
-  doc.text(title, MARGIN, 38);
-  setFill(doc, CORAL);
-  doc.rect(0, 60, PAGE_W, 3, 'F');
-}
-
-function drawToolBox(doc, x, y, w, h, label) {
+function drawToolBox(doc, x, y, w, h, name, subline) {
   setFill(doc, GRAY_TINT);
   setStroke(doc, BORDER_GRAY);
   doc.setLineWidth(0.6);
   doc.roundedRect(x, y, w, h, 4, 4, 'FD');
   setText(doc, INK);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text(label, x + w / 2, y + h / 2 + 3, { align: 'center' });
+  doc.setFontSize(8.5);
+  const nameLines = wrapText(doc, name || '', w - 10);
+  const hasSub = subline && String(subline).trim();
+  const nameStartY = hasSub ? y + 13 : y + h / 2 + 2;
+  for (let i = 0; i < Math.min(nameLines.length, 2); i++) {
+    doc.text(nameLines[i], x + w / 2, nameStartY + i * 10, { align: 'center' });
+  }
+  if (hasSub) {
+    setText(doc, MUTED);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    const subLines = wrapText(doc, subline, w - 10);
+    const subBaseY = nameStartY + Math.min(nameLines.length, 2) * 10 + 2;
+    for (let i = 0; i < Math.min(subLines.length, 2); i++) {
+      doc.text(subLines[i], x + w / 2, subBaseY + i * 8, { align: 'center' });
+    }
+  }
 }
 
-function drawLabel(doc, x, y, label) {
+function drawCalloutBox(doc, y, bgRgb, textRgb, labelBold, body) {
+  const padX = 10;
+  const padY = 8;
+  setText(doc, textRgb);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  const labelWidth = doc.getTextWidth(labelBold + ' ');
+  doc.setFont('helvetica', 'normal');
+  const bodyMaxW = CONTENT_W - padX * 2 - labelWidth;
+  const bodyLines = wrapText(doc, body, bodyMaxW);
+  // If the body wraps too much to stay aligned, fall back to two-line
+  // layout: bold prefix on line 1, body wrapped below.
+  const inline = bodyLines.length === 1;
+  const height = inline
+    ? padY * 2 + 12
+    : padY * 2 + 12 + bodyLines.length * 11;
+  setFill(doc, bgRgb);
+  setStroke(doc, textRgb);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(MARGIN, y, CONTENT_W, height, 4, 4, 'FD');
+  if (inline) {
+    setText(doc, textRgb);
+    doc.setFont('helvetica', 'bold');
+    doc.text(labelBold, MARGIN + padX, y + padY + 9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(bodyLines[0], MARGIN + padX + labelWidth, y + padY + 9);
+  } else {
+    setText(doc, textRgb);
+    doc.setFont('helvetica', 'bold');
+    doc.text(labelBold, MARGIN + padX, y + padY + 9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(bodyLines, MARGIN + padX, y + padY + 9 + 12);
+  }
+  return y + height;
+}
+
+function drawDownTriangle(doc, cx, yTop, size = 10) {
+  setFill(doc, RECAST_BLUE);
+  doc.triangle(cx - size, yTop, cx + size, yTop, cx, yTop + size * 1.2, 'F');
+  return yTop + size * 1.2;
+}
+
+function pickStringList(list, max) {
+  return (list || [])
+    .map(s => String(s || '').trim())
+    .filter(Boolean)
+    .slice(0, max);
+}
+
+function drawArchitecturePage(doc, json) {
+  const env = json?.current_environment || {};
+  const infra = Array.isArray(env.infrastructure) ? env.infrastructure : [];
+  const pains = pickStringList(env.current_state_pain, 4);
+  const customerName = json?.customer_name || '';
+
+  // ── Header band: compact blue band to match Page 1 treatment ──
+  setFill(doc, RECAST_BLUE);
+  doc.rect(0, 0, PAGE_W, 60, 'F');
+  setText(doc, WHITE);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.text('HOW APPLICATION WORKSPACE FITS', MARGIN, 38);
+  setFill(doc, CORAL);
+  doc.rect(0, 60, PAGE_W, 3, 'F');
+
+  let y = 75;
+
+  // ── Layer 1: "CURRENT ENVIRONMENT — [Customer]" intro ─────────
+  const layer1Label = customerName
+    ? `Current Environment — ${customerName}`
+    : 'Current Environment';
+  y = drawSectionHeading(doc, layer1Label, y);
+  y += 10;
   setText(doc, INK);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text(label, x, y, { align: 'center' });
-}
+  const introLines = wrapText(
+    doc,
+    'Based on our conversations, the following reflects your current systems architecture and the key infrastructure components involved in application delivery.',
+    CONTENT_W,
+  );
+  doc.text(introLines, MARGIN, y);
+  y += introLines.length * 11 + 10;
 
-function drawArchitecturePage(doc, customerName) {
-  drawSimpleHeader(doc, 'HOW APPLICATION WORKSPACE FITS');
+  // ── Layer 2: current-tools grid (6-10 {name, subline} boxes) ──
+  y = drawSectionHeading(doc, 'Current State — Per-Platform Delivery, Multiple Dependencies', y);
+  y += 10;
 
-  const currentTools = ['Intune', 'ConfigMgr', 'Citrix', 'AVD', 'macOS'];
-  const deliveryTargets = ['Laptop', 'Cloud PC', 'Virtual Desktop', 'macOS', 'BYOD'];
-  const personas = ['Engineering', 'Sales', 'Finance', 'Contractors'];
+  const entries = infra
+    .map(e => (typeof e === 'string' ? { name: e, subline: '' } : (e || {})))
+    .filter(e => e && String(e.name || '').trim())
+    .slice(0, 10);
 
-  // Section label
-  setText(doc, MUTED);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('CURRENT STATE', MARGIN, 90);
+  if (entries.length > 0) {
+    const cols = entries.length <= 4 ? 2 : 3;
+    const gap = 10;
+    const boxW = (CONTENT_W - gap * (cols - 1)) / cols;
+    const boxH = 44;
+    const rows = Math.ceil(entries.length / cols);
+    for (let i = 0; i < entries.length; i++) {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = MARGIN + col * (boxW + gap);
+      const by = y + row * (boxH + gap);
+      drawToolBox(doc, x, by, boxW, boxH, entries[i].name, entries[i].subline);
+    }
+    y += rows * (boxH + gap);
+  } else {
+    setText(doc, MUTED);
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(9);
+    doc.text('No infrastructure details captured from the source.', MARGIN, y + 6);
+    y += 24;
+  }
 
-  // Row of 5 current-tool boxes, centred
-  const boxW = 90;
-  const boxH = 42;
-  const gap = 12;
-  const rowTotal = currentTools.length * boxW + (currentTools.length - 1) * gap;
-  const rowX = (PAGE_W - rowTotal) / 2;
-  currentTools.forEach((t, i) => {
-    drawToolBox(doc, rowX + i * (boxW + gap), 100, boxW, boxH, t);
-  });
+  // ── Layer 3: amber "Key Friction" callout ─────────────────────
+  if (pains.length > 0) {
+    const frictionBody = pains.join('  •  ');
+    y = drawCalloutBox(doc, y + 2, AMBER_TINT, AMBER, 'Key Friction:', frictionBody);
+  }
 
-  // Cyan downward arrow from the grid to the Application Workspace box
-  const arrowX = PAGE_W / 2;
-  const arrowTop = 150;
-  const arrowBottom = 200;
-  setStroke(doc, CYAN);
-  doc.setLineWidth(2.5);
-  doc.line(arrowX, arrowTop, arrowX, arrowBottom - 6);
-  setFill(doc, CYAN);
-  doc.triangle(arrowX - 6, arrowBottom - 8, arrowX + 6, arrowBottom - 8, arrowX, arrowBottom, 'F');
+  // ── Layer 4: down-pointing triangle transition ────────────────
+  y += 10;
+  y = drawDownTriangle(doc, PAGE_W / 2, y, 8);
+  y += 8;
 
-  // APPLICATION WORKSPACE centerpiece
-  const awW = 400;
-  const awH = 80;
-  const awX = (PAGE_W - awW) / 2;
-  const awY = 210;
-  setFill(doc, RECAST_BLUE);
-  doc.roundedRect(awX, awY, awW, awH, 10, 10, 'F');
-  setText(doc, WHITE);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(20);
-  doc.text('APPLICATION WORKSPACE', awX + awW / 2, awY + 38, { align: 'center' });
-  setText(doc, LIGHT_BLUE);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11);
-  doc.text('Package  ·  Deliver  ·  Update  ·  Govern', awX + awW / 2, awY + 60, { align: 'center' });
+  // ── Layer 5: "PROPOSED STATE" heading bar ─────────────────────
+  y = drawSectionHeading(doc, 'Proposed State — Application Workspace as the Unified Delivery Layer', y);
+  y += 12;
 
-  // Cyan arrow down into delivery targets
-  const arrow2Top = awY + awH + 4;
-  const arrow2Bottom = arrow2Top + 32;
-  setStroke(doc, CYAN);
-  doc.setLineWidth(2.5);
-  doc.line(arrowX, arrow2Top, arrowX, arrow2Bottom - 6);
-  setFill(doc, CYAN);
-  doc.triangle(arrowX - 6, arrow2Bottom - 8, arrowX + 6, arrow2Bottom - 8, arrowX, arrow2Bottom, 'F');
+  // ── Layer 6: three-column diagram ─────────────────────────────
+  const diagramH = 110;
+  const leftW = 130;
+  const centerW = 220;
+  const rightW = 130;
+  const gap6 = 12;
+  const totalW = leftW + centerW + rightW + gap6 * 2;
+  const baseX = MARGIN + Math.max(0, (CONTENT_W - totalW) / 2);
+  const diagramY = y;
 
-  // DELIVERY TARGETS row
-  setText(doc, MUTED);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('DELIVERY TARGETS', MARGIN, arrow2Bottom + 20);
-  const dtBoxW = 92;
-  const dtBoxH = 36;
-  const dtGap = 8;
-  const dtTotal = deliveryTargets.length * dtBoxW + (deliveryTargets.length - 1) * dtGap;
-  const dtX = (PAGE_W - dtTotal) / 2;
-  const dtY = arrow2Bottom + 30;
-  deliveryTargets.forEach((t, i) => {
-    drawToolBox(doc, dtX + i * (dtBoxW + dtGap), dtY, dtBoxW, dtBoxH, t);
-  });
-
-  // PERSONAS band
-  setText(doc, MUTED);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('USER PERSONAS', MARGIN, dtY + dtBoxH + 32);
-  const pBoxW = 115;
-  const pBoxH = 36;
-  const pGap = 12;
-  const pTotal = personas.length * pBoxW + (personas.length - 1) * pGap;
-  const pX = (PAGE_W - pTotal) / 2;
-  const pY = dtY + dtBoxH + 40;
-  personas.forEach((p, i) => {
-    const x = pX + i * (pBoxW + pGap);
-    setFill(doc, LIGHT_BLUE);
-    setStroke(doc, BORDER_GRAY);
-    doc.setLineWidth(0.6);
-    doc.roundedRect(x, pY, pBoxW, pBoxH, 4, 4, 'FD');
-    setText(doc, NAVY);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text(p, x + pBoxW / 2, pY + pBoxH / 2 + 3, { align: 'center' });
-  });
-
-  // OUTCOME green strip at page bottom
-  const stripY = PAGE_H - 90;
-  setFill(doc, GREEN);
-  doc.rect(0, stripY, PAGE_W, 40, 'F');
-  setText(doc, WHITE);
+  // Applications box (left)
+  setFill(doc, LIGHT_BLUE);
+  setStroke(doc, RECAST_BLUE);
+  doc.setLineWidth(0.6);
+  doc.roundedRect(baseX, diagramY, leftW, diagramH, 5, 5, 'FD');
+  setText(doc, RECAST_BLUE);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text('Outcome:', MARGIN, stripY + 18);
+  doc.text('Applications', baseX + leftW / 2, diagramY + 14, { align: 'center' });
+  setText(doc, INK);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11);
-  doc.text(
-    'Same definition, every environment. Define once. Deliver everywhere.',
-    MARGIN + 60, stripY + 18,
+  doc.setFontSize(8.5);
+  const appsLines = wrapText(
+    doc,
+    'Custom apps + Setup Store catalog + Legacy apps',
+    leftW - 14,
   );
-  doc.setFontSize(9);
-  setText(doc, [220, 240, 228]);
-  doc.text('Tailored for ' + (customerName || 'your team'), MARGIN, stripY + 32);
+  doc.text(appsLines, baseX + leftW / 2, diagramY + 32, { align: 'center' });
+
+  // Arrow into the center
+  setStroke(doc, CYAN);
+  doc.setLineWidth(2);
+  const a1y = diagramY + diagramH / 2;
+  doc.line(baseX + leftW + 2, a1y, baseX + leftW + gap6 - 3, a1y);
+  setFill(doc, CYAN);
+  doc.triangle(
+    baseX + leftW + gap6 - 3, a1y - 4,
+    baseX + leftW + gap6 - 3, a1y + 4,
+    baseX + leftW + gap6 + 1, a1y,
+    'F',
+  );
+
+  // APPLICATION WORKSPACE center
+  const centerX = baseX + leftW + gap6;
+  setFill(doc, RECAST_BLUE);
+  doc.roundedRect(centerX, diagramY, centerW, diagramH, 6, 6, 'F');
+  setText(doc, WHITE);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.text('APPLICATION WORKSPACE', centerX + centerW / 2, diagramY + 22, { align: 'center' });
+  setText(doc, LIGHT_BLUE);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  const capsLines = wrapText(
+    doc,
+    'Smart Icons • Conditional Launch • Custom Actions (replaces RES) • On-Demand Install / App Attach • Identity-Based • Context-Aware • User Profile Mgmt',
+    centerW - 16,
+  );
+  doc.text(capsLines, centerX + centerW / 2, diagramY + 44, { align: 'center' });
+
+  // Arrow into targets
+  setStroke(doc, CYAN);
+  doc.setLineWidth(2);
+  const a2y = diagramY + diagramH / 2;
+  doc.line(centerX + centerW + 2, a2y, centerX + centerW + gap6 - 3, a2y);
+  setFill(doc, CYAN);
+  doc.triangle(
+    centerX + centerW + gap6 - 3, a2y - 4,
+    centerX + centerW + gap6 - 3, a2y + 4,
+    centerX + centerW + gap6 + 1, a2y,
+    'F',
+  );
+
+  // Delivery targets column (right) — 3 stacked small boxes
+  const rightX = centerX + centerW + gap6;
+  const targets = [
+    ['AVD / Nerdio', 'Non-persistent VDI'],
+    ['Intune / SCCM', 'Physical endpoints'],
+    ['Windows 365', 'Cloud PCs'],
+  ];
+  const targetH = (diagramH - 2 * 6) / 3;
+  for (let i = 0; i < targets.length; i++) {
+    const ty = diagramY + i * (targetH + 3);
+    setFill(doc, GRAY_TINT);
+    setStroke(doc, BORDER_GRAY);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(rightX, ty, rightW, targetH, 4, 4, 'FD');
+    setText(doc, INK);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text(targets[i][0], rightX + rightW / 2, ty + 12, { align: 'center' });
+    setText(doc, MUTED);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text(targets[i][1], rightX + rightW / 2, ty + 22, { align: 'center' });
+  }
+
+  y = diagramY + diagramH + 14;
+
+  // ── Layer 7: End Users persona row ───────────────────────────
+  setText(doc, RECAST_BLUE);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('End Users', MARGIN, y);
+  y += 8;
+
+  const personas = [
+    ['Office Workers',  'Standard desktops'],
+    ['Remote / Hybrid', 'Home + travel'],
+    ['VDI Users',       'Non-persistent sessions'],
+    ['External Users',  'Secure access'],
+  ];
+  const pGap = 10;
+  const pBoxW = (CONTENT_W - pGap * (personas.length - 1)) / personas.length;
+  const pBoxH = 36;
+  for (let i = 0; i < personas.length; i++) {
+    const x = MARGIN + i * (pBoxW + pGap);
+    setFill(doc, LIGHT_BLUE);
+    setStroke(doc, BORDER_GRAY);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(x, y, pBoxW, pBoxH, 4, 4, 'FD');
+    setText(doc, NAVY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(personas[i][0], x + pBoxW / 2, y + 14, { align: 'center' });
+    setText(doc, MUTED);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text(personas[i][1], x + pBoxW / 2, y + 26, { align: 'center' });
+  }
+  y += pBoxH + 14;
+
+  // ── Layer 8: green "What Changes" outcome callout ────────────
+  const changesBody =
+    'RES eliminated • Per-platform packaging eliminated • Citrix-to-AVD migration ' +
+    'absorbed without user disruption • Non-persistent VDI apps delivered on demand • ' +
+    'Single console across all delivery targets';
+  drawCalloutBox(doc, y, GREEN_TINT, GREEN, 'What Changes:', changesBody);
 }
 
 // ── Footer on every page ─────────────────────────────────────
@@ -537,14 +803,16 @@ export async function buildMapPdf(json, opportunity, options) {
 
   // Page 1
   drawHeaderBand(doc, customerName, docDate);
-  let y = 120;
+  let y = HEADER_TOTAL_H + 20;
   y = drawMeetingRecap(doc, json.meeting_recap, y);
   y = drawCurrentEnvironment(doc, json.current_environment, y + 4);
   drawMapTable(doc, json.mutual_action_plan, y + 6);
 
-  // Page 2 — always a fresh page, whatever page the MAP table ended on.
+  // Architecture page — always a fresh page, whatever page the MAP
+  // table ended on. Passes the full json so the page can personalize
+  // Layer 1 (customer name) and Layers 2/3 (infra + pain data).
   doc.addPage();
-  drawArchitecturePage(doc, customerName);
+  drawArchitecturePage(doc, json);
 
   // Footers last, once we know the final page count.
   drawFooters(doc, customerName);
