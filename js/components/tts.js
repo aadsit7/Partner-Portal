@@ -1,42 +1,23 @@
 // ============================================
-// ElevenLabs TTS — Streaming Audio Playback
+// Text-to-Speech — Web Speech API (instant, local)
 // ============================================
-// Adds speaker buttons to assistant messages and
-// optional auto-speak. Calls ElevenLabs API directly.
-// Also exports speakWithElevenLabs() for use by
-// Randy and the voice widget.
+// Uses the browser's built-in speechSynthesis. No network
+// round-trip, no API key — speech starts immediately.
+// Provides speaker buttons on assistant messages, an
+// auto-speak mode, a simple settings popover, and a
+// generic speak() helper used by Randy and the voice widget.
 
-import { CONFIG, getRuntimeConfig, setRuntimeConfig } from '../config.js';
+import { getRuntimeConfig, setRuntimeConfig } from '../config.js';
 
-// ── Configuration ─────────────────────────────────────────────────
-const ELEVENLABS_BASE = 'https://api.elevenlabs.io/v1/text-to-speech';
-const OUTPUT_FORMAT = 'mp3_22050_32';
-
-// ElevenLabs voice options (matches Setup page)
-const VOICES = [
-  { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George (Warm, Natural Male)' },
-  { id: 'TxGEqnHWrfWFTfGW9XjX', name: 'Josh (Conversational Male)' },
-  { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam (Deep Male)' },
-  { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel (American Female)' },
-  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah (Soft Female)' },
-  { id: '9BWtsMINqrJLrRacOk9x', name: 'Aria (Expressive Female)' },
-];
-
-// ── State (button-based TTS) ─────────────────────────────────────
-let audio = null;
+// ── State ─────────────────────────────────────────────────────────
+const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+let currentUtterance = null;
 let currentBtn = null;
-let currentObjectUrl = null;
-
-// ── State (shared speakWithElevenLabs) ───────────────────────────
-let sharedAudio = null;
-let sharedObjectUrl = null;
 
 // ── SVG Icons ─────────────────────────────────────────────────────
 const SPEAKER_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
 
 const STOP_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>`;
-
-const SPINNER_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="tts-spinner"><circle cx="12" cy="12" r="10" stroke-dasharray="60" stroke-dashoffset="20"></circle></svg>`;
 
 // ── Public API ────────────────────────────────────────────────────
 
@@ -48,40 +29,34 @@ export function isAutoSpeakEnabled() {
   return getRuntimeConfig('TTS_AUTO_SPEAK') === true || getRuntimeConfig('TTS_AUTO_SPEAK') === 'true';
 }
 
-export function getSelectedVoice() {
-  return getRuntimeConfig('ELEVENLABS_VOICE') || getRuntimeConfig('TTS_VOICE') || CONFIG.ELEVENLABS_VOICE || VOICES[0].id;
+function isSupported() {
+  return !!synth && typeof SpeechSynthesisUtterance !== 'undefined';
 }
 
-export function getApiKey() {
-  return getRuntimeConfig('ELEVENLABS_API_KEY') || CONFIG.ELEVENLABS_API_KEY || '';
-}
-
-function getModel() {
-  return getRuntimeConfig('ELEVENLABS_MODEL') || CONFIG.ELEVENLABS_MODEL || 'eleven_turbo_v2_5';
-}
-
-/**
- * Returns true if an ElevenLabs API key is configured and available.
- */
-export function isElevenLabsReady() {
-  return !!getApiKey();
+function getPreferredVoice() {
+  if (!synth) return null;
+  const voices = synth.getVoices();
+  const preferred = ['Google US English', 'Microsoft Zira', 'Samantha', 'Alex'];
+  for (const name of preferred) {
+    const match = voices.find(v => v.name.includes(name));
+    if (match) return match;
+  }
+  return voices.find(v => v.lang.startsWith('en')) || voices[0] || null;
 }
 
 /**
- * Speak text using ElevenLabs TTS. Returns a handle with stop(), or null if unavailable.
- * Used by Randy, voice-widget, and button TTS.
+ * Speak text using the browser's Web Speech API.
+ * Returns a handle with stop(), or null if TTS is unsupported.
  *
- * @param {string} rawText - Text to speak (will be cleaned of markdown/action blocks)
- * @param {Object} callbacks
- * @param {Function} [callbacks.onStart] - Called when audio playback begins
- * @param {Function} [callbacks.onEnd] - Called when audio playback completes
- * @param {Function} [callbacks.onError] - Called on any error
- * @param {string} [callbacks.voiceId] - Override voice ID (defaults to selected voice)
- * @returns {{ stop: Function } | null} Handle to stop playback, or null if not configured
+ * @param {string} rawText - Text to speak (markdown/actions are stripped)
+ * @param {Object} [callbacks]
+ * @param {Function} [callbacks.onStart]
+ * @param {Function} [callbacks.onEnd]
+ * @param {Function} [callbacks.onError]
+ * @returns {{ stop: Function } | null}
  */
-export function speakWithElevenLabs(rawText, { onStart, onEnd, onError, voiceId } = {}) {
-  const apiKey = getApiKey();
-  if (!apiKey) return null;
+export function speak(rawText, { onStart, onEnd, onError } = {}) {
+  if (!isSupported()) return null;
 
   const text = cleanTextForSpeech(rawText);
   if (!text) {
@@ -89,79 +64,34 @@ export function speakWithElevenLabs(rawText, { onStart, onEnd, onError, voiceId 
     return { stop() {} };
   }
 
-  let stopped = false;
-  let audioEl = document.createElement('audio');
-  let objectUrl = null;
+  if (synth.speaking) synth.cancel();
 
-  const stop = () => {
+  let stopped = false;
+  const utt = new SpeechSynthesisUtterance(text);
+  const voice = getPreferredVoice();
+  if (voice) utt.voice = voice;
+  utt.rate = 1.05;
+  utt.pitch = 1;
+
+  utt.onstart = () => { if (onStart && !stopped) onStart(); };
+  utt.onend = () => { if (onEnd && !stopped) onEnd(); };
+  utt.onerror = (e) => {
     if (stopped) return;
-    stopped = true;
-    if (audioEl) {
-      audioEl.pause();
-      audioEl.removeAttribute('src');
-      audioEl.load();
-      audioEl = null;
-    }
-    if (objectUrl) {
-      URL.revokeObjectURL(objectUrl);
-      objectUrl = null;
-    }
+    if (e.error === 'canceled' || e.error === 'interrupted') return;
+    if (onError) onError(new Error(e.error || 'speech error'));
   };
 
-  // Fire-and-forget async playback
-  (async () => {
-    try {
-      const voice = voiceId || getSelectedVoice();
-      const model = getModel();
+  synth.speak(utt);
+  currentUtterance = utt;
 
-      const res = await fetch(
-        `${ELEVENLABS_BASE}/${voice}/stream?output_format=${OUTPUT_FORMAT}`,
-        {
-          method: 'POST',
-          headers: {
-            'xi-api-key': apiKey,
-            'Content-Type': 'application/json',
-            'Accept': 'audio/mpeg',
-          },
-          body: JSON.stringify({ text, model_id: model }),
-        }
-      );
-
+  return {
+    stop() {
       if (stopped) return;
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: { message: 'TTS request failed' } }));
-        throw new Error(err.detail?.message || `HTTP ${res.status}`);
-      }
-
-      const blob = await res.blob();
-      if (stopped) return;
-
-      objectUrl = URL.createObjectURL(blob);
-      audioEl.src = objectUrl;
-
-      audioEl.addEventListener('ended', () => {
-        if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
-        if (onEnd && !stopped) onEnd();
-      }, { once: true });
-
-      audioEl.addEventListener('error', () => {
-        stop();
-        if (onError) onError(new Error('Audio playback failed'));
-      }, { once: true });
-
-      await audioEl.play();
-      if (onStart && !stopped) onStart();
-
-    } catch (err) {
-      if (stopped) return;
-      console.error('ElevenLabs TTS error:', err);
-      stop();
-      if (onError) onError(err);
-    }
-  })();
-
-  return { stop };
+      stopped = true;
+      if (currentUtterance === utt) currentUtterance = null;
+      if (synth.speaking) synth.cancel();
+    },
+  };
 }
 
 /**
@@ -169,7 +99,7 @@ export function speakWithElevenLabs(rawText, { onStart, onEnd, onError, voiceId 
  * Call this after rendering each assistant message.
  */
 export function attachSpeakerButton(bubble, text) {
-  if (!bubble || !text) return;
+  if (!bubble || !text || !isSupported()) return;
 
   const btn = document.createElement('button');
   btn.className = 'tts-speak-btn';
@@ -186,34 +116,24 @@ export function attachSpeakerButton(bubble, text) {
 
 /**
  * Auto-speak a message if auto-speak is enabled and TTS is on.
- * Must be called within a user gesture chain (e.g., the send button click).
  */
 export function autoSpeak(bubble, text) {
   if (!isTTSEnabled() || !isAutoSpeakEnabled()) return;
-  if (!getApiKey()) return;
+  if (!isSupported()) return;
 
   const btn = bubble.querySelector('.tts-speak-btn');
-  if (btn) {
-    handleSpeakClick(btn, text);
-  }
+  if (btn) handleSpeakClick(btn, text);
 }
 
 /**
- * Stop any currently playing TTS audio (button-based).
+ * Stop any currently playing TTS audio (button-based or speak()-based).
  */
 export function stopTTS() {
-  if (audio) {
-    audio.pause();
-    audio.removeAttribute('src');
-    audio.load();
-  }
-  if (currentObjectUrl) {
-    URL.revokeObjectURL(currentObjectUrl);
-    currentObjectUrl = null;
-  }
+  if (synth && synth.speaking) synth.cancel();
+  currentUtterance = null;
   if (currentBtn) {
     currentBtn.innerHTML = SPEAKER_ICON;
-    currentBtn.classList.remove('tts-active', 'tts-loading');
+    currentBtn.classList.remove('tts-active');
     currentBtn.title = 'Read aloud';
     currentBtn = null;
   }
@@ -244,16 +164,6 @@ export function createSettingsButton() {
       <span>Auto-speak replies</span>
       <input type="checkbox" id="tts-auto-speak" ${isAutoSpeakEnabled() ? 'checked' : ''}>
     </label>
-    <label class="tts-popover__row tts-popover__row--col">
-      <span>Voice</span>
-      <select id="tts-voice">
-        ${VOICES.map(v => `<option value="${v.id}" ${v.id === getSelectedVoice() ? 'selected' : ''}>${v.name}</option>`).join('')}
-      </select>
-    </label>
-    <label class="tts-popover__row tts-popover__row--col">
-      <span>ElevenLabs API Key</span>
-      <input type="password" id="tts-api-key" value="${getApiKey()}" placeholder="Enter your ElevenLabs API key">
-    </label>
   `;
 
   wrapper.appendChild(gearBtn);
@@ -264,43 +174,26 @@ export function createSettingsButton() {
     popover.classList.toggle('tts-popover--open');
   });
 
-  // Close popover when clicking outside
   document.addEventListener('click', (e) => {
     if (!wrapper.contains(e.target)) {
       popover.classList.remove('tts-popover--open');
     }
   });
 
-  // Wire up settings
   popover.querySelector('#tts-toggle').addEventListener('change', (e) => {
     setRuntimeConfig('TTS_ENABLED', e.target.checked);
   });
   popover.querySelector('#tts-auto-speak').addEventListener('change', (e) => {
     setRuntimeConfig('TTS_AUTO_SPEAK', e.target.checked);
   });
-  popover.querySelector('#tts-voice').addEventListener('change', (e) => {
-    setRuntimeConfig('ELEVENLABS_VOICE', e.target.value);
-  });
-  popover.querySelector('#tts-api-key').addEventListener('change', (e) => {
-    setRuntimeConfig('ELEVENLABS_API_KEY', e.target.value.trim());
-  });
 
   return wrapper;
 }
 
-// ── Internal ──────────────────────────────────────────────────────
-
-function ensureAudio() {
-  if (!audio) {
-    audio = document.createElement('audio');
-    audio.id = 'ttsAudio';
-    audio.addEventListener('ended', () => stopTTS());
-    audio.addEventListener('error', () => stopTTS());
-  }
-  return audio;
-}
+// ── Text Cleaning ─────────────────────────────────────────────────
 
 export function cleanTextForSpeech(text) {
+  if (!text) return '';
   return text
     .replace(/:::ACTION[\s\S]*?:::/g, '')
     .replace(/:::NAV[\s\S]*?:::/g, '')
@@ -320,20 +213,16 @@ export function cleanTextForSpeech(text) {
 
 /**
  * Extract voice text from a raw response string (markdown or legacy HTML).
- * Useful for starting TTS before the content is inserted into the page.
- *
- * @param {string} text - Raw response string (markdown or HTML)
- * @returns {string|null} Extracted voice text, or null if no voice element found
+ * @param {string} text
+ * @returns {string|null}
  */
 export function extractVoiceTextFromString(text) {
-  // Legacy HTML format
   const htmlMatch = text.match(/data-voice="true"[^>]*>([\s\S]*?)<\/div>\s*<(?:details|\/div)/);
   if (htmlMatch) {
     const temp = document.createElement('div');
     temp.innerHTML = htmlMatch[1];
     return temp.textContent.replace('Summary', '').trim();
   }
-  // New markdown format: extract text after **Summary** until first --- or ###
   const mdMatch = text.match(/\*\*Summary\*\*\s*\n([\s\S]*?)(?=\n---|\n###|$)/);
   if (mdMatch) {
     return mdMatch[1].replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1').trim();
@@ -343,30 +232,20 @@ export function extractVoiceTextFromString(text) {
 
 /**
  * Extract voice text from a rendered DOM element or raw string.
- * Returns the summary text for voice output, or null to fall back to full text.
- *
- * @param {string|HTMLElement} htmlOrElement - Raw string or a DOM element
- * @returns {string|null} Extracted voice text, or null to fall back to full text
+ * @param {string|HTMLElement} htmlOrElement
+ * @returns {string|null}
  */
 export function extractVoiceText(htmlOrElement) {
-  // If raw string, try string-based extraction first
-  if (typeof htmlOrElement === 'string') {
-    return extractVoiceTextFromString(htmlOrElement);
-  }
-  if (!(htmlOrElement instanceof HTMLElement)) {
-    return null;
-  }
-  const container = htmlOrElement;
-  // Legacy HTML: data-voice attribute
-  const voiceEl = container.querySelector('[data-voice="true"]');
-  if (voiceEl) {
-    return voiceEl.textContent.replace('Summary', '').trim();
-  }
-  // New markdown (rendered): text before first <hr> or <h3>/<h4>
-  const hr = container.querySelector('hr');
+  if (typeof htmlOrElement === 'string') return extractVoiceTextFromString(htmlOrElement);
+  if (!(htmlOrElement instanceof HTMLElement)) return null;
+
+  const voiceEl = htmlOrElement.querySelector('[data-voice="true"]');
+  if (voiceEl) return voiceEl.textContent.replace('Summary', '').trim();
+
+  const hr = htmlOrElement.querySelector('hr');
   if (hr) {
     let text = '';
-    let node = container.firstChild;
+    let node = htmlOrElement.firstChild;
     while (node && node !== hr) {
       text += node.textContent || '';
       node = node.nextSibling;
@@ -376,68 +255,40 @@ export function extractVoiceText(htmlOrElement) {
   return null;
 }
 
-async function handleSpeakClick(btn, rawText) {
-  // If this button is already playing, stop
-  if (btn === currentBtn && audio && !audio.paused) {
+// ── Internal ──────────────────────────────────────────────────────
+
+function handleSpeakClick(btn, rawText) {
+  // Clicking the active button = stop
+  if (btn === currentBtn && synth && synth.speaking) {
     stopTTS();
     return;
   }
 
-  // Stop any other playback
   stopTTS();
 
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    btn.title = 'Set ElevenLabs API Key in TTS settings first';
-    btn.classList.add('tts-error');
-    setTimeout(() => btn.classList.remove('tts-error'), 2000);
-    return;
-  }
-
-  const text = cleanTextForSpeech(rawText);
-  if (!text) return;
-
-  const voiceId = getSelectedVoice();
-  const model = getModel();
-  currentBtn = btn;
-  btn.innerHTML = SPINNER_ICON;
-  btn.classList.add('tts-loading');
-  btn.title = 'Loading...';
-
-  const audioEl = ensureAudio();
-
-  try {
-    const res = await fetch(
-      `${ELEVENLABS_BASE}/${voiceId}/stream?output_format=${OUTPUT_FORMAT}`,
-      {
-        method: 'POST',
-        headers: {
-          'xi-api-key': apiKey,
-          'Content-Type': 'application/json',
-          'Accept': 'audio/mpeg',
-        },
-        body: JSON.stringify({
-          text,
-          model_id: model,
-        }),
+  const handle = speak(rawText, {
+    onEnd: () => {
+      if (currentBtn === btn) {
+        btn.innerHTML = SPEAKER_ICON;
+        btn.classList.remove('tts-active');
+        btn.title = 'Read aloud';
+        currentBtn = null;
       }
-    );
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: { message: 'TTS request failed' } }));
-      throw new Error(err.detail?.message || `HTTP ${res.status}`);
-    }
-    const blob = await res.blob();
-    if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-    currentObjectUrl = URL.createObjectURL(blob);
-    audioEl.src = currentObjectUrl;
-    await audioEl.play();
+    },
+    onError: () => {
+      if (currentBtn === btn) {
+        btn.innerHTML = SPEAKER_ICON;
+        btn.classList.remove('tts-active');
+        btn.title = 'Read aloud';
+        currentBtn = null;
+      }
+    },
+  });
 
-    btn.innerHTML = STOP_ICON;
-    btn.classList.remove('tts-loading');
-    btn.classList.add('tts-active');
-    btn.title = 'Stop';
-  } catch (err) {
-    console.error('TTS playback error:', err);
-    stopTTS();
-  }
+  if (!handle) return;
+
+  currentBtn = btn;
+  btn.innerHTML = STOP_ICON;
+  btn.classList.add('tts-active');
+  btn.title = 'Stop';
 }

@@ -11,7 +11,6 @@ import { getCurrentUser } from '../auth.js';
 import { appendRow, updateRow, readSheetAsObjects, loadCustomPrompts } from '../sheets.js';
 import { isVoiceModeActive } from './voice-widget.js';
 import { openOppModal } from '../views/admin-opportunities.js';
-import { speakWithElevenLabs } from './tts.js';
 
 // ── Randy Personality Prompt ──────────────────────────────────────
 const RANDY_PERSONALITY = `
@@ -232,7 +231,6 @@ let isDragging = false;
 let accumulatedTranscript = '';
 let autoSendTimer = null;
 let speechChainCancelled = false;
-let currentElevenLabsHandle = null;
 let dragOffset = { x: 0, y: 0 };
 let currentConvId = null;
 let currentConvRow = null;
@@ -370,7 +368,6 @@ function onStateEnter(state, prevState) {
       if (isTypeModeActive) {
         // In type mode: stop audio/recognition but preserve conversation history
         if (recognition) { try { recognition.abort(); } catch { /* ok */ } }
-        if (currentElevenLabsHandle) { currentElevenLabsHandle.stop(); currentElevenLabsHandle = null; }
         if (synth.speaking) synth.cancel();
         speechChainCancelled = true;
         if (autoSendTimer) { clearTimeout(autoSendTimer); autoSendTimer = null; }
@@ -411,7 +408,6 @@ function stopAll() {
   if (recognition) {
     try { recognition.abort(); } catch { /* ok */ }
   }
-  if (currentElevenLabsHandle) { currentElevenLabsHandle.stop(); currentElevenLabsHandle = null; }
   if (synth.speaking) synth.cancel();
   speechChainCancelled = true;
   if (autoSendTimer) { clearTimeout(autoSendTimer); autoSendTimer = null; }
@@ -468,7 +464,6 @@ function initRecognition() {
     // During speaking: check for intentional interrupt vs echo
     if (isRandySpeaking) {
       if (isInterrupt(transcript)) {
-        if (currentElevenLabsHandle) { currentElevenLabsHandle.stop(); currentElevenLabsHandle = null; }
         synth.cancel();
         speechChainCancelled = true;
         isRandySpeaking = false;
@@ -1127,34 +1122,10 @@ function speakText(text, onComplete) {
   }
 
   // Stop any previous playback
-  if (currentElevenLabsHandle) { currentElevenLabsHandle.stop(); currentElevenLabsHandle = null; }
   if (synth.speaking) synth.cancel();
 
-  // ── Try ElevenLabs first for natural voice ──
-  const handle = speakWithElevenLabs(clean, {
-    onStart: () => {
-      // Audio playback has begun
-    },
-    onEnd: () => {
-      currentElevenLabsHandle = null;
-      finishSpeaking();
-    },
-    onError: (err) => {
-      console.warn('Randy ElevenLabs error, falling back to Web Speech:', err?.message);
-      currentElevenLabsHandle = null;
-      // Fall back to Web Speech API
-      speakWithWebSpeech(clean);
-    },
-  });
-
-  if (handle) {
-    currentElevenLabsHandle = handle;
-    // Start recognition for barge-in
-    startRecognition();
-    return;
-  }
-
-  // ── Fall back to Web Speech API ──
+  // ── Speak via Web Speech API (instant, no network) ──
+  // speakWithWebSpeech also starts recognition for barge-in.
   speakWithWebSpeech(clean);
 }
 
@@ -1782,7 +1753,6 @@ function createWidget() {
   document.getElementById('randy-close-window').addEventListener('click', () => {
     saveRandyConversation();
     if (recognition) { try { recognition.abort(); } catch { /* ok */ } }
-    if (currentElevenLabsHandle) { currentElevenLabsHandle.stop(); currentElevenLabsHandle = null; }
     if (synth.speaking) synth.cancel();
     speechChainCancelled = true;
     if (autoSendTimer) { clearTimeout(autoSendTimer); autoSendTimer = null; }
@@ -1841,7 +1811,6 @@ function createWidget() {
     muteBtn.setAttribute('aria-label', isMuted ? 'Unmute voice' : 'Mute voice');
     // Stop any current speech when muting
     if (isMuted) {
-      if (currentElevenLabsHandle) { currentElevenLabsHandle.stop(); currentElevenLabsHandle = null; }
       if (synth.speaking) synth.cancel();
     }
     updateStatusBar();
@@ -1918,7 +1887,6 @@ function handleVoiceBtnClick() {
       break;
     case STATES.SPEAKING:
       // Speaking → interrupt and listen
-      if (currentElevenLabsHandle) { currentElevenLabsHandle.stop(); currentElevenLabsHandle = null; }
       synth.cancel();
       speechChainCancelled = true;
       isRandySpeaking = false;
