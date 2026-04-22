@@ -9,7 +9,7 @@ import { setTopbarTitle } from '../components/sidebar.js';
 import { loadSheetData, callClaude, invalidateSheetCache } from '../utils/ai.js';
 import { parseActions, executeAction } from '../utils/ai-actions.js';
 import { activateVoiceMode, isVoiceModeActive, stopEverything as stopVoice } from '../components/voice-widget.js';
-import { attachSpeakerButton, autoSpeak, stopTTS, createSettingsButton, isTTSEnabled, extractVoiceText, extractVoiceTextFromString, isAutoSpeakEnabled, speakWithElevenLabs, cleanTextForSpeech } from '../components/tts.js';
+import { attachSpeakerButton, autoSpeak, stopTTS, createSettingsButton, isTTSEnabled, extractVoiceText, extractVoiceTextFromString, isAutoSpeakEnabled, speak, cleanTextForSpeech } from '../components/tts.js';
 import { getCurrentUser } from '../auth.js';
 import { appendRow, updateRow, deleteRow, readSheetAsObjects } from '../sheets.js';
 import { showToast } from '../components/toast.js';
@@ -505,7 +505,7 @@ async function handleSend() {
     // Speak summary immediately BEFORE rendering — don't wait for DOM
     if (isTTSEnabled() && isAutoSpeakEnabled()) {
       const earlyVoice = extractVoiceTextFromString(cleanText) || cleanTextForSpeech(cleanText);
-      if (earlyVoice) speakWithElevenLabs(earlyVoice);
+      if (earlyVoice) speak(earlyVoice);
     }
 
     const assistantBubble = renderMessage('assistant', cleanText, chatArea);
