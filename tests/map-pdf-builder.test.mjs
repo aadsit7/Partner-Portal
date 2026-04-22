@@ -61,6 +61,59 @@ test('mapFilename has no trailing underscore between slug and .pdf', () => {
   assert.ok(!/_\.pdf$/.test(name), `filename should not end in _.pdf, got ${name}`);
 });
 
+// ── V1.5: sourceCount suffix ─────────────────────────────────
+
+test('mapFilename appends _1source when sourceCount is 1', () => {
+  assert.equal(
+    mapFilename('Greenshield', '2026-04-22', 1),
+    'MAP_Greenshield_2026-04-22_1source.pdf',
+  );
+});
+
+test('mapFilename appends _Nsources when sourceCount >= 2', () => {
+  assert.equal(
+    mapFilename('Greenshield', '2026-04-22', 3),
+    'MAP_Greenshield_2026-04-22_3sources.pdf',
+  );
+  assert.equal(
+    mapFilename('Greenshield', '2026-04-22', 12),
+    'MAP_Greenshield_2026-04-22_12sources.pdf',
+  );
+});
+
+test('mapFilename without sourceCount is byte-identical to the V1 voice flow', () => {
+  // Critical regression guard — the voice flow calls mapFilename with
+  // only (customer, dateISO) and must continue to receive the exact
+  // same filename it always has. Any change to this test means the
+  // voice flow will also change; don't touch it without checking
+  // randy.js.
+  const d = '2026-04-22';
+  assert.equal(
+    mapFilename('Greenshield', d),
+    'MAP_Greenshield_2026-04-22.pdf',
+  );
+  assert.equal(
+    mapFilename('Greenshield', d, null),
+    'MAP_Greenshield_2026-04-22.pdf',
+  );
+  assert.equal(
+    mapFilename('Greenshield', d, undefined),
+    'MAP_Greenshield_2026-04-22.pdf',
+  );
+});
+
+test('mapFilename falls back to no-suffix when sourceCount is 0 or invalid', () => {
+  // Documented edge case: the click-flow UI blocks generation when
+  // count is 0 (the CTA is disabled), so this branch should never
+  // hit in practice. Behaviourally, fall back to the no-suffix form
+  // instead of throwing so a misfire can't break the filename.
+  const d = '2026-04-22';
+  assert.equal(mapFilename('Greenshield', d, 0),     'MAP_Greenshield_2026-04-22.pdf');
+  assert.equal(mapFilename('Greenshield', d, -1),    'MAP_Greenshield_2026-04-22.pdf');
+  assert.equal(mapFilename('Greenshield', d, 1.5),   'MAP_Greenshield_2026-04-22.pdf');
+  assert.equal(mapFilename('Greenshield', d, '3'),   'MAP_Greenshield_2026-04-22.pdf');
+});
+
 // ── blobToBase64 ─────────────────────────────────────────────
 
 // Node lacks FileReader / Blob.readAsDataURL by default; stub a minimal
