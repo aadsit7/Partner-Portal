@@ -1,23 +1,32 @@
 #!/usr/bin/env node
 // ============================================================
-// Recast MAP PDF skill uploader
+// DEPRECATED — do not run.
 // ============================================================
-// Run once after cloning (or whenever SKILL.md / reference_map_pdf.py /
-// example_output_reference.md changes):
+// This script uploaded a Recast MAP PDF skill to Anthropic so the
+// original V1 flow could invoke it via code_execution. That flow
+// was abandoned because Anthropic's Files API blocks browser CORS
+// even with the dangerous-direct-browser-access header, so a
+// GitHub-Pages-hosted browser can't download the sandbox-generated
+// PDF. Current flow: requestMapPdfJson() in js/utils/ai.js +
+// buildMapPdf() in js/utils/map-pdf-builder.js.
 //
+// The file is kept so that if a future operator wants to revive a
+// Skills-based path (e.g. with a server proxy in front of the
+// Files API) they have the working uploader to build from. The
+// skills/recast-map-pdf/ reference_map_pdf.py file is still the
+// approved visual reference for the PDF output — just not executed.
+//
+// DO NOT invoke this from CI or docs — it will create a new skill
+// in your Anthropic workspace that is never used by the portal.
+// ============================================================
+//
+// Original usage (no longer supported):
 //   export ANTHROPIC_API_KEY=sk-ant-...
 //   node scripts/upload_recast_map_skill.mjs
 //
-// Behavior:
+// Original behavior:
 //   * First run  → creates the skill, writes skill_id to skills/.skill_id
 //   * Subsequent → publishes a new version of the same skill
-//
-// The printed skill_id goes into js/config/skill_config.js (the script
-// prints a copy-paste-ready line at the end).
-//
-// Safety:
-//   * Never logs the API key.
-//   * skills/.skill_id is gitignored.
 // ============================================================
 
 import { readFile, writeFile, access } from 'node:fs/promises';

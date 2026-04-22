@@ -923,3 +923,152 @@
   margin-top: 6px;
   white-space: pre-wrap;
 }
+
+/* ============================================================
+ * MAP PDF success/failure cards (the V2 JSON-flow variants —
+ * replace the old download-button card styling). The base
+ * .randy-map-card rules above still apply; these add colour
+ * borders and action-area layout.
+ * ============================================================ */
+.randy-map-card--success {
+  border-left: 3px solid #0F7A3F;
+}
+.randy-map-card--warning {
+  border-left: 3px solid #CC8800;
+  background: linear-gradient(180deg, #fffbf2 0%, #fff6e0 100%);
+}
+.randy-map-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.randy-map-card__title-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.randy-map-card--success .randy-map-card__title-icon { color: #0F7A3F; }
+.randy-map-card--warning .randy-map-card__title-icon { color: #CC8800; }
+.randy-map-card__subline {
+  font-size: 12px;
+  color: #555;
+}
+.randy-map-card__filename {
+  /* already styled above — keep here as a guard in case selector
+   * specificity fights — this block is harmless if duplicated. */
+}
+.randy-map-card__details {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #555;
+}
+.randy-map-card__details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.randy-map-card__details pre {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: #f7f7fb;
+  border: 1px solid #dddde8;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+}
+.randy-map-card__secondary-link {
+  display: inline-block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: #0000CC;
+  text-decoration: none;
+}
+.randy-map-card__secondary-link:hover { text-decoration: underline; }
+
+/* Compact "Try again" secondary button used in the warning card. */
+.randy-map-card__retry {
+  align-self: flex-start;
+  padding: 7px 14px;
+  background: #CC8800;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.randy-map-card__retry:hover { background: #aa7200; }
+
+/* ============================================================
+ * MAP PDF progress pill stack
+ * ============================================================ */
+.randy-map-pill-stack {
+  position: absolute;
+  right: 12px;
+  bottom: 72px;       /* clear Randy's input row */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 40;
+  pointer-events: none;   /* stack is a positioning container; pills opt back in */
+}
+.randy-map-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+  padding: 8px 14px;
+  background: #fff;
+  border: 1px solid #ddde;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(26, 26, 46, 0.10);
+  font-size: 12px;
+  font-weight: 600;
+  color: #1A1A2E;
+  pointer-events: auto;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+.randy-map-pill__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: #2A7FFF;
+}
+.randy-map-pill__icon svg { width: 100%; height: 100%; }
+.randy-map-pill__spinner-svg { animation: randy-map-pill-spin 0.9s linear infinite; }
+@keyframes randy-map-pill-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.randy-map-pill__stage {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.randy-map-pill__elapsed {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 500;
+  color: #888;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.randy-map-pill--warn .randy-map-pill__icon { color: #CC8800; }
+.randy-map-pill--warn { border-color: #f0d79a; background: #fffaf0; }
+.randy-map-pill--success .randy-map-pill__icon { color: #0F7A3F; }
+.randy-map-pill--success .randy-map-pill__elapsed { color: #0F7A3F; }
+.randy-map-pill--success { border-color: #b9dfc7; background: #f1faf4; }
+.randy-map-pill--failure .randy-map-pill__icon { color: #CC8800; }
+.randy-map-pill--failure { border-color: #f0d79a; background: #fffaf0; }
+.randy-map-pill--fading {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+/* When the Randy window is collapsed to a bubble, the pill stack
+   shouldn't overhang into the page — it'll still work, just constrained. */
+.randy--collapsed .randy-map-pill-stack { display: none; }

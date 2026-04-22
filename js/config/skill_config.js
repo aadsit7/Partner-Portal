@@ -1,15 +1,20 @@
-// The MAP PDF skill ID. Get this by running:
-//   node scripts/upload_recast_map_skill.mjs
-// The script will print a line that looks like:
-//   Paste this into js/config/skill_config.js: RECAST_MAP_SKILL_ID = 'skill_xxx'
-// Replace the placeholder below with the printed value.
+// ============================================================
+// DEPRECATED — kept for backwards compatibility.
+// ============================================================
+// The MAP PDF feature no longer uses Anthropic's Skills API. PR #45's
+// skills-based flow couldn't complete because Anthropic's Files API
+// blocks browser CORS, which made sandbox-generated PDFs undownloadable
+// from a static GitHub Pages host.
 //
-// This file is committed with a placeholder. The user pastes the real value
-// locally after running the upload script. The skill ID is not a credential —
-// it identifies an entry in the operator's Anthropic workspace — but we keep
-// it out of the public repo so forks don't step on each other.
-export const RECAST_MAP_SKILL_ID = 'skill_01Wtozq5wP9bb8HedoYgQ6MV';
+// The current flow (see js/utils/ai.js → requestMapPdfJson) uses the
+// regular Messages API to get structured JSON, builds the PDF locally
+// via jsPDF, and uploads it to Drive via the existing Apps Script
+// endpoint. No skill ID required.
+//
+// This file is retained only so any external code that still happens
+// to import from it doesn't crash. Safe to delete once no imports
+// remain.
+// ============================================================
 
-// Sentinel — used by runtime code to detect "the user hasn't pasted the ID yet"
-// and give a friendly error instead of a 400 from the API.
-export const RECAST_MAP_SKILL_ID_PLACEHOLDER = 'PASTE_SKILL_ID_HERE';
+export const RECAST_MAP_SKILL_ID = '';
+export const RECAST_MAP_SKILL_ID_PLACEHOLDER = '';

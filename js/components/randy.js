@@ -4,15 +4,16 @@
 // Persistent floating widget in the app shell.
 // Separate from the voice-widget.js chat mic feature.
 
-import { SYSTEM_PROMPT, loadSheetData, callClaudeStream, warmSheetData, getOpportunityDescription, callClaudePdfGeneration } from '../utils/ai.js';
+import { SYSTEM_PROMPT, loadSheetData, callClaudeStream, warmSheetData, getOpportunityDescription, requestMapPdfJson } from '../utils/ai.js';
 import { parseActions, executeAction } from '../utils/ai-actions.js';
 import { detectMapPdfIntent } from '../utils/map-pdf-intent.js';
-import { RECAST_MAP_SKILL_ID, RECAST_MAP_SKILL_ID_PLACEHOLDER } from '../config/skill_config.js';
+import { buildMapPdf, mapFilename, blobToBase64 } from '../utils/map-pdf-builder.js';
+import { createPill, updatePillStage, markPillSuccess, markPillFailure } from './map-pdf-pill.js';
 import { CONFIG } from '../config.js';
 import { getCurrentUser } from '../auth.js';
 import { appendRow, updateRow, readSheetAsObjects, loadCustomPrompts } from '../sheets.js';
 import { isVoiceModeActive } from './voice-widget.js';
-import { openOppModal } from '../views/admin-opportunities.js';
+import { openOppModal, fileApiRequest, addFileToActiveDocsPanel } from '../views/admin-opportunities.js';
 import { initQuickForm, toggleQuickForm } from './quick-form.js';
 
 // ── Randy Personality Prompt ──────────────────────────────────────
@@ -251,9 +252,6 @@ let activePresetId = null;
 // from a disambiguation list (awaiting: 'opportunity', matches: [...]).
 // null whenever no MAP flow is pending.
 let pendingMapIntent = null;
-// Track blob URLs for generated PDFs so they can be revoked when the
-// widget closes / clears the chat.
-const mapPdfBlobUrls = new Set();
 
 // Listening recovery
 let restartCount = 0;
@@ -1015,20 +1013,6 @@ async function processUserInput(text) {
 // talking to Randy while the skill generates.
 
 async function runMapPdfFlow({ hint }) {
-  // Skill not yet configured — friendly, actionable error
-  if (!RECAST_MAP_SKILL_ID || RECAST_MAP_SKILL_ID === RECAST_MAP_SKILL_ID_PLACEHOLDER) {
-    const msg = "The MAP skill isn't set up yet, boss. Run the upload script and paste the skill ID into js/config/skill_config.js.";
-    const spoken = "The MAP skill isn't set up yet, boss. Run the upload script and paste the skill ID into the config.";
-    if (isTypeModeActive) {
-      renderMessage('assistant', msg);
-      transition(STATES.PASSIVE, true);
-    } else {
-      speakText(spoken, () => transition(STATES.ACTIVE_LISTENING));
-      renderMessage('assistant', msg);
-    }
-    return;
-  }
-
   // No opportunity named — ask and stash a pending flag
   if (!hint || !hint.trim()) {
     const msg = "Which opportunity should I pull the MAP from, boss?";
@@ -1121,24 +1105,63 @@ async function runMapPdfFlow({ hint }) {
   startBackgroundPdfGeneration(result);
 }
 
+// Background flow: JSON → jsPDF → Drive upload. Runs outside the
+// processing lock so the user can keep talking to Randy while the
+// PDF gets built and saved.
 function startBackgroundPdfGeneration(result) {
-  // Send the newest description entry as the primary MAP content and
-  // up to 5 prior entries as context for the P.C.P. analysis step.
-  const primary = result.allDescriptions[0];
-  const prior = result.allDescriptions.slice(1, 6);
+  const entries = (result.allDescriptions || []).slice(0, 5).map(e => ({
+    date: e.date, content: e.text,
+  }));
+  const opportunity = {
+    name:          result.opportunityName,
+    customerName:  result.customerName,
+    dealName:      result.dealName,
+    opportunityId: result.opportunityId,
+  };
+
+  const pill = createPill('Reading description…');
 
   (async () => {
     try {
-      const out = await callClaudePdfGeneration({
-        skillId: RECAST_MAP_SKILL_ID,
-        opportunityName: result.opportunityName,
-        descriptionText: primary.text,
-        descriptionDate: primary.date,
-        priorDescriptions: prior,
+      updatePillStage(pill, 'Reading description…');
+      const json = await requestMapPdfJson(opportunity, entries);
+
+      updatePillStage(pill, 'Building PDF…');
+      const pdfBlob = await Promise.resolve().then(() => buildMapPdf(json, opportunity));
+      const filename = mapFilename(json.customer_name || opportunity.customerName || opportunity.name, json.document_date);
+
+      updatePillStage(pill, 'Saving to Drive…');
+      const base64 = await blobToBase64(pdfBlob);
+      const uploadResp = await fileApiRequest({
+        action: 'uploadFile',
+        opportunityId: opportunity.opportunityId,
+        customerName: opportunity.customerName || opportunity.name,
+        fileName: filename,
+        mimeType: 'application/pdf',
+        fileData: base64,
       });
-      announceMapPdfReady({ ...out, opportunityName: result.opportunityName });
+
+      const uploaded = uploadResp.file || {
+        doc_id: uploadResp.doc_id,
+        file_name: uploadResp.file_name || filename,
+        drive_url: uploadResp.drive_url,
+        date_added: uploadResp.date_added || new Date().toISOString(),
+      };
+
+      // If the user has the opportunity's edit modal open, inject the
+      // row so the Documents list updates in place.
+      addFileToActiveDocsPanel(opportunity.opportunityId, uploaded);
+
+      markPillSuccess(pill, `Saved to ${opportunity.name}`);
+      announceMapPdfReady({
+        opportunityName: opportunity.name,
+        opportunityId:   opportunity.opportunityId,
+        driveUrl:        uploaded.drive_url,
+        filename:        uploaded.file_name || filename,
+      });
     } catch (err) {
-      announceMapPdfError(err, result.opportunityName);
+      markPillFailure(pill, 'Failed — see card');
+      announceMapPdfError(err, opportunity);
     }
   })();
 }
@@ -1147,68 +1170,158 @@ function randyIsIdle() {
   return currentState === STATES.ACTIVE_LISTENING || currentState === STATES.PASSIVE;
 }
 
-function announceMapPdfReady({ pdfBlob, filename, ambiguityFlags, opportunityName }) {
-  const url = URL.createObjectURL(pdfBlob);
-  mapPdfBlobUrls.add(url);
+function announceMapPdfReady({ opportunityName, opportunityId, driveUrl, filename }) {
+  const cardHtml = buildMapSuccessCardHtml({ opportunityName, opportunityId, driveUrl, filename });
 
-  const cardHtml = buildMapPdfCardHtml({ url, filename, opportunityName, ambiguityFlags });
-
-  // TTS-before-DOM ordering: start speech first, then render. Only
-  // interrupt with speech when Randy is idle — if the user is mid-task
-  // the card still appears in the chat history, just silently.
+  // TTS-before-DOM ordering. Speak only if Randy is idle — if the
+  // user already moved on to another task, the card still lands in
+  // the chat but we don't interrupt.
   if (!isTypeModeActive && randyIsIdle()) {
-    speakText(`Your MAP PDF for ${opportunityName} is ready, boss. Click the download button to save it.`);
+    speakText(`Saved to ${opportunityName}, boss. The MAP PDF is in the opportunity's documents — link's in the chat.`);
   }
-  renderMessage('assistant', cardHtml);
+  const msgEl = renderMessage('assistant', cardHtml);
+
+  // Wire the "Open the opportunity" link post-render — sanitizeHTML()
+  // strips on* handlers from the string, so we attach the listener now.
+  if (msgEl && opportunityId) {
+    const link = msgEl.querySelector('.randy-map-card__secondary-link');
+    if (link) link.addEventListener('click', (e) => {
+      e.preventDefault();
+      openOppForRandy(opportunityId);
+    });
+  }
 }
 
-function announceMapPdfError(err, opportunityName) {
+function announceMapPdfError(err, opportunity) {
   console.error('Randy MAP PDF error:', err);
-  let display;
-  let spoken;
   const msg = err?.message || '';
-  if (err?.code === 'MAP_SKILL_NOT_CONFIGURED') {
-    display = "The MAP skill isn't set up yet, boss. Run the upload script and paste the skill ID into js/config/skill_config.js.";
-    spoken = "The MAP skill isn't set up yet, boss. Run the upload script and paste the skill ID into the config.";
-  } else if (err?.code === 'MAP_SKILL_ERROR' || (err?.status === 400 && /skill/i.test(msg))) {
-    display = "I hit a snag with the MAP skill, boss. It might need to be re-uploaded.";
-    spoken = display;
-  } else if (err?.code === 'MAP_PDF_MISSING' || err?.code === 'MAP_PDF_DOWNLOAD_FAILED') {
-    display = "The PDF was generated but I couldn't download it, boss. Check the browser console.";
-    spoken = display;
+  let spoken, userSummary;
+  if (err?.code === 'MAP_JSON_API_ERROR' && err?.status === 401) {
+    userSummary = 'The Anthropic API key is invalid or expired. Check it on the Setup page.';
+    spoken = 'API key looks invalid, boss. Check the Setup page.';
+  } else if (err?.code === 'MAP_JSON_INVALID' || err?.code === 'MAP_JSON_SCHEMA' || err?.code === 'MAP_JSON_EMPTY') {
+    userSummary = "Claude's response didn't parse as the expected JSON. Try again, or simplify the source description.";
+    spoken = "Claude sent me bad data, boss. Try again.";
   } else if (err?.name === 'TimeoutError' || /timeout|timed out/i.test(msg)) {
-    display = "That's taking too long, boss. Want me to try again?";
-    spoken = display;
+    userSummary = 'The request took longer than 2 minutes. Usually transient — try again.';
+    spoken = "That took too long, boss. Want me to try again?";
+  } else if (/Failed to fetch|network|NetworkError/i.test(msg)) {
+    userSummary = 'Network request to Anthropic or Google Drive failed. Check your connection.';
+    spoken = 'I lost the connection, boss. Check the network.';
+  } else if (err?.message && /upload|drive/i.test(msg)) {
+    userSummary = 'The PDF was built but Google Drive rejected the upload. See the details below.';
+    spoken = "Drive wouldn't take the upload, boss. Details are in the chat.";
   } else {
-    display = `Ran into an issue generating the MAP for ${opportunityName}, boss. ${msg || 'Check the console.'}`;
-    spoken = "Ran into an issue generating the MAP, boss. Give it another try.";
+    userSummary = 'Something went wrong while generating the MAP PDF. See the details below.';
+    spoken = `I couldn't generate the MAP PDF for ${opportunity?.name || 'that opportunity'}, boss. Details are in the chat.`;
   }
+
+  const cardHtml = buildMapFailureCardHtml({
+    opportunityName: opportunity?.name || '',
+    opportunityId:   opportunity?.opportunityId || '',
+    userSummary,
+    technicalDetail: msg || String(err || 'Unknown error'),
+  });
+
   if (!isTypeModeActive && randyIsIdle()) speakText(spoken);
-  renderMessage('assistant', display);
+  const msgEl = renderMessage('assistant', cardHtml);
+
+  // Wire "Try again" to re-run the flow for the same opportunity.
+  if (msgEl && opportunity?.opportunityId) {
+    const retry = msgEl.querySelector('.randy-map-card__retry');
+    if (retry) retry.addEventListener('click', async (e) => {
+      e.preventDefault();
+      retry.disabled = true;
+      retry.textContent = 'Retrying…';
+      try {
+        const fresh = await getOpportunityDescription(opportunity.name || opportunity.customerName);
+        if (fresh?.matchCount === 1 && fresh.allDescriptions?.length > 0) {
+          startBackgroundPdfGeneration(fresh);
+        } else {
+          retry.disabled = false;
+          retry.textContent = 'Try again';
+          renderMessage('assistant', "Couldn't re-resolve that opportunity, boss. Try the voice command again.");
+        }
+      } catch (rerunErr) {
+        retry.disabled = false;
+        retry.textContent = 'Try again';
+        console.error('MAP retry failed', rerunErr);
+      }
+    });
+  }
 }
 
-function escapeHtml(s) {
+// Navigate to the admin Opportunities view and open the modal for the
+// given ID. Mirrors the NAV open_detail pattern already in this file.
+async function openOppForRandy(opportunityId) {
+  try {
+    const data = await loadSheetData();
+    const opp = (data.opportunities || []).find(o => String(o.opportunity_id) === String(opportunityId));
+    window.location.hash = '#/admin/opportunities';
+    if (!opp) return;
+    const waitForView = (attempts = 0) => {
+      const container = document.getElementById('view-container');
+      if (container && container.querySelector('.card, .opp-card, table') && attempts < 10) {
+        openOppModal(opp, container);
+      } else if (attempts < 10) {
+        setTimeout(() => waitForView(attempts + 1), 200);
+      }
+    };
+    setTimeout(() => waitForView(), 300);
+  } catch (e) {
+    console.error('openOppForRandy failed', e);
+  }
+}
+
+function escapeMapHtml(s) {
   return String(s || '').replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[c]));
 }
 
-function buildMapPdfCardHtml({ url, filename, opportunityName, ambiguityFlags }) {
-  // The `response-container` class is the marker that tells
-  // renderMessage() to route through sanitizeHTML() instead of the
-  // markdown renderer. sanitizeHTML strips <script>/<iframe>/etc but
-  // allows <a href download>, <div>, <details>, <summary>.
-  const safeUrl = String(url);  // blob: URL produced by URL.createObjectURL
-  const safeFile = escapeHtml(filename);
-  const safeName = escapeHtml(opportunityName);
-  const flagsBlock = ambiguityFlags && ambiguityFlags.trim()
-    ? `<details class="randy-map-card__flags"><summary>Heads up — I flagged a few things for you before sending anything to the client</summary><div>${escapeHtml(ambiguityFlags)}</div></details>`
+function buildMapSuccessCardHtml({ opportunityName, opportunityId, driveUrl, filename }) {
+  // The `response-container` class routes this through sanitizeHTML()
+  // which allows <a>, <div>, <span>, <details>, etc. — it strips event
+  // handlers, so interactive bits get wired up post-render.
+  const safeName = escapeMapHtml(opportunityName);
+  const safeFile = escapeMapHtml(filename);
+  const safeUrl  = driveUrl ? escapeMapHtml(driveUrl) : '#';
+  const driveBtn = driveUrl
+    ? `<a class="randy-map-card__btn" href="${safeUrl}" target="_blank" rel="noopener">View in Drive</a>`
+    : `<span class="randy-map-card__btn" aria-disabled="true" style="opacity:0.6;cursor:not-allowed">Drive link unavailable</span>`;
+  const secondary = opportunityId
+    ? `<a class="randy-map-card__secondary-link" href="#" data-opportunity-id="${escapeMapHtml(opportunityId)}">Open the opportunity to see all its documents →</a>`
     : '';
-  return `<div class="response-container randy-map-card">
-<div class="randy-map-card__header">MAP PDF Ready — ${safeName}</div>
-<a class="randy-map-card__btn" href="${safeUrl}" download="${safeFile}">Download PDF</a>
+  return `<div class="response-container randy-map-card randy-map-card--success">
+<div class="randy-map-card__title-row">
+<span class="randy-map-card__title-icon"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10l4 4 8-8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+<div class="randy-map-card__header">MAP PDF Saved</div>
+</div>
+<div class="randy-map-card__subline">${safeName}</div>
 <div class="randy-map-card__filename">${safeFile}</div>
-${flagsBlock}
+${driveBtn}
+${secondary}
+</div>`;
+}
+
+function buildMapFailureCardHtml({ opportunityName, opportunityId, userSummary, technicalDetail }) {
+  const safeName = escapeMapHtml(opportunityName);
+  const safeSummary = escapeMapHtml(userSummary);
+  const safeDetail = escapeMapHtml(technicalDetail);
+  const retry = opportunityId
+    ? `<button class="randy-map-card__retry" type="button">Try again</button>`
+    : '';
+  return `<div class="response-container randy-map-card randy-map-card--warning">
+<div class="randy-map-card__title-row">
+<span class="randy-map-card__title-icon"><svg viewBox="0 0 20 20" fill="none"><path d="M10 3l8 14H2z" fill="currentColor" opacity="0.2"/><path d="M10 3l8 14H2z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/><path d="M10 8v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="14.5" r="1" fill="currentColor"/></svg></span>
+<div class="randy-map-card__header">Couldn't generate MAP PDF${safeName ? ' — ' + safeName : ''}</div>
+</div>
+<div class="randy-map-card__subline">${safeSummary}</div>
+<details class="randy-map-card__details">
+<summary>Show technical details</summary>
+<pre>${safeDetail}</pre>
+</details>
+${retry}
 </div>`;
 }
 
@@ -2063,10 +2176,6 @@ function createWidget() {
     currentConvRow = null;
     convStartedAt = null;
     voiceEnabled = false;
-    // Revoke any outstanding MAP PDF blob URLs so they don't leak
-    // memory after the chat is torn down.
-    mapPdfBlobUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch { /* ignore */ } });
-    mapPdfBlobUrls.clear();
     pendingMapIntent = null;
     const chat = document.getElementById('randy-chat');
     if (chat) chat.innerHTML = '';
