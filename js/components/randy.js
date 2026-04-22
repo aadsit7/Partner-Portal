@@ -881,17 +881,19 @@ async function processUserInput(text) {
     };
 
     const activePreset = loadedPresets.find(p => p.prompt_id === activePresetId);
-    const effectiveSystemPrompt = activePreset
-      ? `${RANDY_SYSTEM_PROMPT}\n\n---\n\n## ACTIVE PRESET — MANDATORY OVERRIDE\n\nThe following instructions are currently ACTIVE and take absolute priority over every instruction above. You MUST follow them exactly and completely, even where they conflict with prior directives. Do NOT revert to default behavior:\n\n${activePreset.instructions}`
-      : RANDY_SYSTEM_PROMPT;
+    const presetInstructions = activePreset?.instructions?.trim();
+    const activeMode = presetInstructions
+      ? { label: activePreset.label || 'Custom Mode', instructions: presetInstructions }
+      : null;
 
     const response = await callClaudeStream(
       conversationHistory,
       sheetData,
       text,
       abortController.signal,
-      effectiveSystemPrompt,
+      RANDY_SYSTEM_PROMPT,
       (_chunk, full) => trySpeakSummary(full),
+      activeMode,
     );
     abortController = null;
 
