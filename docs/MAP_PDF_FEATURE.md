@@ -1,275 +1,226 @@
-# Randy → MAP PDF Generation (V1)
+# Randy → MAP PDF Generation
 
-Randy now responds to "create a MAP PDF" voice commands by pulling the
-latest dated description from an Opportunity, asking the `recast-map-pdf`
-custom skill to produce a 2-page Recast-branded Mutual Action Plan PDF,
-and rendering a download button in the chat card.
-
-The entire flow runs in the browser — no backend, no Google Drive, no
-server-side storage. The generated PDF is held in memory as a blob URL
-for the lifetime of the Randy window.
+Randy produces Recast-branded Mutual Action Plan PDFs by voice command.
+The end-to-end flow lives entirely in the browser and reuses the
+existing Google Drive upload path the Opportunity modal already uses.
 
 ---
 
-## 1. Initial setup (one-time)
-
-You only do this once per Anthropic workspace.
-
-### 1.1 Install the local tooling
-
-From the repo root:
-
-```bash
-npm install
-```
-
-That pulls in `@anthropic-ai/sdk`, which the upload script uses. No
-other build step — the shipped site is still static files.
-
-### 1.2 Set your Anthropic API key in the shell
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-your-real-key
-```
-
-The upload script reads it from `process.env` — it is **never**
-written to a file, never logged, and never committed.
-
-### 1.3 Upload the skill
-
-```bash
-npm run upload-map-skill
-# or, equivalently:
-node scripts/upload_recast_map_skill.mjs
-```
-
-On first run this creates a new skill named **"Recast MAP PDF"** in
-your Anthropic workspace, writes the returned `skill_id` to
-`skills/.skill_id` (gitignored), and prints:
+## Architecture
 
 ```
-============================================================
-Paste this into js/config/skill_config.js: RECAST_MAP_SKILL_ID = 'skill_xxxxx'
-============================================================
+  Voice "create a MAP PDF for ANICO"
+        │
+        ▼
+  Randy.detectMapPdfIntent()        ┐
+  getOpportunityDescription()       │  unchanged from V1
+  (pulls Opportunity_Descriptions)  ┘
+        │
+        ▼
+  requestMapPdfJson()                ← standard Messages API, no Skills,
+  (ai.js)                             no Files API, no code_execution
+        │  structured JSON
+        ▼
+  buildMapPdf(json, opportunity)     ← jsPDF + jspdf-autotable
+  (map-pdf-builder.js)                in the browser — returns Blob
+        │  Blob (application/pdf)
+        ▼
+  blobToBase64()                     ← readAsDataURL, strip prefix
+        │
+        ▼
+  fileApiRequest({ action:'uploadFile', … })
+  (admin-opportunities.js, exported)  ← same Apps Script endpoint
+        │                              used by the existing drag-drop
+        ▼                              dropzone on the Opp modal
+  Google Apps Script → Google Drive
+        │  { file: { doc_id, file_name, drive_url, date_added } }
+        ▼
+  Randy renders success card with "View in Drive" button
+  + injects row into the open Opportunity modal's Documents list
 ```
 
-### 1.4 Paste the skill ID
-
-Open `js/config/skill_config.js` and replace the placeholder:
-
-```js
-// before
-export const RECAST_MAP_SKILL_ID = 'PASTE_SKILL_ID_HERE';
-
-// after
-export const RECAST_MAP_SKILL_ID = 'skill_01ABCxyz...';  // <- your real ID
-```
-
-Commit and push this change. The skill ID is not a credential — it
-simply identifies your skill inside your Anthropic workspace — but
-it is still specific to your workspace, so we keep the committed
-value as a placeholder in the public repo.
-
-### 1.5 Verify
-
-Open the portal, open Randy, and say:
-
-> "Randy, create a MAP PDF for ANICO"
-
-(substituting one of your real opportunity names). Randy should say
-"On it, boss…" and, about 30–90 seconds later, render a card with a
-blue **Download PDF** button.
+No backend, no server proxy, no shared credentials beyond what the
+browser already holds (the user's Anthropic key and the Apps Script
+deployment URL baked into `CONFIG.FILE_API_URL`).
 
 ---
 
-## 2. Updating the skill later
+## JSON schema Claude returns
 
-Whenever any of these change:
+`requestMapPdfJson()` hard-codes this schema inline in the prompt so
+the model knows exactly what to produce. The browser PDF builder
+expects this exact shape — if you change either side, update both:
 
-- `skills/recast-map-pdf/SKILL.md`
-- `skills/recast-map-pdf/reference_map_pdf.py`
-- `skills/recast-map-pdf/example_output_reference.md`
-
-…re-run the upload script:
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-your-real-key
-npm run upload-map-skill
-```
-
-Because `skills/.skill_id` already exists, the script **publishes a
-new version of the same skill** instead of creating a fresh one.
-Output looks like:
-
-```
-[upload-skill] Existing skill ID: skill_01ABCxyz...
-[upload-skill] Publishing a new version…
-[upload-skill] Published new version: 3
-```
-
-No change needed in `js/config/skill_config.js` — the skill ID stays
-the same, and the request payload specifies `version: 'latest'` so
-every client picks up the new version automatically.
-
----
-
-## 3. Trigger phrases Randy recognises
-
-Case-insensitive; all forms below fire the MAP flow:
-
-| Phrase | Example |
-|---|---|
-| create a map / create a map pdf | "Randy, create a MAP PDF for ANICO" |
-| generate a map / generate a mutual action plan | "Generate a MAP for American National" |
-| build a map / build a map pdf | "Build a MAP PDF on the ANICO opportunity" |
-| make me a map pdf | "Can you make me a MAP PDF for the PSE deal?" |
-| new map / new map pdf | "New MAP for Fabrikam" |
-| update the map / update map pdf | "Update the MAP for ANICO" |
-| mutual action plan pdf | "Mutual action plan PDF for HCA" |
-| meeting recap pdf | "Meeting recap PDF for Fabrikam" |
-
-Randy extracts the opportunity name from `for <X>` or `on <X>`
-clauses; trailing qualifiers like "deal", "opportunity", "account",
-"now", "please" are stripped automatically.
-
-If you leave the opportunity out ("create a MAP PDF") Randy asks
-"Which opportunity should I pull the MAP from, boss?" and uses your
-next message as the hint.
-
----
-
-## 4. Example conversation flow
-
-```
-You: Randy, create a MAP PDF for ANICO.
-Randy: On it, boss. Generating the MAP PDF for
-       American National Insurance Company now —
-       this will take a few seconds.
-
-  [Randy transitions back to listening — you can do other things.]
-
-  [30-90 seconds later]
-
-Randy: Your MAP PDF for American National Insurance Company is
-       ready, boss. Click the download button to save it.
-
-  [A card appears in Randy's chat:
-     "MAP PDF Ready — American National Insurance Company"
-     [ Download PDF ]
-     recast-map-american-national-insurance-company-2026-04-22.pdf
+```json
+{
+  "customer_name": "American National Insurance Company",
+  "document_date": "April 22, 2026",
+  "meeting_recap": [
+    "Aligned on POC scope across 3 environments (Dev, Test, Prod)",
+    "Confirmed delivery target of Q3 for production rollout",
+    "…3-6 short bullets total…"
+  ],
+  "current_environment": {
+    "infrastructure":                  [ "…3-5 bullets…" ],
+    "current_state_pain":              [ "…3-5 bullets…" ],
+    "stakeholders_and_decision_process":[ "…3-5 bullets…" ]
+  },
+  "mutual_action_plan": [
+    { "phase": "Discovery", "action": "…", "owner": "Recast",   "due_date": "2026-04-29", "status": "Complete" },
+    { "phase": "POC Setup", "action": "…", "owner": "Customer", "due_date": "2026-05-13", "status": "In Progress" }
   ]
+}
 ```
 
-If Randy finds 2+ opportunities matching your hint, he lists them and
-asks which one. Your next message becomes the pick.
+Rules enforced by the prompt:
 
-If Randy is mid-task when the PDF finishes (you started a new
-question, he's speaking a different answer, etc.), the download card
-still appears in the chat silently — no spoken interrupt — so the
-PDF is never lost.
+- `mutual_action_plan` has 12-16 rows covering Discovery → POC Setup →
+  Validation → Business Case → Decision → Rollout.
+- Each `status` is one of `Complete | In Progress | Pending | Blocked | Not Started`.
+- Dates are ISO `YYYY-MM-DD`.
+- `document_date` is the current description date in `Month DD, YYYY` format.
+- Empty sections are populated with reasonable inferred entries rather
+  than left blank, so the PDF never has empty bullet lists.
 
----
-
-## 5. Name matching — how Randy resolves your hint
-
-Three passes, first hit wins:
-
-1. **Exact** case-insensitive match on `customer_name` or `deal_name`.
-2. **Partial** substring match on either field.
-3. **Acronym** match: first letter of each word in `customer_name` /
-   `deal_name`, compared against your hint. "ANICO" → acronym "ANIC"
-   of "American National Insurance Company" → match.
-
-If pass 3 returns more than one, Randy asks you to pick. If all
-three return zero, Randy says "I couldn't find that opportunity in
-the sheet, boss."
+Parsing is tolerant: even though the prompt says "no markdown fences",
+`parseMapJsonResponse()` strips ```` ```json … ``` ```` fences and
+trims leading/trailing prose before `JSON.parse()`.
 
 ---
 
-## 6. What content goes into the MAP?
+## Filename pattern
 
-Randy pulls from the **`Opportunity_Descriptions`** sheet (not the
-summary field on the `Opportunities` sheet itself). Specifically:
+`MAP_${slug(customer_name)}_${YYYY-MM-DD}.pdf`
 
-- The **newest** description entry (by `description_date`) becomes
-  the primary content — this is the meeting the MAP is generated from.
-- Up to **5 prior entries** are included as context for the skill's
-  internal P.C.P. analysis step.
-
-If an opportunity has zero rows in `Opportunity_Descriptions`, Randy
-refuses with:
-
-> "No meeting descriptions found for {name} yet, boss. I need at
-> least one description entry in the Opportunity_Descriptions sheet
-> before I can generate a MAP."
-
-This is intentional — the `Opportunities.description` summary cell
-and the `Opportunities.notes` JSON are not structured as meeting
-content and would produce a poor MAP.
+- `slug()` replaces whitespace with `_`, drops non-alphanumerics,
+  collapses repeated underscores, trims to 60 chars.
+- Date is `document_date` from the JSON, coerced to `YYYY-MM-DD`.
+- Example: `MAP_American_National_Insurance_Company_2026-04-22.pdf`
 
 ---
 
-## 7. Troubleshooting
+## Progress pill
 
-### "The MAP skill isn't set up yet, boss."
-`js/config/skill_config.js` still has the placeholder. Run
-`npm run upload-map-skill` and paste the printed skill ID in,
-then reload the portal.
+Non-blocking overlay inside the Randy window (bottom-right), stacked
+if multiple generations are in flight:
 
-### "I hit a snag with the MAP skill, boss."
-The API returned a 400 mentioning the skill. Usually means the
-skill was deleted in the Anthropic console, or the files on disk
-don't match what was last uploaded. Fix: re-run
-`npm run upload-map-skill` — it publishes a new version against
-the existing `skills/.skill_id`.
+| Stage                    | Trigger                               |
+|--------------------------|---------------------------------------|
+| `Reading description…`   | pill created                          |
+| `Reading description…`   | `requestMapPdfJson()` request fired   |
+| `Building PDF…`          | JSON parsed successfully              |
+| `Saving to Drive…`       | Drive upload started                  |
+| `Saved to {customer}` ✓  | upload succeeded (fades after 3s)     |
+| `Failed — see card`      | any error (fades after 5s)            |
 
-### "That's taking too long, boss."
-The request exceeded the 2-minute timeout. Try again — Anthropic's
-sandbox is occasionally slow under load. If it keeps happening,
-simplify the description text (very long histories take longer to
-process).
+- Elapsed timer counts every second from creation: `0:00` → `1:23`.
+- At 2:30 the spinner goes amber and the stage switches to
+  "Taking longer than expected… still trying".
+- Hard failure at 4:00 with `Timed out after 4 minutes`.
 
-### "The PDF was generated but I couldn't download it, boss."
-The `/v1/files/{id}/content` call failed. Open the browser console
-to see the HTTP status. Most common cause: the API key doesn't have
-Files API access — check your Anthropic plan.
-
-### "I couldn't find that opportunity in the sheet, boss."
-Randy tried exact, partial, and acronym matching and came up empty.
-Read off the exact `customer_name` or `deal_name` as it appears in
-the `Opportunities` sheet.
-
-### Nothing happens / regular chat flow runs instead
-The trigger phrase didn't match. Check `js/utils/map-pdf-intent.js`
-— the patterns are narrow on purpose (to avoid false-positives on
-"show me on a map"). "create a MAP PDF" / "generate a MAP" /
-"update the MAP" always trigger.
+Multiple pills stack with 8px gap; pills opt back into pointer events
+so the user can interact with them (hover to keep on-screen, etc.).
 
 ---
 
-## 8. Files involved
+## Voice lines
 
-| Path | Purpose |
-|---|---|
-| `skills/recast-map-pdf/SKILL.md` | Skill definition (read-only asset) |
-| `skills/recast-map-pdf/reference_map_pdf.py` | Layout template for the skill |
-| `skills/recast-map-pdf/example_output_reference.md` | Visual QA reference |
-| `scripts/upload_recast_map_skill.mjs` | One-shot uploader / versioner |
-| `js/config/skill_config.js` | Holds `RECAST_MAP_SKILL_ID` |
-| `js/utils/map-pdf-intent.js` | `detectMapPdfIntent()` regex matcher |
-| `js/utils/ai.js` → `getOpportunityDescription()` | Looks up the opportunity + dated history |
-| `js/utils/ai.js` → `callClaudePdfGeneration()` | Non-streaming Claude call w/ code_execution |
-| `js/components/randy.js` → `runMapPdfFlow()` | Orchestrates the voice conversation |
-| `css/randy.css` → `.randy-map-card` | Download card styling |
-| `tests/*.test.mjs` | Node's built-in test runner |
+| Moment  | Phrasing                                                                                         |
+|---------|--------------------------------------------------------------------------------------------------|
+| Intro   | "On it, boss. Generating the MAP PDF for {customer} now — this will take a few seconds."         |
+| Success | "Saved to {customer}, boss. The MAP PDF is in the opportunity's documents — link's in the chat." |
+| Failure | "{error-specific}. I couldn't generate the MAP PDF for {customer}, boss. Details are in the chat." |
+
+TTS-before-DOM ordering is preserved: `speakText(...)` fires before
+`renderMessage(...)`. Speech only plays when Randy is idle
+(ACTIVE_LISTENING / PASSIVE) — if the user started a new task during
+generation, the card still appears in the chat, silently.
 
 ---
 
-## 9. V2 roadmap (out of scope for V1)
+## Success card
 
-- Google Drive upload + shareable link alongside the browser download
-- Document types 1, 3, 4 (meeting recap / biweekly update / pre-meeting agenda)
-- Persist generated PDFs against the Opportunity in a new
-  `Opportunity_Documents` sheet
-- Retry-with-simplification when generation times out
-- Operator-visible "regenerate" button on the download card
+Rendered inline in the Randy chat on upload success:
+
+- Left-border accent in Recast green (`#0F7A3F`).
+- Title row: green checkmark icon + "MAP PDF Saved".
+- Customer name subline.
+- Filename in monospace mute.
+- Primary CTA: "View in Drive" — opens `drive_url` in a new tab.
+- Secondary link: "Open the opportunity to see all its documents →"
+  navigates to `/admin/opportunities` and opens the edit modal.
+
+## Failure card
+
+- Left-border accent in amber (`#CC8800`).
+- Title row: warning triangle + "Couldn't generate MAP PDF — {customer}".
+- User-friendly one-line summary that varies by error code
+  (`MAP_JSON_INVALID` / `MAP_JSON_SCHEMA` / `MAP_JSON_API_ERROR` /
+  timeout / network / Drive upload).
+- Collapsible "Show technical details" with the raw error message.
+- "Try again" button — re-runs the whole flow against the same
+  opportunity.
+
+---
+
+## Troubleshooting
+
+**"Claude's response didn't parse as the expected JSON"** — usually a
+transient model hiccup. Retry. If persistent, check the source
+description for extremely unusual content that might be confusing
+the schema extraction.
+
+**"Claude's JSON is missing required fields"** — same symptom, same
+fix: retry. Each retry uses fresh model inference, so flakes are rare
+after one successful retry.
+
+**"API key looks invalid"** — the stored Anthropic key returned 401.
+Re-enter it on the Setup page.
+
+**"Drive wouldn't take the upload"** — the Apps Script endpoint
+returned an error. Most common cause: the opportunity doesn't yet have
+an `opportunity_id` (it was never saved). Save the opportunity first,
+then retry.
+
+**"That took too long, boss"** — 2-minute timeout. Usually Anthropic
+load. Retry.
+
+**Card appears but no voice** — Randy was mid-task when the flow
+finished. The card is still usable; voice is intentionally suppressed
+in non-idle states to avoid talking over other speech.
+
+---
+
+## Files involved
+
+| Path                                              | Purpose |
+|---------------------------------------------------|---------|
+| `js/utils/map-pdf-intent.js`                      | Voice intent detection (unchanged) |
+| `js/utils/ai.js` → `requestMapPdfJson()`          | Messages-API call returning structured JSON |
+| `js/utils/ai.js` → `getOpportunityDescription()`  | Opportunity lookup + description history (unchanged) |
+| `js/utils/map-pdf-builder.js`                     | `buildMapPdf()`, `mapFilename()`, `blobToBase64()` |
+| `js/components/map-pdf-pill.js`                   | Progress pill lifecycle helpers |
+| `js/components/randy.js`                          | Intent routing, success/failure cards, retry wiring |
+| `js/views/admin-opportunities.js`                 | `fileApiRequest` (exported), `addFileToActiveDocsPanel` (exported), refactored `buildDocumentsPanel` returning `{panel, addFile, refresh}` |
+| `css/randy.css`                                   | Pill + card styling |
+| `css/components.css`                              | `.document-row--just-added` flash |
+| `tests/*.test.mjs`                                | `node:test` suite |
+
+### Deprecated but retained
+
+| Path                                     | State | Why kept |
+|------------------------------------------|-------|----------|
+| `skills/recast-map-pdf/SKILL.md`         | Dormant | Visual reference for the approved PDF layout |
+| `skills/recast-map-pdf/reference_map_pdf.py` | Dormant | ReportLab template the jsPDF builder mirrors |
+| `skills/recast-map-pdf/example_output_reference.md` | Dormant | Approval reference |
+| `scripts/upload_recast_map_skill.mjs`    | Deprecated — header comment | In case a future operator wants to revive a Skills-based flow behind a server proxy |
+| `js/config/skill_config.js`              | Empty stub | Import-compat shim; safe to delete once no imports reference it |
+
+---
+
+## V2 roadmap (not in this PR)
+
+- Document types beyond MAP: meeting recap, biweekly update, pre-meeting agenda.
+- Persist a structured document record in `Partner_Documents` (currently Apps Script owns all upload metadata).
+- "Regenerate" button on the success card (today: delete the old file, re-trigger).
+- Visual refinement: logo-in-PDF (requires shipping a logo asset with the static site), personalised architecture page based on the customer's real environment.

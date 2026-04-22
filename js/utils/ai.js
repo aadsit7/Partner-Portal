@@ -899,15 +899,14 @@ export async function callClaude(messages, sheetData, userMessage, signal, syste
 // sit alongside the other AI helpers so they can reuse loadSheetData()
 // and stripHtml without a second Sheets read path.
 
-const MAP_PDF_BETA_HEADER = 'code-execution-2025-08-25,skills-2025-10-02,files-api-2025-04-14';
-const MAP_PDF_MODEL = 'claude-opus-4-7';
-const MAP_PDF_TIMEOUT_MS = 120_000;
-// Opus 4.7 supports up to 32K output tokens. We need runway for both
-// the skill's internal P.C.P. analysis and the Python that writes the
-// PDF. 8K was too tight — the model burned the budget on analysis and
-// never got to executing the script.
-const MAP_PDF_MAX_TOKENS = 32_000;
-const MAP_PDF_MAX_PAUSE_ITERATIONS = 10;
+// The MAP PDF flow uses the standard Messages API to get a structured
+// JSON payload back. The browser then builds the PDF locally via jsPDF
+// and uploads it to Google Drive via the existing Apps Script endpoint.
+// No Skills API, no Files API, no code_execution — this path is
+// CORS-friendly and works from a static host.
+const MAP_JSON_MODEL = 'claude-opus-4-7';
+const MAP_JSON_TIMEOUT_MS = 120_000;
+const MAP_JSON_MAX_TOKENS = 4096;
 
 function acronymOf(name) {
   return String(name || '')
@@ -1033,300 +1032,188 @@ export const __mapPdfInternals = {
   sharesPrefix,
 };
 
-function slugifyForFilename(s) {
-  return String(s || 'opportunity')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48) || 'opportunity';
-}
 
-function buildMapPdfPrompt(opportunityName, descriptionText, descriptionDate, priorEntries) {
-  // Prior entries are appended as a short context block when present
-  // — deliberately NOT called out as "analyze this deeply", since the
-  // previous prompt did that and the model burned all its tokens on
-  // the P.C.P. walkthrough instead of running the Python.
-  const priorBlock = (priorEntries && priorEntries.length > 0)
-    ? `\n\nPrior context (for reference only):\n${priorEntries.map(e => `• ${e.date}: ${e.text}`).join('\n')}`
+// ── Schema Claude must return for the MAP PDF flow ────────────────
+//
+// Hardcoded inline so the model receives the exact shape the browser
+// PDF builder expects. If this shape changes, update buildMapPdf()
+// in js/utils/map-pdf-builder.js at the same time.
+const MAP_JSON_SCHEMA_EXAMPLE = `{
+  "customer_name": "Example Customer, Inc.",
+  "document_date": "April 22, 2026",
+  "meeting_recap": [
+    "Aligned on POC scope across Dev, Test, and Prod environments",
+    "Confirmed Q3 target for production rollout",
+    "Identified Citrix XenApp migration as primary use case"
+  ],
+  "current_environment": {
+    "infrastructure": [
+      "Citrix XenApp 7.15 LTSR on Windows Server 2016",
+      "~1,200 published applications",
+      "850 concurrent users at peak across two data centers"
+    ],
+    "current_state_pain": [
+      "Application packaging consumes 40+ hours per week",
+      "Patch deployment windows take 5-7 days",
+      "No unified visibility into compliance status"
+    ],
+    "stakeholders_and_decision_process": [
+      "Sponsor: VP of End User Computing (final decision authority)",
+      "Technical evaluator: Director of Application Services",
+      "Procurement: requires 3-vendor comparison + ARB review"
+    ]
+  },
+  "mutual_action_plan": [
+    { "phase": "Discovery",    "action": "Joint discovery session",       "owner": "Recast",   "due_date": "2026-04-29", "status": "Complete" },
+    { "phase": "Discovery",    "action": "Application portfolio analysis","owner": "Customer", "due_date": "2026-05-06", "status": "Complete" },
+    { "phase": "POC Setup",    "action": "Provision POC environment",     "owner": "Customer", "due_date": "2026-05-13", "status": "In Progress" }
+  ]
+}`;
+
+function buildMapJsonPrompt(opportunity, descriptionEntries) {
+  const latest = descriptionEntries?.[0];
+  const primaryDate = latest?.date || new Date().toISOString().slice(0, 10);
+  const primaryText = latest?.content || latest?.text || '';
+  const priorEntries = (descriptionEntries || []).slice(1, 5);
+  const priorBlock = priorEntries.length > 0
+    ? `\n\nPrior context (earlier meetings, for reference only):\n${priorEntries.map(e => `• ${e.date}: ${e.content || e.text || ''}`).join('\n')}`
     : '';
 
-  return `Generate a Recast-branded MAP PDF for this opportunity using the recast-map-pdf skill.
+  const extras = [];
+  if (opportunity?.dealName)       extras.push(`Deal name: ${opportunity.dealName}`);
+  if (opportunity?.stage)          extras.push(`Stage: ${opportunity.stage}`);
+  if (opportunity?.dealValue)      extras.push(`Deal value: ${opportunity.dealValue}`);
+  if (opportunity?.expectedClose)  extras.push(`Expected close: ${opportunity.expectedClose}`);
+  if (opportunity?.partner)        extras.push(`Partner: ${opportunity.partner}`);
+  const extrasBlock = extras.length > 0 ? `\n\n${extras.join('\n')}` : '';
 
-Opportunity: ${opportunityName}
-Description Date: ${descriptionDate}
+  return `Generate a Mutual Action Plan for the opportunity below and return it as a single JSON object.
 
-Source content:
+Customer: ${opportunity?.name || opportunity?.customerName || ''}
+Current description date: ${primaryDate}${extrasBlock}
+
+Source content (most recent meeting / description):
 ---
-${descriptionText}
+${primaryText}
 ---${priorBlock}
 
-EXECUTE THE PYTHON SCRIPT in reference_map_pdf.py from the skill. Adapt the CONTENT constants at the top to this opportunity, then call build_pdf() to write the file. Return the generated PDF file. Do not narrate the P.C.P. analysis in text — apply it silently and produce the file. Skip explanatory text blocks unless flagging genuine ambiguities.`;
+Return ONLY a single valid JSON object. No prose. No markdown. No code fences. No explanation. The object must match this exact shape and field names:
+
+${MAP_JSON_SCHEMA_EXAMPLE}
+
+Rules:
+- Use the exact field names shown. Nested objects and array shapes must match.
+- For "mutual_action_plan", generate 12-16 rows covering the natural lifecycle: Discovery → POC Setup → Validation → Business Case → Decision → Rollout.
+- Each row's "status" must be one of: "Complete", "In Progress", "Pending", "Blocked", "Not Started".
+- Dates in ISO format YYYY-MM-DD.
+- If a section has no direct evidence in the source, populate it with reasonable inferred entries based on the customer and industry context — do not leave arrays empty.
+- Keep "meeting_recap" to 3-6 short bullet sentences.
+- Keep each "current_environment" subsection to 3-5 bullets.
+- "document_date" should be the current description date in "Month DD, YYYY" format.
+- Return the JSON object and nothing else.`;
 }
 
-// Walk the Anthropic response and pull out: (a) any PDF file that was
-// produced via code_execution, (b) the AMBIGUITY FLAGS operator hint.
-//
-// Skills + code_execution responses have shipped under multiple shapes
-// as the beta evolves — file IDs have appeared inside
-// `code_execution_tool_result.content[]`, `bash_code_execution_tool_result.content[]`,
-// as standalone `container_upload` blocks, and as entries on
-// `response.container.files[]` / `response.generated_files[]`. Rather
-// than enumerate every known shape (which bit-rots the next time the
-// beta ships a tweak), we deep-walk the entire response object and
-// collect anything that looks like `{ file_id, filename? }`, then
-// prefer PDF filenames if present.
-function extractPdfAndFlags(response) {
-  const textChunks = [];
-  const candidates = [];
-  const visited = new WeakSet();
+// Pull a JSON object out of the model's text response. Tolerant of
+// markdown code fences and leading/trailing whitespace or prose, even
+// though we explicitly told the model not to emit them.
+function parseMapJsonResponse(rawText) {
+  if (typeof rawText !== 'string' || !rawText.trim()) {
+    const err = new Error('Claude returned an empty response.');
+    err.code = 'MAP_JSON_EMPTY';
+    throw err;
+  }
+  let body = rawText.trim();
 
-  function walk(node) {
-    if (!node || typeof node !== 'object' || visited.has(node)) return;
-    visited.add(node);
+  // Strip ```json ... ``` or ``` ... ``` fences if present
+  const fenceMatch = body.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenceMatch) body = fenceMatch[1].trim();
 
-    if (typeof node.type === 'string' && node.type === 'text' && typeof node.text === 'string') {
-      textChunks.push(node.text);
-    }
-
-    // Any object that carries a file_id is a candidate. The filename
-    // hint lives under several keys across schema versions — take
-    // whichever we can find, prefer explicit .pdf matches.
-    const fid =
-      (typeof node.file_id === 'string' && node.file_id) ||
-      (node.file && typeof node.file.file_id === 'string' && node.file.file_id) ||
-      (node.file && typeof node.file.id === 'string' && node.file.id) ||
-      null;
-    if (fid) {
-      const nm =
-        node.filename ||
-        node.file?.filename ||
-        node.file?.name ||
-        node.name ||
-        null;
-      candidates.push({ fileId: fid, filename: nm });
-    }
-
-    // Recurse into arrays and nested objects — but skip primitives.
-    for (const val of Object.values(node)) {
-      if (Array.isArray(val)) {
-        for (const item of val) walk(item);
-      } else if (val && typeof val === 'object') {
-        walk(val);
-      }
+  // If there's prose around a JSON blob, grab from first { to last }
+  const first = body.indexOf('{');
+  const last = body.lastIndexOf('}');
+  if (first > 0 || last < body.length - 1) {
+    if (first >= 0 && last > first) {
+      body = body.slice(first, last + 1);
     }
   }
 
-  walk(response);
+  let parsed;
+  try {
+    parsed = JSON.parse(body);
+  } catch (e) {
+    const err = new Error(`Claude returned invalid JSON: ${e.message}`);
+    err.code = 'MAP_JSON_INVALID';
+    err.rawText = rawText;
+    throw err;
+  }
 
-  // Prefer a candidate whose filename ends in .pdf; otherwise take the
-  // first one we found. This handles the case where the PDF's filename
-  // is embedded alongside, say, an intermediate log file.
-  const pdf = candidates.find(c => /\.pdf$/i.test(c.filename || ''));
-  const pick = pdf || candidates[0] || null;
+  // Minimal schema validation — give specific error names so the UI
+  // can tell the user which field is missing.
+  const missing = [];
+  if (!parsed.customer_name)       missing.push('customer_name');
+  if (!parsed.document_date)       missing.push('document_date');
+  if (!Array.isArray(parsed.meeting_recap))        missing.push('meeting_recap');
+  if (!parsed.current_environment || typeof parsed.current_environment !== 'object') missing.push('current_environment');
+  if (!Array.isArray(parsed.mutual_action_plan))   missing.push('mutual_action_plan');
+  if (missing.length > 0) {
+    const err = new Error(`Claude's JSON is missing required fields: ${missing.join(', ')}`);
+    err.code = 'MAP_JSON_SCHEMA';
+    err.rawText = rawText;
+    throw err;
+  }
 
-  const joined = textChunks.join('\n');
-  const flagMatch = joined.match(/AMBIGUITY FLAGS:\s*([\s\S]+?)(?:\n\n|$)/i);
-  const ambiguityFlags = flagMatch ? flagMatch[1].trim() : '';
-
-  return {
-    fileId: pick?.fileId || null,
-    filename: pick?.filename || null,
-    ambiguityFlags,
-    // Surfaced on the error path for console diagnostics.
-    candidateCount: candidates.length,
-  };
+  return parsed;
 }
 
 /**
- * Generate a Recast-branded MAP PDF for the given opportunity by invoking
- * the recast-map-pdf skill in the sandbox. This is a NON-streaming call —
- * streaming + code_execution don't mix with Randy's text-delta flow.
+ * Ask Claude to produce a JSON representation of a Mutual Action Plan
+ * for the given opportunity. Uses the standard Messages API (NOT
+ * Skills, NOT Files API). CORS-safe: same auth and direct-browser flag
+ * that callClaudeStream() uses.
  *
- * Steps:
- *   1. POST to /v1/messages with container.skills + code_execution tool.
- *   2. Follow pause_turn hops up to MAP_PDF_MAX_PAUSE_ITERATIONS times,
- *      reusing the container across hops so files persist.
- *   3. Walk the final response for a PDF file_id, download via Files API.
- *   4. Return the PDF as a Blob plus a download filename.
- *
- * Caller supplies the skill ID — this function throws a clearly-tagged
- * error when the caller hasn't set it up yet so the UI can show the
- * "run the upload script" message instead of a raw 400.
- *
- * @param {object} opts
- * @param {string} opts.skillId
- * @param {string} opts.opportunityName
- * @param {string} opts.descriptionText
- * @param {string} opts.descriptionDate
- * @param {Array<{date: string, text: string}>} [opts.priorDescriptions]
- * @param {AbortSignal} [opts.signal]
- * @returns {Promise<{ pdfBlob: Blob, filename: string, ambiguityFlags: string }>}
+ * @param {object} opportunity      { name / customerName, dealName?, stage?, ... }
+ * @param {Array}  descriptionEntries  Newest-first array of { date, content }
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<object>} Parsed JSON matching the MAP schema.
  */
-export async function callClaudePdfGeneration({
-  skillId,
-  opportunityName,
-  descriptionText,
-  descriptionDate,
-  priorDescriptions = [],
-  signal,
-} = {}) {
-  if (!skillId || skillId === 'PASTE_SKILL_ID_HERE') {
-    const err = new Error('MAP skill not configured');
-    err.code = 'MAP_SKILL_NOT_CONFIGURED';
-    throw err;
-  }
-  if (!opportunityName) throw new Error('opportunityName is required');
-  if (!descriptionText) throw new Error('descriptionText is required');
-
+export async function requestMapPdfJson(opportunity, descriptionEntries, signal) {
   const apiKey = requireApiKey();
-  const headers = {
-    ...buildRequestHeaders(apiKey),
-    'anthropic-beta': MAP_PDF_BETA_HEADER,
+  const prompt = buildMapJsonPrompt(opportunity, descriptionEntries);
+
+  const body = {
+    model: MAP_JSON_MODEL,
+    max_tokens: MAP_JSON_MAX_TOKENS,
+    messages: [{ role: 'user', content: prompt }],
   };
 
-  const userText = buildMapPdfPrompt(
-    opportunityName,
-    descriptionText,
-    descriptionDate || '',
-    priorDescriptions
-  );
-
-  const conversation = [{ role: 'user', content: userText }];
-  let container = {
-    skills: [
-      { type: 'custom', skill_id: skillId, version: 'latest' },
-      { type: 'anthropic', skill_id: 'pdf', version: 'latest' },
-    ],
-  };
-
-  // First request gets a 2-minute timeout; subsequent pause_turn hops
-  // reuse the same AbortSignal-composed timeout window so a stuck
-  // generation doesn't loop forever.
-  const composedSignal = withTimeout(signal, MAP_PDF_TIMEOUT_MS);
-
-  let lastResponse = null;
-  for (let hop = 0; hop <= MAP_PDF_MAX_PAUSE_ITERATIONS; hop++) {
-    const body = {
-      model: MAP_PDF_MODEL,
-      max_tokens: MAP_PDF_MAX_TOKENS,
-      container,
-      tools: [{ type: 'code_execution_20250825', name: 'code_execution' }],
-      messages: conversation,
-    };
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: composedSignal,
-    });
-
-    if (!response.ok) {
-      const errBody = await response.json().catch(() => ({}));
-      const msg = errBody.error?.message || `API error: ${response.status}`;
-      console.error(`[MAP PDF] hop ${hop} HTTP error`, { status: response.status, body: errBody });
-      const err = new Error(msg);
-      err.status = response.status;
-      if (/skill/i.test(msg)) err.code = 'MAP_SKILL_ERROR';
-      throw err;
-    }
-
-    lastResponse = await response.json();
-
-    // Reuse the returned container on subsequent hops so files survive.
-    if (lastResponse.container?.id) {
-      container = { id: lastResponse.container.id };
-    }
-
-    // Per-hop diagnostics. stop_reason and output_tokens are the two
-    // things we need to see when the generation fails to produce a PDF.
-    console.log(`[MAP PDF] hop ${hop}`, {
-      stop_reason: lastResponse.stop_reason,
-      output_tokens: lastResponse.usage?.output_tokens,
-      input_tokens: lastResponse.usage?.input_tokens,
-      cache_read: lastResponse.usage?.cache_read_input_tokens,
-      content_blocks: Array.isArray(lastResponse.content) ? lastResponse.content.length : 0,
-      content_types: Array.isArray(lastResponse.content)
-        ? lastResponse.content.map(b => b?.type).join(',')
-        : '(none)',
-    });
-
-    // Only end_turn means "Claude is done". Anything else — pause_turn,
-    // max_tokens, tool_use, stop_sequence — we continue the loop with
-    // the assistant's partial turn appended to messages and the same
-    // container reused. That gives the skill room to finish executing
-    // the Python across multiple hops if it hits the per-turn budget.
-    if (lastResponse.stop_reason === 'end_turn') break;
-
-    if (hop === MAP_PDF_MAX_PAUSE_ITERATIONS) {
-      console.warn(`[MAP PDF] hit pause-turn hop limit (${MAP_PDF_MAX_PAUSE_ITERATIONS}) — last stop_reason=${lastResponse.stop_reason}`);
-      throw new Error(`MAP PDF generation exceeded the pause-turn loop limit. Last stop_reason=${lastResponse.stop_reason}`);
-    }
-
-    // Append the assistant turn so the next request carries what the
-    // model produced so far.
-    conversation.push({ role: 'assistant', content: lastResponse.content });
-    // pause_turn is a server-side resumption signal — the API expects
-    // the assistant turn echoed back and will continue tool execution
-    // from where it left off. No user turn needed.
-    //
-    // For any other non-end_turn reason (max_tokens, tool_use, etc.)
-    // the model stopped mid-thought, so we nudge it forward with an
-    // explicit continuation prompt.
-    if (lastResponse.stop_reason !== 'pause_turn') {
-      conversation.push({
-        role: 'user',
-        content: 'Continue. Execute the Python script and produce the PDF file.',
-      });
-    }
-  }
-
-  const { fileId, filename: apiFilename, ambiguityFlags, candidateCount } = extractPdfAndFlags(lastResponse);
-
-  if (!fileId) {
-    // Dump the full response shape so we can see exactly what Anthropic
-    // returned. Paste this back into the bug report if this ever fires.
-    console.log('[MAP PDF] no file_id extracted — candidates found:', candidateCount);
-    console.log('[MAP PDF] Full PDF generation response:', JSON.stringify(lastResponse, null, 2));
-    const err = new Error('Claude did not return a PDF file in its response.');
-    err.code = 'MAP_PDF_MISSING';
-    err.rawResponse = lastResponse;
-    throw err;
-  }
-
-  const fileResp = await fetch(`https://api.anthropic.com/v1/files/${encodeURIComponent(fileId)}/content`, {
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-      'anthropic-beta': MAP_PDF_BETA_HEADER,
-    },
-    signal: composedSignal,
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: buildRequestHeaders(apiKey),
+    body: JSON.stringify(body),
+    signal: withTimeout(signal, MAP_JSON_TIMEOUT_MS),
   });
-  if (!fileResp.ok) {
-    // Capture the response body so we can tell apart 404 (missing file)
-    // from 403 (auth/scope) from 400 (bad beta header) etc. Do NOT blow
-    // up if the body can't be read.
-    let errorBody = '';
-    try { errorBody = await fileResp.text(); } catch { /* ignore */ }
-    console.error('[MAP PDF] File download failed', {
-      fileId,
-      status: fileResp.status,
-      statusText: fileResp.statusText,
-      body: errorBody.slice(0, 2000),
-    });
-    const err = new Error(`Failed to download PDF (HTTP ${fileResp.status}).`);
-    err.code = 'MAP_PDF_DOWNLOAD_FAILED';
-    err.status = fileResp.status;
-    err.responseBody = errorBody;
+
+  if (!response.ok) {
+    let errBody = {};
+    try { errBody = await response.json(); } catch { /* ignore */ }
+    const msg = errBody.error?.message || `API error: ${response.status}`;
+    console.error('[MAP JSON] API error', { status: response.status, body: errBody });
+    const err = new Error(msg);
+    err.status = response.status;
+    err.code = 'MAP_JSON_API_ERROR';
     throw err;
   }
-  const pdfBlob = await fileResp.blob();
 
-  const datePart = (descriptionDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
-  const filename = apiFilename && /\.pdf$/i.test(apiFilename)
-    ? apiFilename
-    : `recast-map-${slugifyForFilename(opportunityName)}-${datePart}.pdf`;
-
-  return { pdfBlob, filename, ambiguityFlags };
+  const data = await response.json();
+  const text = (data.content || [])
+    .filter(b => b?.type === 'text' && typeof b.text === 'string')
+    .map(b => b.text)
+    .join('\n');
+  return parseMapJsonResponse(text);
 }
+
+// Exported for unit testing — pure helpers don't need the real API.
+export const __mapJsonInternals = {
+  buildMapJsonPrompt,
+  parseMapJsonResponse,
+};

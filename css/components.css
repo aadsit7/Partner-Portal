@@ -3188,6 +3188,18 @@
   border-radius: var(--radius-md);
   background: var(--color-surface);
   font-size: var(--text-sm);
+  transition: background 300ms ease;
+}
+
+/* Momentary flash when Randy (or any other flow) injects a newly
+   uploaded file into an open Documents panel. */
+.document-row--just-added {
+  background: #e8f0ff;
+  animation: document-row-flash 1.5s ease-out;
+}
+@keyframes document-row-flash {
+  0%   { background: #cddeff; }
+  100% { background: var(--color-surface); }
 }
 
 .document-row__icon {

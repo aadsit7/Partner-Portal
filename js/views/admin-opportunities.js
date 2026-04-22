@@ -22,6 +22,33 @@ let cachedPartners = null;
 let cachedOpps = null;
 let cachedEvents = null;
 
+// Tracks the Documents panel inside the currently-open Opportunity
+// modal so external code (Randy's MAP PDF flow) can inject a freshly
+// uploaded file into the visible list without reopening the modal.
+// Null whenever no opportunity modal is open. See buildDocumentsPanel()
+// for the handle shape; cleared in the openModal onClose callback.
+let activeDocsPanel = null;
+
+/**
+ * Inject a just-uploaded file into the currently-open Opportunity
+ * modal's Documents panel. Returns true if the modal was open for
+ * the matching opportunity and the file was appended; false otherwise.
+ *
+ * Randy calls this after a successful Drive upload so the user sees
+ * the new document appear without reopening the modal.
+ */
+export function addFileToActiveDocsPanel(opportunityId, file) {
+  if (!activeDocsPanel || !opportunityId) return false;
+  if (String(activeDocsPanel.opportunityId) !== String(opportunityId)) return false;
+  try {
+    activeDocsPanel.addFile(file);
+    return true;
+  } catch (err) {
+    console.warn('addFileToActiveDocsPanel failed', err);
+    return false;
+  }
+}
+
 const OPP_STAGES = ['Prospect', 'Qualified', 'Proposal', 'Negotiation', 'Closed'];
 const OPP_STATUSES = ['Registered', 'In Progress', 'Won', 'Lost'];
 
@@ -1252,7 +1279,7 @@ export async function openOppModal(opp, container, onSaved) {
   // Documents panel — drag-and-drop uploads to Google Drive via the file API.
   // For new (unsaved) opportunities there's no opportunity_id to attach to yet,
   // so the upload zone is hidden with a helper note.
-  const documentsPanel = buildDocumentsPanel({
+  const docsHandle = buildDocumentsPanel({
     opportunityId: isEdit ? opp.opportunity_id : null,
     getCustomerName: () => {
       const input = form.querySelector('[name="customer_name"]');
@@ -1267,12 +1294,20 @@ export async function openOppModal(opp, container, onSaved) {
     refreshDescriptions,
   });
 
-  const modalContent = el('div', {}, form, descriptionsPanel, documentsPanel);
+  // Register the panel handle so external flows (Randy's MAP PDF) can
+  // inject new files into the open modal. Only registered for edit
+  // sessions, since new opportunities have no ID to attach to yet.
+  if (isEdit) activeDocsPanel = docsHandle;
+
+  const modalContent = el('div', {}, form, descriptionsPanel, docsHandle.panel);
 
   openModal({
     title: isEdit ? 'Edit Opportunity' : 'New Opportunity',
     content: modalContent,
     className: 'modal--wide',
+    onClose: () => {
+      if (activeDocsPanel === docsHandle) activeDocsPanel = null;
+    },
     footer: [
       el('button', { class: 'btn btn--secondary', onClick: closeModal }, 'Cancel'),
       el('button', {
@@ -1654,8 +1689,11 @@ const ALLOWED_FILE_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt
  * POST to the Apps Script file endpoint.
  * No Content-Type header is set: that keeps Apps Script web apps on a
  * simple-CORS path and avoids the preflight that a JSON Content-Type triggers.
+ * EXPORTED so Randy's MAP PDF flow can reuse the exact same call shape
+ * (including the critical missing-Content-Type CORS behavior) without
+ * maintaining a parallel Drive client.
  */
-async function fileApiRequest(payload) {
+export async function fileApiRequest(payload) {
   const res = await fetch(CONFIG.FILE_API_URL, {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -1951,5 +1989,30 @@ function buildDocumentsPanel({ opportunityId, getCustomerName, getDealName, init
   }
 
   rebuildList();
-  return panel;
+
+  // Handle for external code (Randy's MAP PDF flow) to inject a
+  // freshly uploaded file or to reload the list from the server.
+  function addFile(file) {
+    if (!file) return;
+    files.unshift(file);
+    rebuildList();
+    // Subtle highlight on the newest row so the user notices it.
+    const firstRow = list.querySelector('.document-row');
+    if (firstRow) {
+      firstRow.classList.add('document-row--just-added');
+      setTimeout(() => firstRow.classList.remove('document-row--just-added'), 1500);
+    }
+  }
+  async function refresh() {
+    if (!opportunityId) return;
+    try {
+      const fresh = await listOpportunityDocuments(opportunityId);
+      files.splice(0, files.length, ...fresh);
+      rebuildList();
+    } catch (err) {
+      console.warn('documents panel refresh failed', err);
+    }
+  }
+
+  return { panel, addFile, refresh, opportunityId };
 }
