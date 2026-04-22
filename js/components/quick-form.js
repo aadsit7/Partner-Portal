@@ -144,7 +144,7 @@ function buildPanel() {
 
     <div class="qf-footer">
       <button class="qf-btn qf-btn--secondary" id="qf-cancel-btn">Cancel</button>
-      <button class="qf-btn qf-btn--primary"   id="qf-submit-btn">Add Note</button>
+      <button class="qf-btn qf-btn--primary"   id="qf-submit-btn">Add Description</button>
     </div>
   `;
 
@@ -191,7 +191,7 @@ function switchType(type) {
 
 function getSubmitLabel() {
   if (activeType === 'partner')     return modeIsNew.partner     ? 'Add Partner'     : 'Add Transcript';
-  if (activeType === 'opportunity') return modeIsNew.opportunity ? 'Add Opportunity' : 'Add Note';
+  if (activeType === 'opportunity') return modeIsNew.opportunity ? 'Add Opportunity' : 'Add Description';
   return SUBMIT_LABELS[activeType] || 'Submit';
 }
 
@@ -427,12 +427,12 @@ function renderOppModeBody(container, isNew) {
       ...(cachedOpportunities || []).map(o => ({ value: o.opportunity_id, label: o.deal_name })),
     ]));
 
-    const dateWrap = field('description_date', 'Note Date', 'date', true);
+    const dateWrap = field('description_date', 'Description Date', 'date', true);
     const dateInput = dateWrap.querySelector('input');
     if (dateInput) dateInput.value = todayISO();
     container.appendChild(dateWrap);
 
-    const noteField = field('description_text', 'Note / Description', 'textarea', true, 'Add a note or update the opportunity description…');
+    const noteField = field('description_text', 'Description', 'textarea', true, 'Add or update the opportunity description…');
     const textarea = noteField.querySelector('textarea');
     if (textarea) textarea.rows = 5;
     container.appendChild(noteField);
@@ -707,7 +707,7 @@ async function submitOppNote(data) {
   }
 
   cachedOpportunities = null; // invalidate so next open reflects the update
-  showToast(`Note added to "${opp?.deal_name || 'opportunity'}"!`, 'success');
+  showToast(`Description added to "${opp?.deal_name || 'opportunity'}"!`, 'success');
 }
 
 // ── Toggle button state helper ────────────────────────────────────

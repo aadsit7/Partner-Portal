@@ -156,9 +156,11 @@
   color: #fff;
 }
 
-/* Mode body — children participate in the body's flex column layout */
+/* Mode body — flex column matching the body's own gap */
 .qf-mode-body {
-  display: contents;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 /* ── Body / scrollable form area ────────────────────────────────── */
