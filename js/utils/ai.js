@@ -764,6 +764,18 @@ function buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stre
   };
 }
 
+// Combine a caller-supplied AbortSignal with a 90-second hard timeout so a
+// hung network connection never leaves the UI frozen indefinitely.
+function withTimeout(signal, ms = 90_000) {
+  const timeoutSignal = typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(ms)
+    : (() => { const c = new AbortController(); setTimeout(() => c.abort(new DOMException('Request timed out', 'TimeoutError')), ms); return c.signal; })();
+  if (!signal) return timeoutSignal;
+  return typeof AbortSignal.any === 'function'
+    ? AbortSignal.any([signal, timeoutSignal])
+    : signal;
+}
+
 function buildRequestHeaders(apiKey) {
   return {
     'Content-Type': 'application/json',
@@ -793,7 +805,7 @@ export async function callClaudeStream(messages, sheetData, userMessage, signal,
     method: 'POST',
     headers: buildRequestHeaders(apiKey),
     body: JSON.stringify(buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stream: true })),
-    signal: signal || undefined,
+    signal: withTimeout(signal),
   });
 
   if (!response.ok) {
@@ -863,7 +875,7 @@ export async function callClaude(messages, sheetData, userMessage, signal, syste
     method: 'POST',
     headers: buildRequestHeaders(apiKey),
     body: JSON.stringify(buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stream: false })),
-    signal: signal || undefined,
+    signal: withTimeout(signal),
   });
 
   if (!response.ok) {

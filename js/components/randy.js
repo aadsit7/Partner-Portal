@@ -283,7 +283,14 @@ function isEchoTail(transcript) {
   // If we're still within the cooldown window after Randy spoke, check for echo
   if (!lastSpokenText || (Date.now() - lastSpeechEndTime) > ECHO_COOLDOWN) return false;
 
-  const lower = transcript.toLowerCase();
+  const lower = transcript.toLowerCase().trim();
+
+  // Never suppress known confirmation or denial words — they are intentional responses
+  // and would otherwise be silently discarded because they are too short for the word
+  // filter below (e.g. "no" is 2 chars, filtered → words.length === 0 → classified as noise).
+  const allResponseWords = [...CONFIRM_WORDS, ...DENY_WORDS];
+  if (allResponseWords.includes(lower)) return false;
+
   const spokenLower = lastSpokenText.toLowerCase();
 
   // If transcript is a substring of what Randy just said — echo
@@ -2228,6 +2235,19 @@ export function initRandy() {
   window.addEventListener('custom-prompts-changed', () => {
     loadCustomPrompts().then(p => { loadedPresets = p; if (windowState === 'open') renderPresets(); }).catch(() => {});
   });
+
+  // Allow voice-widget (which cannot import us without creating a cycle) to
+  // temporarily pause and resume Randy's microphone while it owns the mic.
+  window._randyPause = () => {
+    if (recognition && currentState !== STATES.OFF) {
+      try { recognition.stop(); } catch { /* ok */ }
+    }
+  };
+  window._randyResume = () => {
+    if (currentState === STATES.PASSIVE || currentState === STATES.ACTIVE_LISTENING) {
+      scheduleRestart();
+    }
+  };
 
   mounted = true;
 }

@@ -5,7 +5,7 @@
 // Mounted to #voice-root (outside view-container).
 
 import { isAdmin } from '../auth.js';
-import { loadSheetData, callClaude } from '../utils/ai.js';
+import { loadSheetData, callClaudeStream } from '../utils/ai.js';
 import { getCurrentPath } from '../router.js';
 
 // ── State ──────────────────────────────────────────────────────────
@@ -158,6 +158,8 @@ function stopEverything() {
   setState('idle');
   hideWidget();
   localStorage.removeItem(STORAGE_KEY);
+  // Hand the mic back to Randy now that this widget is done
+  window._randyResume?.();
 }
 
 // ── Claude API Handler ─────────────────────────────────────────────
@@ -165,24 +167,44 @@ async function handleVoiceInput(text) {
   if (stopping) return;
 
   renderInChatIfVisible('user', text);
-
   voiceHistory.push({ role: 'user', content: text });
 
   try {
     const sheetData = await loadSheetData();
     abortController = new AbortController();
-    const response = await callClaude(voiceHistory, sheetData, text, abortController.signal);
-    voiceHistory.push({ role: 'assistant', content: response });
 
+    // Mirror Randy's early-TTS strategy: start speaking the Summary block
+    // mid-stream rather than waiting for the full response, cutting
+    // perceived latency by several seconds on longer responses.
+    let summarySpoken = false;
+
+    const response = await callClaudeStream(voiceHistory, sheetData, text, abortController.signal, null,
+      (_chunk, accumulated) => {
+        if (stopping || summarySpoken || accumulated.includes(':::ACTION')) return;
+        const marker = '**Summary**';
+        const start = accumulated.indexOf(marker);
+        if (start === -1) return;
+        const body = accumulated.slice(start + marker.length);
+        const endMatch = body.match(/\n(?:---|###|\n)/);
+        if (!endMatch) return;
+        const summaryText = body.slice(0, endMatch.index).trim();
+        if (!summaryText || !/[.!?]/.test(summaryText)) return;
+        summarySpoken = true;
+        if (!stopping) speak(summaryText);
+      }
+    );
+
+    voiceHistory.push({ role: 'assistant', content: response });
     renderInChatIfVisible('assistant', response);
 
-    if (!stopping) {
-      speak(response);
+    // Fall back to speaking the full response if no Summary block was found
+    if (!stopping && !summarySpoken) {
+      speak(stripMarkdown(response));
     }
   } catch (err) {
     if (err.name === 'AbortError') return;
     console.error('Voice assistant error:', err);
-    if (!stopping) speak('Sorry, I encountered an error. ' + err.message);
+    if (!stopping) speak('Sorry, something went wrong. Please try again.');
   }
 }
 
@@ -249,6 +271,8 @@ export function activateVoiceMode() {
   stopping = false;
   voiceHistory = [];
   localStorage.setItem(STORAGE_KEY, 'true');
+  // Yield the mic to this widget — Randy will resume when we're done
+  window._randyPause?.();
   showWidget();
   startListening();
 }
