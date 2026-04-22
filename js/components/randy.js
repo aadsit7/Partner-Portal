@@ -2059,82 +2059,103 @@ function updateWidgetUI() {
   updateVoiceButton();
 }
 
-// ── Preset Pills ──────────────────────────────────────────────────
+// ── Assistant Mode Selector ───────────────────────────────────────
 const PRESET_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#0891b2'];
 
+function setPresetMenuOpen(open) {
+  const menu = document.getElementById('randy-mode-menu');
+  const btn = document.getElementById('randy-mode-btn');
+  if (!menu || !btn) return;
+  menu.hidden = !open;
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.classList.toggle('randy-ctrl-btn--mode-open', open);
+}
+
+function togglePresetMenu() {
+  const menu = document.getElementById('randy-mode-menu');
+  if (!menu) return;
+  setPresetMenuOpen(menu.hidden);
+}
+
+function selectPreset(promptId) {
+  activePresetId = promptId;
+  setPresetMenuOpen(false);
+  renderPresets();
+}
+
+function buildModeItem({ label, color, active }) {
+  const item = document.createElement('button');
+  item.type = 'button';
+  item.className = 'randy-mode-item' + (active ? ' randy-mode-item--active' : '');
+  item.setAttribute('role', 'menuitemradio');
+  item.setAttribute('aria-checked', active ? 'true' : 'false');
+
+  const dot = document.createElement('span');
+  dot.className = 'randy-mode-item__dot' + (color ? '' : ' randy-mode-item__dot--default');
+  if (color) dot.style.background = color;
+  item.appendChild(dot);
+
+  const text = document.createElement('span');
+  text.className = 'randy-mode-item__label';
+  text.textContent = label;
+  item.appendChild(text);
+
+  if (active) {
+    const check = document.createElement('span');
+    check.className = 'randy-mode-item__check';
+    check.setAttribute('aria-hidden', 'true');
+    check.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    item.appendChild(check);
+  }
+
+  return item;
+}
+
 function renderPresets() {
-  const section = document.getElementById('randy-presets-section');
-  const bar = document.getElementById('randy-presets-bar');
-  if (!bar) return;
+  const wrap = document.getElementById('randy-mode-wrap');
+  const menu = document.getElementById('randy-mode-menu');
+  const labelEl = document.getElementById('randy-mode-label');
+  const btn = document.getElementById('randy-mode-btn');
+  if (!wrap || !menu || !labelEl || !btn) return;
 
-  // Hide the whole section (label + bar) when no presets are configured.
-  if (section) section.hidden = loadedPresets.length === 0;
+  // Hide the whole Mode control when no presets are configured so users with
+  // an empty list don't see a dangling selector.
+  if (loadedPresets.length === 0) {
+    wrap.hidden = true;
+    setPresetMenuOpen(false);
+    return;
+  }
+  wrap.hidden = false;
 
-  bar.innerHTML = '';
+  // Sync the button's label + colored ring with the active preset.
+  const activeIdx = loadedPresets.findIndex(p => p.prompt_id === activePresetId);
+  const activePreset = activeIdx >= 0 ? loadedPresets[activeIdx] : null;
+  const activeColor = activeIdx >= 0 ? (PRESET_COLORS[activeIdx] || '#6b7280') : '';
+  labelEl.textContent = activePreset ? activePreset.label : 'Mode';
+  labelEl.title = activePreset ? activePreset.label : 'Choose a mode';
+  btn.classList.toggle('randy-ctrl-btn--mode-active', !!activePreset);
+  if (activeColor) btn.style.setProperty('--mode-color', activeColor);
+  else btn.style.removeProperty('--mode-color');
 
-  // Always render a "Default" pill first so users have an explicit way to
-  // turn the active mode off instead of having to re-click the same pill.
-  const defaultPill = document.createElement('button');
-  defaultPill.type = 'button';
-  defaultPill.className = 'randy-preset-pill randy-preset-pill--default' + (activePresetId === null ? ' randy-preset-pill--active' : '');
-  defaultPill.title = "Use Randy's default behaviour";
-  defaultPill.setAttribute('aria-pressed', activePresetId === null ? 'true' : 'false');
-  defaultPill.textContent = 'Default';
-  defaultPill.addEventListener('click', () => {
-    if (activePresetId === null) return;
-    activePresetId = null;
-    renderPresets();
-  });
-  bar.appendChild(defaultPill);
+  // Rebuild the dropdown. "Default" first so users can explicitly turn the
+  // active preset off without having to know to re-click the same entry.
+  menu.innerHTML = '';
+  const defaultItem = buildModeItem({ label: 'Default', color: null, active: !activePreset });
+  defaultItem.addEventListener('click', () => selectPreset(null));
+  menu.appendChild(defaultItem);
 
   loadedPresets.forEach((preset, index) => {
     const color = PRESET_COLORS[index] || '#6b7280';
-    const isActive = preset.prompt_id === activePresetId;
-    const pill = document.createElement('button');
-    pill.type = 'button';
-    pill.className = 'randy-preset-pill' + (isActive ? ' randy-preset-pill--active' : '');
-    pill.title = isActive ? `${preset.label} — click to turn off` : `Switch Randy to ${preset.label} mode`;
-    pill.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-    pill.style.setProperty('--pill-color', color);
-    const dot = document.createElement('span');
-    dot.className = 'randy-preset-pill__dot';
-    dot.style.background = color;
-    pill.appendChild(dot);
-    pill.appendChild(document.createTextNode('\u00a0' + preset.label));
-    pill.addEventListener('click', () => {
-      activePresetId = activePresetId === preset.prompt_id ? null : preset.prompt_id;
-      renderPresets();
+    const item = buildModeItem({
+      label: preset.label,
+      color,
+      active: preset.prompt_id === activePresetId,
     });
-    bar.appendChild(pill);
+    item.addEventListener('click', () => selectPreset(preset.prompt_id));
+    menu.appendChild(item);
   });
-
-  updatePresetIndicator();
 }
 
-// Keep the titlebar indicator in sync with the active preset so users always
-// see which mode Randy is in, even after scrolling past the pill row.
-function updatePresetIndicator() {
-  const indicator = document.getElementById('randy-preset-indicator');
-  if (!indicator) return;
-  const activeIdx = loadedPresets.findIndex(p => p.prompt_id === activePresetId);
-  if (activeIdx === -1) {
-    indicator.hidden = true;
-    indicator.textContent = '';
-    return;
-  }
-  const preset = loadedPresets[activeIdx];
-  const color = PRESET_COLORS[activeIdx] || '#6b7280';
-  indicator.hidden = false;
-  indicator.innerHTML = '';
-  const dot = document.createElement('span');
-  dot.className = 'randy-preset-indicator__dot';
-  dot.style.background = color;
-  const label = document.createElement('span');
-  label.className = 'randy-preset-indicator__label';
-  label.textContent = preset.label;
-  indicator.appendChild(dot);
-  indicator.appendChild(label);
-}
 
 // ── Widget DOM ────────────────────────────────────────────────────
 const MIC_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
@@ -2143,6 +2164,9 @@ const SPEAKER_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"
 const MUTED_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`;
 const FORM_SVG_SM = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
 const FORM_SVG_MD = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
+// Sliders icon for the Mode selector — signals "configurable behavior"
+const MODE_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`;
+const CARET_SVG = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>`;
 
 function createWidget() {
   const root = document.getElementById('randy-root');
@@ -2170,7 +2194,6 @@ function createWidget() {
         <div class="randy-window__titlebar" id="randy-titlebar">
           <img src="assets/randy-avatar.png" alt="" class="randy-window__titlebar-avatar">
           <span class="randy-window__titlebar-name">Randy</span>
-          <span class="randy-preset-indicator" id="randy-preset-indicator" hidden aria-live="polite"></span>
           <div class="randy-window__controls">
             <button class="randy-window__ctrl" id="randy-form-titlebar-btn" title="Quick Add" aria-label="Quick add opportunity, partner, or event">${FORM_SVG_MD}</button>
             <button class="randy-window__ctrl" id="randy-minimize" title="Minimize" aria-label="Minimize">&#8211;</button>
@@ -2181,11 +2204,6 @@ function createWidget() {
 
         <div class="randy-window__chat" id="randy-chat"></div>
 
-        <div class="randy-presets-section" id="randy-presets-section" hidden>
-          <span class="randy-presets-label">Mode</span>
-          <div class="randy-presets-bar" id="randy-presets-bar" role="toolbar" aria-label="Randy assistant modes"></div>
-        </div>
-
         <div class="randy-status-bar" id="randy-status-bar">
           <span class="randy-status-dot randy-status-dot--ready" id="randy-status-dot"></span>
           <span class="randy-status-label randy-status-label--ready" id="randy-status" role="status" aria-live="polite">Ready</span>
@@ -2193,6 +2211,11 @@ function createWidget() {
 
         <div class="randy-window__bottom">
           <div class="randy-window__voice-row">
+            <div class="randy-btn-wrap randy-btn-wrap--mode" id="randy-mode-wrap" hidden>
+              <button class="randy-ctrl-btn randy-ctrl-btn--mode" id="randy-mode-btn" aria-label="Change assistant mode" aria-haspopup="menu" aria-expanded="false">${MODE_SVG}<span class="randy-mode-btn__caret">${CARET_SVG}</span></button>
+              <span class="randy-btn-label randy-btn-label--mode" id="randy-mode-label">Mode</span>
+              <div class="randy-mode-menu" id="randy-mode-menu" role="menu" aria-label="Assistant modes" hidden></div>
+            </div>
             <div class="randy-btn-wrap">
               <button class="randy-ctrl-btn" id="randy-voice-btn" aria-label="Voice mode">${MIC_SVG}</button>
               <span class="randy-btn-label">Voice</span>
@@ -2292,6 +2315,32 @@ function createWidget() {
 
   // Single voice toggle button
   document.getElementById('randy-voice-btn').addEventListener('click', handleVoiceBtnClick);
+
+  // Mode selector — opens a dropdown of preset modes above the button.
+  const modeBtn = document.getElementById('randy-mode-btn');
+  const modeMenu = document.getElementById('randy-mode-menu');
+  const modeWrap = document.getElementById('randy-mode-wrap');
+  if (modeBtn && modeMenu && modeWrap) {
+    modeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      togglePresetMenu();
+    });
+    // Close the menu when clicking anywhere outside the wrapper.
+    document.addEventListener('click', (e) => {
+      if (modeMenu.hidden) return;
+      if (!modeWrap.contains(e.target)) setPresetMenuOpen(false);
+    });
+    // Close on ESC for keyboard users. Capture + stopPropagation so the
+    // fullscreen ESC handler below doesn't also fire when the user is just
+    // dismissing the menu.
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !modeMenu.hidden) {
+        setPresetMenuOpen(false);
+        modeBtn.focus();
+        e.stopPropagation();
+      }
+    }, true);
+  }
 
   // Edit/keyboard input toggle
   const editBtn = document.getElementById('randy-edit-btn');
