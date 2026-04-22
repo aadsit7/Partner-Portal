@@ -69,14 +69,43 @@ export function blobToBase64(blob) {
 }
 
 // ── jsPDF discovery ──────────────────────────────────────────
+//
+// Both jsPDF and jspdf-autotable are loaded via <script defer> in
+// index.html. `defer` guarantees they execute in document order
+// before DOMContentLoaded fires, so by the time a voice command
+// reaches this module the globals should be ready. But "should be"
+// isn't "are" — slow CDN, throttled CPU, user triggers the flow in
+// the first seconds after page load, and the synchronous check from
+// the V1 code was observed failing in a real portal session.
+//
+// Poll-wait instead. Returns the jsPDF constructor once both the
+// library and the autoTable plugin are present.
 
-function getJsPDF() {
-  const g = typeof window !== 'undefined' ? window : globalThis;
-  const jspdf = g.jspdf || g.jsPDF;
-  if (!jspdf || !jspdf.jsPDF) {
-    throw new Error('jsPDF not loaded. Check the CDN script tag in index.html.');
+const DEFAULT_READY_TIMEOUT_MS = 10_000;
+
+export async function waitForJsPdf({ timeoutMs = DEFAULT_READY_TIMEOUT_MS, pollMs = 50 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    const g = typeof window !== 'undefined' ? window : globalThis;
+    const jspdf = g.jspdf || g.jsPDF;
+    const JsPDF = jspdf && jspdf.jsPDF;
+    // jspdf-autotable registers itself on jsPDF.API.autoTable when its
+    // script runs. Checking API.autoTable is the most reliable probe
+    // because it proves both libraries loaded AND their order was right.
+    if (JsPDF && typeof JsPDF.API?.autoTable === 'function') {
+      return JsPDF;
+    }
+    if (Date.now() >= deadline) {
+      const which = !JsPDF
+        ? 'jsPDF'
+        : (typeof JsPDF.API?.autoTable !== 'function' ? 'jspdf-autotable' : 'jsPDF');
+      throw new Error(
+        `${which} didn't finish loading within ${Math.round(timeoutMs / 1000)}s. ` +
+        'Check the <script> tags in index.html and the browser console for 404 / CORS errors on the CDN URLs.'
+      );
+    }
+    await new Promise(r => setTimeout(r, pollMs));
   }
-  return jspdf.jsPDF;
 }
 
 // ── Primitives ───────────────────────────────────────────────
@@ -463,20 +492,21 @@ function drawFooters(doc, customerName) {
  * Build a Recast-branded MAP PDF from the structured JSON payload.
  * Returns a Blob with type "application/pdf".
  *
+ * Async because it waits for jsPDF + jspdf-autotable to finish loading
+ * from the CDN — safe no matter how fast the caller fires.
+ *
  * @param {object} json       Parsed JSON from requestMapPdfJson().
  * @param {object} [opportunity] Optional extras (unused today; reserved
  *   for when Randy needs to embed deal_value / stage / etc.).
+ * @param {object} [options]  { timeoutMs } forwarded to waitForJsPdf
+ *                            (mostly a test hook).
  */
-export function buildMapPdf(json, opportunity) {
+export async function buildMapPdf(json, opportunity, options) {
   if (!json || typeof json !== 'object') {
     throw new Error('buildMapPdf: expected a parsed JSON object');
   }
-  const JsPDF = getJsPDF();
+  const JsPDF = await waitForJsPdf(options || {});
   const doc = new JsPDF({ unit: 'pt', format: 'letter', compress: true });
-
-  if (typeof doc.autoTable !== 'function') {
-    throw new Error('jspdf-autotable not loaded. Check the CDN script tag in index.html.');
-  }
 
   const customerName =
     json.customer_name ||

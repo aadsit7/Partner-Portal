@@ -1127,7 +1127,7 @@ function startBackgroundPdfGeneration(result) {
       const json = await requestMapPdfJson(opportunity, entries);
 
       updatePillStage(pill, 'Building PDF…');
-      const pdfBlob = await Promise.resolve().then(() => buildMapPdf(json, opportunity));
+      const pdfBlob = await buildMapPdf(json, opportunity);
       const filename = mapFilename(json.customer_name || opportunity.customerName || opportunity.name, json.document_date);
 
       updatePillStage(pill, 'Saving to Drive…');
@@ -1797,7 +1797,14 @@ function extractVoiceText(text) {
 }
 
 function containsHTMLResponse(text) {
-  return text.includes('class="response-container"') || text.includes("class='response-container'");
+  // The Randy convention is: assistant responses whose first meaningful
+  // wrapper has `response-container` anywhere in its class list should
+  // be injected as DOM (via sanitizeHTML) instead of going through the
+  // markdown renderer. A literal substring check only matched
+  // `class="response-container"` with the closing quote RIGHT after,
+  // which failed when cards combined classes (e.g. `class="response-container randy-map-card"`).
+  // Regex tolerates any number of additional classes.
+  return /class\s*=\s*["'][^"']*\bresponse-container\b/.test(text);
 }
 
 function sanitizeHTML(html) {

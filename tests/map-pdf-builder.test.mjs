@@ -98,12 +98,16 @@ function installJsPdfShim() {
       return '';
     };
   }
+  // jspdf-autotable attaches itself to jsPDF.API.autoTable when its
+  // script loads. The waitForJsPdf() probe checks this exact path,
+  // so the shim must mirror it.
+  Shim.API = { autoTable: () => {} };
   globalThis.window = globalThis.window || {};
   globalThis.window.jspdf = { jsPDF: Shim };
   return calls;
 }
 
-test('buildMapPdf returns a blob and hits autoTable once', () => {
+test('buildMapPdf returns a blob and hits autoTable once', async () => {
   installJsPdfShim();
   const json = {
     customer_name: 'Acme Corp',
@@ -119,7 +123,7 @@ test('buildMapPdf returns a blob and hits autoTable once', () => {
       { phase: 'Discovery', action: 'more stuff', owner: 'Customer', due_date: '2026-05-08', status: 'In Progress' },
     ],
   };
-  const blob = buildMapPdf(json, { name: 'Acme Corp' });
+  const blob = await buildMapPdf(json, { name: 'Acme Corp' });
   assert.equal(blob.type, 'application/pdf');
   assert.ok(blob.size > 0);
   const calls = blob.__calls;
@@ -129,15 +133,25 @@ test('buildMapPdf returns a blob and hits autoTable once', () => {
     'buildMapPdf must call addPage to force the architecture page');
 });
 
-test('buildMapPdf throws a clear error when jsPDF is missing', () => {
+test('waitForJsPdf throws a clear timeout error when libraries are missing', async () => {
+  const { waitForJsPdf } = await import('../js/utils/map-pdf-builder.js');
+  // Wipe the globals the builder probes for.
   delete globalThis.window?.jspdf;
   if (globalThis.window) delete globalThis.window.jsPDF;
-  assert.throws(
-    () => buildMapPdf({
-      customer_name: 'x', document_date: 'x', meeting_recap: [],
-      current_environment: { infrastructure: [], current_state_pain: [], stakeholders_and_decision_process: [] },
-      mutual_action_plan: [],
-    }),
-    /jsPDF not loaded/,
+  await assert.rejects(
+    () => waitForJsPdf({ timeoutMs: 30, pollMs: 10 }),
+    (err) => /jsPDF/i.test(err.message) && /didn't finish loading/i.test(err.message),
+  );
+});
+
+test('waitForJsPdf flags autotable specifically when jsPDF is present but plugin is missing', async () => {
+  const { waitForJsPdf } = await import('../js/utils/map-pdf-builder.js');
+  function BareJs() {}
+  // No API.autoTable — autotable "hasn't loaded yet"
+  globalThis.window = globalThis.window || {};
+  globalThis.window.jspdf = { jsPDF: BareJs };
+  await assert.rejects(
+    () => waitForJsPdf({ timeoutMs: 30, pollMs: 10 }),
+    (err) => /jspdf-autotable/i.test(err.message),
   );
 });
