@@ -1065,10 +1065,8 @@ const MAP_JSON_SCHEMA_EXAMPLE = `{
       "Technical evaluator: Director of Application Services"
     ]
   },
-  "end_users_personas": [
-    { "label": "Office Workers",  "subline": "Standard desktops" },
-    { "label": "Remote / Hybrid", "subline": "Home + travel" }
-  ],
+  "existing_mgmt_tools": ["Intune", "ConfigMgr", "Citrix", "AVD / W365", "macOS"],
+  "end_users_devices": ["Laptop", "Virtual Desktop", "Cloud PC / W365", "macOS", "BYOD / Remote"],
   "what_changes": "RES eliminated. Per-platform packaging eliminated. Citrix-to-AVD migration absorbed without user disruption.",
   "mutual_action_plan": [
     { "phase": "Discovery",    "action": "Joint discovery session",       "owner": "Recast",   "due_date": "2026-04-29", "status": "Complete" },
@@ -1134,7 +1132,8 @@ Field-level guidance (every one of these is subordinate to the Golden Rule above
 - "current_environment.infrastructure": return 0 entries if the source doesn't discuss architecture. Return 3-10 {name, subline} entries when grounded in source content. Do NOT pad. "name" is the tool/system name only; "subline" is a short factual context detail — empty string when no supporting detail exists in the source.
 - "current_environment.current_state_pain": return 0 entries if the source doesn't discuss pain. Return 2-5 plain-string bullets when grounded. Do NOT infer pain from neutral language.
 - "current_environment.stakeholders_and_decision_process": return 0 entries if the source doesn't name anyone. Return 3-6 plain-string bullets when grounded. Real names and roles only — no generic "VP-level leadership" placeholders.
-- "end_users_personas": return an empty array unless the source explicitly describes end-user segments. When grounded, return {label, subline} objects naming those segments.
+- "existing_mgmt_tools": return an empty array unless the source explicitly names the customer's existing management / delivery tools. When grounded, return 3-6 short plain strings suitable for horizontal pills (e.g., "Intune", "ConfigMgr", "Citrix", "AVD / W365", "macOS"). These MUST come directly from analysis of the opportunity description — do NOT include tools you infer. Short forms only; no sublines.
+- "end_users_devices": return an empty array unless the source explicitly describes how the customer's end users receive applications today (laptops, virtual desktops, cloud PCs, BYOD, etc.). When grounded, return 3-5 short plain strings (e.g., "Laptop", "Virtual Desktop", "Cloud PC / W365", "macOS", "BYOD / Remote"). Short forms only.
 - "what_changes": return an empty string unless the source explicitly describes transformation outcomes. When grounded, return a single sentence summarizing what changes for the customer.
 - "mutual_action_plan": always populated (at least 3 entries) if the source contains ANY action items, dates, or next steps. If the source contains none, return an empty array. When populated, cover the natural lifecycle: Discovery → POC Setup → Validation → Business Case → Decision → Rollout. Each row's "status" must be one of: "Complete", "In Progress", "Pending", "Blocked", "Not Started". Dates in ISO format YYYY-MM-DD.
 
@@ -1253,17 +1252,27 @@ function parseMapJsonResponse(rawText) {
 
   // Page 3 architecture fields. All optional — if empty, the renderer
   // suppresses the corresponding visual element (or the whole page).
-  parsed.end_users_personas = Array.isArray(parsed.end_users_personas)
-    ? parsed.end_users_personas.map(entry => {
-        if (typeof entry === 'string') return { label: entry, subline: '' };
+  // These drive the "How It Fits Together" diagram: existing_mgmt_tools
+  // is the top pill row (YOUR EXISTING MGMT TOOLS), end_users_devices
+  // is the bottom pill row (END USERS & DEVICES), what_changes is the
+  // green outcome callout underneath.
+  const normalizePillArray = (raw) => {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map(entry => {
+        if (typeof entry === 'string') return entry.trim();
         if (entry && typeof entry === 'object') {
-          const label = typeof entry.label === 'string' ? entry.label : '';
-          const subline = typeof entry.subline === 'string' ? entry.subline : '';
-          return { label, subline };
+          // Tolerate {label, …} shape from older prompts or the schema
+          // example — normalize to plain strings for the pill row.
+          const lbl = typeof entry.label === 'string' ? entry.label : (typeof entry.name === 'string' ? entry.name : '');
+          return lbl.trim();
         }
-        return { label: '', subline: '' };
-      }).filter(e => e.label)
-    : [];
+        return '';
+      })
+      .filter(Boolean);
+  };
+  parsed.existing_mgmt_tools = normalizePillArray(parsed.existing_mgmt_tools);
+  parsed.end_users_devices = normalizePillArray(parsed.end_users_devices);
   parsed.what_changes = typeof parsed.what_changes === 'string'
     ? parsed.what_changes.trim()
     : '';
@@ -1278,7 +1287,8 @@ function parseMapJsonResponse(rawText) {
   const hasPain = env.current_state_pain.length > 0;
   const hasStakeholders = env.stakeholders_and_decision_process.length > 0;
   const hasMapRows = parsed.mutual_action_plan.length > 0;
-  const hasPersonas = parsed.end_users_personas.length > 0;
+  const hasMgmtTools = parsed.existing_mgmt_tools.length > 0;
+  const hasDevices = parsed.end_users_devices.length > 0;
   const hasWhatChanges = parsed.what_changes.length > 0;
   parsed.meta = {
     ...(parsed.meta && typeof parsed.meta === 'object' ? parsed.meta : {}),
@@ -1290,7 +1300,11 @@ function parseMapJsonResponse(rawText) {
       environment: hasInfra || hasPain || hasStakeholders,
       map_table: hasMapRows,
       architecture_page: hasInfra || hasPain,
-      personas: hasPersonas,
+      // "How It Fits Together" subsection on Page 3 needs a customer
+      // anchor — at least one of the pill rows has to be grounded.
+      how_it_fits: hasMgmtTools || hasDevices,
+      mgmt_tools: hasMgmtTools,
+      devices: hasDevices,
       what_changes: hasWhatChanges,
     },
   };
@@ -1437,7 +1451,8 @@ Field-level guidance (every one of these is subordinate to the Golden Rule above
 - "current_environment.infrastructure": return 0 entries if none of the entries discuss architecture. Return 3-10 {name, subline} entries when grounded. Do NOT pad. "subline" is empty string when no supporting detail exists.
 - "current_environment.current_state_pain": return 0 entries if none of the entries discuss pain. Return 2-5 plain-string bullets when grounded. Do NOT infer pain from neutral language.
 - "current_environment.stakeholders_and_decision_process": return 0 entries if no entry names anyone. Return 3-6 plain-string bullets when grounded. Real names and roles only — no generic placeholders.
-- "end_users_personas": return an empty array unless an entry explicitly describes end-user segments. When grounded, return {label, subline} objects.
+- "existing_mgmt_tools": return an empty array unless at least one entry names the customer's existing management / delivery tools. When grounded, return 3-6 short plain strings (e.g., "Intune", "ConfigMgr", "Citrix"). MUST come from the description entries — do NOT include tools you infer from context. Short forms only; no sublines.
+- "end_users_devices": return an empty array unless at least one entry describes how end users receive applications today. When grounded, return 3-5 short plain strings (e.g., "Laptop", "Virtual Desktop", "Cloud PC / W365"). Short forms only.
 - "what_changes": return an empty string unless an entry explicitly describes transformation outcomes. When grounded, return a single sentence.
 - "mutual_action_plan": always populated (at least 3 entries) if any entry contains action items, dates, or next steps. If no entry contains any of those, return an empty array. When populated, cover the natural lifecycle: Discovery → POC Setup → Validation → Business Case → Decision → Rollout. Each row's "status" must be one of: "Complete", "In Progress", "Pending", "Blocked", "Not Started". Dates in ISO format YYYY-MM-DD. When entries disagree on a row's status or date, the most recent DATE-marked entry wins.
 

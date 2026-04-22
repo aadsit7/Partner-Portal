@@ -571,6 +571,62 @@ function pickStringList(list, max) {
     .slice(0, max);
 }
 
+// Horizontal pill row, centered in the content area. Renders nothing
+// when items is empty. Used for both "YOUR EXISTING MGMT TOOLS" and
+// "END USERS & DEVICES" rows of the How-It-Fits-Together diagram.
+function drawPillRow(doc, items, yStart, { fill = LIGHT_BLUE, stroke = BORDER_GRAY, textColor = NAVY } = {}) {
+  const labels = (items || []).map(s => String(s || '').trim()).filter(Boolean).slice(0, 6);
+  if (labels.length === 0) return yStart;
+  const pillH = 22;
+  const padX = 12;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  const widths = labels.map(l => doc.getTextWidth(l) + padX * 2);
+  const gap = 8;
+  const totalW = widths.reduce((a, b) => a + b, 0) + gap * (labels.length - 1);
+  let x = MARGIN + Math.max(0, (CONTENT_W - totalW) / 2);
+  for (let i = 0; i < labels.length; i++) {
+    setFill(doc, fill);
+    setStroke(doc, stroke);
+    doc.setLineWidth(0.5);
+    doc.roundedRect(x, yStart, widths[i], pillH, pillH / 2, pillH / 2, 'FD');
+    setText(doc, textColor);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(labels[i], x + widths[i] / 2, yStart + pillH / 2 + 3, { align: 'center' });
+    x += widths[i] + gap;
+  }
+  return yStart + pillH;
+}
+
+function drawHowItFitsTitle(doc, text, y) {
+  setText(doc, MUTED);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.text(text.toUpperCase(), PAGE_W / 2, y, { align: 'center', charSpace: 1 });
+  return y + 10;
+}
+
+// The big blue centerpiece bar. Always rendered when the How-It-Fits
+// section runs — it's Recast product positioning, not customer content.
+function drawApplicationWorkspaceBar(doc, y) {
+  const h = 44;
+  setFill(doc, RECAST_BLUE);
+  doc.roundedRect(MARGIN, y, CONTENT_W, h, 8, 8, 'F');
+  setText(doc, WHITE);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.text('Application Workspace', PAGE_W / 2, y + 20, { align: 'center' });
+  setText(doc, LIGHT_BLUE);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(
+    'Package  ·  Deliver  ·  Update  ·  Self-Service  ·  Audit',
+    PAGE_W / 2, y + 36, { align: 'center' },
+  );
+  return y + h;
+}
+
 function drawArchitecturePage(doc, json) {
   const env = json?.current_environment || {};
   const infraEntries = (Array.isArray(env.infrastructure) ? env.infrastructure : [])
@@ -578,9 +634,13 @@ function drawArchitecturePage(doc, json) {
     .filter(e => e && String(e.name || '').trim())
     .slice(0, 10);
   const pains = pickStringList(env.current_state_pain, 4);
-  const personas = (Array.isArray(json?.end_users_personas) ? json.end_users_personas : [])
-    .map(e => (typeof e === 'string' ? { label: e, subline: '' } : (e || {})))
-    .filter(e => e && String(e.label || '').trim())
+  const mgmtTools = (Array.isArray(json?.existing_mgmt_tools) ? json.existing_mgmt_tools : [])
+    .map(s => String(s || '').trim())
+    .filter(Boolean)
+    .slice(0, 6);
+  const devices = (Array.isArray(json?.end_users_devices) ? json.end_users_devices : [])
+    .map(s => String(s || '').trim())
+    .filter(Boolean)
     .slice(0, 6);
   const whatChanges = String(json?.what_changes || '').trim();
   const customerName = json?.customer_name || '';
@@ -647,142 +707,33 @@ function drawArchitecturePage(doc, json) {
   y = drawDownTriangle(doc, PAGE_W / 2, y, 8);
   y += 8;
 
-  // ── Layer 5: "PROPOSED STATE" heading bar ─────────────────────
-  y = drawSectionHeading(doc, 'Proposed State — Application Workspace as the Unified Delivery Layer', y);
-  y += 12;
+  // ── Layer 5+6: "How It Fits Together" customer-anchored diagram ──
+  // Replaces the V1.5 L-to-R 3-column Applications → APPLICATION
+  // WORKSPACE → Targets block. The new layout shows the customer's
+  // actual environment (mgmtTools pill row on top, devices pill row
+  // on bottom) integrated with Recast's Application Workspace as the
+  // unified delivery layer in the middle. The tool names come from
+  // Claude's analysis of the opportunity description — NO hardcoded
+  // "AVD / Nerdio", "Windows 365", etc. targets.
+  //
+  // Gate: the whole section skips if neither pill row is grounded.
+  // The Application Workspace bar + feature chips are pure Recast
+  // positioning, so without a customer anchor there's nothing to
+  // say that wouldn't be boilerplate.
+  if (mgmtTools.length > 0 || devices.length > 0) {
+    y = drawHowItFitsTitle(doc, 'How It Fits Together', y);
 
-  // ── Layer 6: three-column diagram ─────────────────────────────
-  const diagramH = 110;
-  const leftW = 130;
-  const centerW = 220;
-  const rightW = 130;
-  const gap6 = 12;
-  const totalW = leftW + centerW + rightW + gap6 * 2;
-  const baseX = MARGIN + Math.max(0, (CONTENT_W - totalW) / 2);
-  const diagramY = y;
-
-  // Applications box (left)
-  setFill(doc, LIGHT_BLUE);
-  setStroke(doc, RECAST_BLUE);
-  doc.setLineWidth(0.6);
-  doc.roundedRect(baseX, diagramY, leftW, diagramH, 5, 5, 'FD');
-  setText(doc, RECAST_BLUE);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('Applications', baseX + leftW / 2, diagramY + 14, { align: 'center' });
-  setText(doc, INK);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  const appsLines = wrapText(
-    doc,
-    'Custom apps + Setup Store catalog + Legacy apps',
-    leftW - 14,
-  );
-  doc.text(appsLines, baseX + leftW / 2, diagramY + 32, { align: 'center' });
-
-  // Arrow into the center
-  setStroke(doc, CYAN);
-  doc.setLineWidth(2);
-  const a1y = diagramY + diagramH / 2;
-  doc.line(baseX + leftW + 2, a1y, baseX + leftW + gap6 - 3, a1y);
-  setFill(doc, CYAN);
-  doc.triangle(
-    baseX + leftW + gap6 - 3, a1y - 4,
-    baseX + leftW + gap6 - 3, a1y + 4,
-    baseX + leftW + gap6 + 1, a1y,
-    'F',
-  );
-
-  // APPLICATION WORKSPACE center
-  const centerX = baseX + leftW + gap6;
-  setFill(doc, RECAST_BLUE);
-  doc.roundedRect(centerX, diagramY, centerW, diagramH, 6, 6, 'F');
-  setText(doc, WHITE);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
-  doc.text('APPLICATION WORKSPACE', centerX + centerW / 2, diagramY + 22, { align: 'center' });
-  setText(doc, LIGHT_BLUE);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  const capsLines = wrapText(
-    doc,
-    'Smart Icons • Conditional Launch • Custom Actions (replaces RES) • On-Demand Install / App Attach • Identity-Based • Context-Aware • User Profile Mgmt',
-    centerW - 16,
-  );
-  doc.text(capsLines, centerX + centerW / 2, diagramY + 44, { align: 'center' });
-
-  // Arrow into targets
-  setStroke(doc, CYAN);
-  doc.setLineWidth(2);
-  const a2y = diagramY + diagramH / 2;
-  doc.line(centerX + centerW + 2, a2y, centerX + centerW + gap6 - 3, a2y);
-  setFill(doc, CYAN);
-  doc.triangle(
-    centerX + centerW + gap6 - 3, a2y - 4,
-    centerX + centerW + gap6 - 3, a2y + 4,
-    centerX + centerW + gap6 + 1, a2y,
-    'F',
-  );
-
-  // Delivery targets column (right) — 3 stacked small boxes
-  const rightX = centerX + centerW + gap6;
-  const targets = [
-    ['AVD / Nerdio', 'Non-persistent VDI'],
-    ['Intune / SCCM', 'Physical endpoints'],
-    ['Windows 365', 'Cloud PCs'],
-  ];
-  const targetH = (diagramH - 2 * 6) / 3;
-  for (let i = 0; i < targets.length; i++) {
-    const ty = diagramY + i * (targetH + 3);
-    setFill(doc, GRAY_TINT);
-    setStroke(doc, BORDER_GRAY);
-    doc.setLineWidth(0.5);
-    doc.roundedRect(rightX, ty, rightW, targetH, 4, 4, 'FD');
-    setText(doc, INK);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.text(targets[i][0], rightX + rightW / 2, ty + 12, { align: 'center' });
-    setText(doc, MUTED);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.text(targets[i][1], rightX + rightW / 2, ty + 22, { align: 'center' });
-  }
-
-  y = diagramY + diagramH + 14;
-
-  // ── Layer 7: End Users persona row ───────────────────────────
-  // Only renders when Claude returned grounded personas. Generic
-  // fallback rows ("Office Workers / Remote / VDI Users / External
-  // Users") were removed in V1.6 — they were customer-shaped narrative
-  // that wasn't actually traceable to any source description.
-  if (personas.length > 0) {
-    setText(doc, RECAST_BLUE);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text('End Users', MARGIN, y);
-    y += 8;
-
-    const pGap = 10;
-    const pBoxW = (CONTENT_W - pGap * (personas.length - 1)) / personas.length;
-    const pBoxH = 36;
-    for (let i = 0; i < personas.length; i++) {
-      const x = MARGIN + i * (pBoxW + pGap);
-      setFill(doc, LIGHT_BLUE);
-      setStroke(doc, BORDER_GRAY);
-      doc.setLineWidth(0.5);
-      doc.roundedRect(x, y, pBoxW, pBoxH, 4, 4, 'FD');
-      setText(doc, NAVY);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text(personas[i].label, x + pBoxW / 2, y + 14, { align: 'center' });
-      if (personas[i].subline) {
-        setText(doc, MUTED);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.5);
-        doc.text(personas[i].subline, x + pBoxW / 2, y + 26, { align: 'center' });
-      }
+    if (mgmtTools.length > 0) {
+      y = drawHowItFitsTitle(doc, 'Your Existing Mgmt Tools', y + 2);
+      y = drawPillRow(doc, mgmtTools, y + 2) + 12;
     }
-    y += pBoxH + 14;
+
+    y = drawApplicationWorkspaceBar(doc, y) + 14;
+
+    if (devices.length > 0) {
+      y = drawHowItFitsTitle(doc, 'End Users & Devices', y);
+      y = drawPillRow(doc, devices, y + 2) + 12;
+    }
   }
 
   // ── Layer 8: green "What Changes" outcome callout ────────────

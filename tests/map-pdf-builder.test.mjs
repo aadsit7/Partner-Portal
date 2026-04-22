@@ -228,12 +228,12 @@ test('buildMapPdf renders the new {label, detail} + {name, subline} shapes witho
         'Sponsor: VP of End User Computing',
       ],
     },
-    // V1.6: Page 3 personas + What Changes callout are now grounded in
-    // JSON. Populate both so this test exercises the full architecture
-    // page — the conditional-rendering tests below cover the empty paths.
-    end_users_personas: [
-      { label: 'Packaging Engineers', subline: 'Own application delivery workflow' },
-    ],
+    // V1.6: Page 3 tools, devices, and What Changes callout are now
+    // grounded in JSON. Populate all three so this test exercises the
+    // full architecture page — the conditional-rendering tests below
+    // cover the empty paths.
+    existing_mgmt_tools: ['Intune', 'ConfigMgr', 'Citrix'],
+    end_users_devices: ['Laptop', 'Virtual Desktop'],
     what_changes: 'Per-platform packaging eliminated; single console across delivery targets.',
     mutual_action_plan: [
       { phase: 'Discovery', action: 'Kickoff', owner: 'Recast', due_date: '2026-05-01', status: 'Complete' },
@@ -254,10 +254,12 @@ test('buildMapPdf renders the new {label, detail} + {name, subline} shapes witho
     calls.some(c => c.op === 'text' && /PER-PLATFORM DELIVERY/i.test(String(c.a?.[0] || ''))),
     'architecture page Layer 2 must carry the per-platform delivery heading',
   );
-  // Layer 6 centerpiece must be rendered.
+  // The new How-It-Fits-Together section renders the Application
+  // Workspace centerpiece bar (mixed case, V1.6 redesign) when the
+  // JSON provides at least one customer-grounded pill row.
   assert.ok(
-    calls.some(c => c.op === 'text' && /APPLICATION WORKSPACE/.test(String(c.a?.[0] || ''))),
-    'architecture page Layer 6 must render the APPLICATION WORKSPACE centerpiece',
+    calls.some(c => c.op === 'text' && /^Application Workspace$/.test(String(c.a?.[0] || ''))),
+    'architecture page must render the Application Workspace centerpiece bar',
   );
   // Layer 8 "What Changes:" callout must be rendered because the JSON
   // supplied a non-empty what_changes string.
@@ -377,9 +379,8 @@ test('V1.6 full MAP renders all three pages like today', async () => {
       current_state_pain: ['Packaging overhead'],
       stakeholders_and_decision_process: ['Sponsor: VP EUC'],
     },
-    end_users_personas: [
-      { label: 'Packaging Engineers', subline: '' },
-    ],
+    existing_mgmt_tools: ['Intune', 'ConfigMgr', 'Citrix'],
+    end_users_devices: ['Laptop', 'Virtual Desktop'],
     what_changes: 'RES eliminated; single console across delivery targets.',
     mutual_action_plan: [
       { phase: 'Discovery', action: 'Kickoff', owner: 'Recast', due_date: '2026-05-01', status: 'Complete' },
@@ -395,7 +396,22 @@ test('V1.6 full MAP renders all three pages like today', async () => {
   assert.ok(hasText(calls, /^Stakeholders & Decision Process$/), 'full MAP must render Stakeholders sub-label');
   assert.ok(calls.some(c => c.op === 'addPage'), 'full MAP must render Page 3');
   assert.ok(hasText(calls, /What Changes:/), 'full MAP must render What Changes callout');
-  assert.ok(hasText(calls, /Packaging Engineers/), 'full MAP must render grounded personas');
+  // Page 3 "How It Fits Together" section renders the customer's tools
+  // and devices as pill rows — grounded in the JSON, not hardcoded.
+  assert.ok(hasText(calls, /HOW IT FITS TOGETHER/i),
+    'full MAP must render the How It Fits Together section title');
+  assert.ok(hasText(calls, /YOUR EXISTING MGMT TOOLS/i),
+    'full MAP must render the Your Existing Mgmt Tools label');
+  assert.ok(hasText(calls, /END USERS & DEVICES/i),
+    'full MAP must render the End Users & Devices label');
+  assert.ok(hasText(calls, /^Intune$/),
+    'full MAP must render grounded mgmt tool pills (Intune) from the JSON');
+  assert.ok(hasText(calls, /^ConfigMgr$/),
+    'full MAP must render grounded mgmt tool pills (ConfigMgr) from the JSON');
+  assert.ok(hasText(calls, /^Laptop$/),
+    'full MAP must render grounded device pills (Laptop) from the JSON');
+  assert.ok(hasText(calls, /^Application Workspace$/),
+    'full MAP must render the Application Workspace centerpiece bar');
 });
 
 test('V1.6 infra-only MAP: Page 3 current-state boxes render but Key Friction callout is skipped', async () => {
@@ -497,7 +513,10 @@ test('V1.6 Page 3 without what_changes renders the diagram as the visual conclus
       current_state_pain: ['Packaging is slow'],
       stakeholders_and_decision_process: [],
     },
-    end_users_personas: [],
+    // Grounded pills so How-It-Fits-Together renders and is the visual
+    // conclusion instead of the What Changes callout.
+    existing_mgmt_tools: ['Citrix'],
+    end_users_devices: ['Laptop'],
     what_changes: '',
     mutual_action_plan: [],
   };
@@ -507,17 +526,19 @@ test('V1.6 Page 3 without what_changes renders the diagram as the visual conclus
   // Page 3 exists (anchor is infra + pain).
   assert.ok(calls.some(c => c.op === 'addPage'),
     'Page 3 must render when infra and pain are both populated');
-  // Architecture diagram centerpiece renders — visual conclusion.
-  assert.ok(hasText(calls, /APPLICATION WORKSPACE/),
-    'APPLICATION WORKSPACE centerpiece must render on Page 3');
+  // Application Workspace centerpiece renders — visual conclusion.
+  assert.ok(hasText(calls, /^Application Workspace$/),
+    'Application Workspace centerpiece bar must render on Page 3');
   // "What Changes:" callout must NOT render because the JSON didn't supply it.
   assert.ok(!hasText(calls, /What Changes:/),
     'What Changes callout must be skipped when what_changes is empty — no hardcoded fallback');
-  // No generic "Office Workers / Remote / VDI Users / External Users" fallback personas.
+  // No generic personas or hardcoded delivery targets from earlier drafts.
   assert.ok(!hasText(calls, /Office Workers/),
     'hardcoded "Office Workers" persona fallback must be removed');
   assert.ok(!hasText(calls, /VDI Users/),
     'hardcoded "VDI Users" persona fallback must be removed');
+  assert.ok(!hasText(calls, /AVD \/ Nerdio/),
+    'hardcoded "AVD / Nerdio" target must be removed');
 });
 
 test('V1.6 empty MAP table: skip the heading bar entirely — no placeholder row', async () => {
@@ -548,9 +569,9 @@ test('V1.6 empty MAP table: skip the heading bar entirely — no placeholder row
     'legacy "No action items captured yet" placeholder must not render — that was fabricated narrative');
 });
 
-test('V1.6 personas row: hardcoded generic personas are gone; grounded personas render when supplied', async () => {
+test('V1.6 How-It-Fits-Together: hardcoded delivery targets are gone; grounded pills render only from the JSON', async () => {
   installJsPdfShim();
-  // Grounded personas: Page 3 renders them verbatim.
+  // Grounded mgmt tools + devices: pill rows render directly from the JSON.
   const json1 = {
     customer_name: 'C',
     document_date: 'April 22, 2026',
@@ -560,29 +581,48 @@ test('V1.6 personas row: hardcoded generic personas are gone; grounded personas 
       current_state_pain: ['slow'],
       stakeholders_and_decision_process: [],
     },
-    end_users_personas: [
-      { label: 'Packaging Engineers', subline: 'Own application delivery workflow' },
-      { label: 'Helpdesk',            subline: '' },
-    ],
+    existing_mgmt_tools: ['Intune', 'ConfigMgr', 'Citrix', 'AVD / W365', 'macOS'],
+    end_users_devices: ['Laptop', 'Virtual Desktop', 'Cloud PC / W365'],
     what_changes: '',
     mutual_action_plan: [],
   };
   const blob1 = await buildMapPdf(json1, { name: 'C' });
   const calls1 = blob1.__calls;
-  assert.ok(hasText(calls1, /Packaging Engineers/),
-    'grounded persona label must render when supplied');
-  assert.ok(hasText(calls1, /Helpdesk/),
-    'grounded persona label must render even when its subline is empty');
-  // None of the legacy generic persona labels should appear.
-  assert.ok(!hasText(calls1, /Office Workers/),  'legacy "Office Workers" must not render');
-  assert.ok(!hasText(calls1, /^Remote \/ Hybrid$/), 'legacy "Remote / Hybrid" must not render');
-  assert.ok(!hasText(calls1, /External Users/),  'legacy "External Users" must not render');
+  // Customer-grounded pills render verbatim.
+  assert.ok(hasText(calls1, /^Intune$/),    'grounded mgmt tool pill (Intune) must render');
+  assert.ok(hasText(calls1, /^ConfigMgr$/), 'grounded mgmt tool pill (ConfigMgr) must render');
+  assert.ok(hasText(calls1, /^macOS$/),     'grounded mgmt tool pill (macOS) must render');
+  assert.ok(hasText(calls1, /^Laptop$/),    'grounded device pill (Laptop) must render');
+  assert.ok(hasText(calls1, /^Cloud PC \/ W365$/),
+    'grounded device pill (Cloud PC / W365) must render');
+  // None of the V1.5 hardcoded delivery-target labels appear — this
+  // was the Nerdio bug. Right-column targets are completely gone.
+  assert.ok(!hasText(calls1, /AVD \/ Nerdio/),
+    'legacy hardcoded "AVD / Nerdio" target must not render');
+  assert.ok(!hasText(calls1, /Intune \/ SCCM/),
+    'legacy hardcoded "Intune / SCCM" target must not render');
+  assert.ok(!hasText(calls1, /^Windows 365$/),
+    'legacy hardcoded "Windows 365" target must not render');
+  assert.ok(!hasText(calls1, /Non-persistent VDI/),
+    'legacy target subline "Non-persistent VDI" must not render');
+  // None of the legacy persona labels should appear either.
+  assert.ok(!hasText(calls1, /Office Workers/),   'legacy "Office Workers" must not render');
+  assert.ok(!hasText(calls1, /VDI Users/),        'legacy "VDI Users" must not render');
+  assert.ok(!hasText(calls1, /External Users/),   'legacy "External Users" must not render');
 
-  // Empty personas: row is skipped entirely (no heading label, no boxes).
+  // Empty mgmt_tools + devices: the whole How-It-Fits-Together section
+  // is skipped (the Application Workspace bar is Recast-positioning,
+  // not customer content — without a customer anchor it's boilerplate).
   installJsPdfShim();
-  const json2 = { ...json1, end_users_personas: [] };
+  const json2 = { ...json1, existing_mgmt_tools: [], end_users_devices: [] };
   const blob2 = await buildMapPdf(json2, { name: 'C' });
   const calls2 = blob2.__calls;
-  assert.ok(!hasText(calls2, /^End Users$/),
-    'End Users heading must be skipped when personas is empty');
+  assert.ok(!hasText(calls2, /HOW IT FITS TOGETHER/i),
+    'How It Fits Together title must be skipped when neither pill row is grounded');
+  assert.ok(!hasText(calls2, /YOUR EXISTING MGMT TOOLS/i),
+    'mgmt tools label must be skipped when empty');
+  assert.ok(!hasText(calls2, /END USERS & DEVICES/i),
+    'devices label must be skipped when empty');
+  assert.ok(!hasText(calls2, /^Application Workspace$/),
+    'Application Workspace bar must be skipped when there is no customer anchor');
 });

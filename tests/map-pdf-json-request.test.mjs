@@ -233,7 +233,8 @@ test('V1.6 parseMapJsonResponse accepts empty arrays for optional sections', () 
       current_state_pain: [],
       stakeholders_and_decision_process: [],
     },
-    end_users_personas: [],
+    existing_mgmt_tools: [],
+    end_users_devices: [],
     what_changes: '',
     mutual_action_plan: [],
   };
@@ -242,7 +243,8 @@ test('V1.6 parseMapJsonResponse accepts empty arrays for optional sections', () 
   assert.deepEqual(parsed.current_environment.infrastructure, []);
   assert.deepEqual(parsed.current_environment.current_state_pain, []);
   assert.deepEqual(parsed.current_environment.stakeholders_and_decision_process, []);
-  assert.deepEqual(parsed.end_users_personas, []);
+  assert.deepEqual(parsed.existing_mgmt_tools, []);
+  assert.deepEqual(parsed.end_users_devices, []);
   assert.equal(parsed.what_changes, '');
   assert.deepEqual(parsed.mutual_action_plan, []);
 });
@@ -252,13 +254,15 @@ test('V1.6 parseMapJsonResponse accepts a missing current_environment entirely',
     customer_name: 'Thin Customer',
     document_date: 'April 22, 2026',
     meeting_recap: [{ label: 'Met', detail: 'Short call' }],
-    // current_environment, end_users_personas, what_changes, mutual_action_plan all omitted
+    // current_environment, existing_mgmt_tools, end_users_devices,
+    // what_changes, mutual_action_plan all omitted.
   };
   const parsed = parseMapJsonResponse(JSON.stringify(thin));
   assert.deepEqual(parsed.current_environment.infrastructure, []);
   assert.deepEqual(parsed.current_environment.current_state_pain, []);
   assert.deepEqual(parsed.current_environment.stakeholders_and_decision_process, []);
-  assert.deepEqual(parsed.end_users_personas, []);
+  assert.deepEqual(parsed.existing_mgmt_tools, []);
+  assert.deepEqual(parsed.end_users_devices, []);
   assert.equal(parsed.what_changes, '');
   assert.deepEqual(parsed.mutual_action_plan, []);
 });
@@ -302,7 +306,9 @@ test('V1.6 parseMapJsonResponse computes meta.sections_rendered for thin source'
   assert.equal(m.environment, false);
   assert.equal(m.map_table, false);
   assert.equal(m.architecture_page, false);
-  assert.equal(m.personas, false);
+  assert.equal(m.how_it_fits, false);
+  assert.equal(m.mgmt_tools, false);
+  assert.equal(m.devices, false);
   assert.equal(m.what_changes, false);
 });
 
@@ -316,7 +322,8 @@ test('V1.6 parseMapJsonResponse computes meta.sections_rendered for full source'
       current_state_pain: ['p'],
       stakeholders_and_decision_process: ['s'],
     },
-    end_users_personas: [{ label: 'A', subline: '' }],
+    existing_mgmt_tools: ['Intune', 'ConfigMgr', 'Citrix'],
+    end_users_devices: ['Laptop', 'Virtual Desktop'],
     what_changes: 'Outcome summary.',
     mutual_action_plan: [{ phase: 'Discovery', action: 'x', owner: 'Recast', due_date: '2026-05-01', status: 'Complete' }],
   };
@@ -328,7 +335,9 @@ test('V1.6 parseMapJsonResponse computes meta.sections_rendered for full source'
   assert.equal(m.environment, true);
   assert.equal(m.map_table, true);
   assert.equal(m.architecture_page, true);
-  assert.equal(m.personas, true);
+  assert.equal(m.how_it_fits, true);
+  assert.equal(m.mgmt_tools, true);
+  assert.equal(m.devices, true);
   assert.equal(m.what_changes, true);
 });
 
@@ -347,4 +356,24 @@ test('buildMapJsonPrompt includes the Golden Rule grounding language', () => {
   // The new shape rules are also spelled out.
   assert.match(prompt, /\{label, detail\}/);
   assert.match(prompt, /\{name, subline\}/);
+});
+
+test('V1.6 buildMapJsonPrompt documents existing_mgmt_tools and end_users_devices', () => {
+  // Page 3 "How It Fits Together" diagram is driven by two new fields
+  // that must appear in the prompt so Claude knows to populate them.
+  // These replaced the hardcoded "AVD / Nerdio", "Windows 365" targets
+  // and "Office Workers / VDI Users" persona rows.
+  const prompt = buildMapJsonPrompt(
+    { name: 'ANICO' },
+    [{ date: '2026-04-15', content: 'Discovery call.' }],
+  );
+  assert.match(prompt, /"existing_mgmt_tools"/);
+  assert.match(prompt, /"end_users_devices"/);
+  // The field guidance must reference the Golden-Rule grounding for
+  // these fields — "MUST come from" / "do NOT include tools you infer".
+  assert.match(prompt, /existing_mgmt_tools[\s\S]{0,400}(?:come from|grounded)/i);
+  assert.match(prompt, /do NOT include tools you infer/i);
+  // And the legacy persona field must NOT appear — V1.6 removed it.
+  assert.ok(!/"end_users_personas"/.test(prompt),
+    'legacy end_users_personas field must not appear in the V1.6 prompt');
 });

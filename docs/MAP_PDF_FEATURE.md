@@ -458,7 +458,9 @@ blank space beyond natural page flow.**
 | Page 3 — Architecture          | `infrastructure` OR `current_state_pain` non-empty.  |
 | Page 3 current-state box grid  | `infrastructure` non-empty.                          |
 | Page 3 Key Friction callout    | `current_state_pain` non-empty.                      |
-| Page 3 End Users persona row   | `end_users_personas` non-empty.                      |
+| Page 3 How-It-Fits-Together    | `existing_mgmt_tools` OR `end_users_devices` set.    |
+| Page 3 Existing Mgmt Tools pill row | `existing_mgmt_tools` non-empty.                |
+| Page 3 End Users & Devices pill row | `end_users_devices` non-empty.                  |
 | Page 3 What Changes callout    | `what_changes` non-empty.                            |
 
 No thresholds. No "skip only if fewer than N items" heuristics. Empty
@@ -497,7 +499,9 @@ inspect the shape of the output without re-deriving the predicates:
       "environment": true,
       "map_table": true,
       "architecture_page": false,
-      "personas": false,
+      "how_it_fits": false,
+      "mgmt_tools": false,
+      "devices": false,
       "what_changes": false
     }
   }
@@ -513,3 +517,48 @@ Opportunity modal is a system of record, and documents generated from
 it are presented to customers as truth. A shorter MAP that says only
 what the source supports is more valuable than a longer MAP that pads
 with confident-sounding filler. V1.6 makes that the enforced default.
+
+### Page 3 redesign — "How It Fits Together"
+
+V1.5 rendered the architecture page as a left-to-right 3-column
+diagram: **Applications → APPLICATION WORKSPACE → Targets**, where the
+right-column "Targets" boxes were **hardcoded** as `AVD / Nerdio`,
+`Intune / SCCM`, and `Windows 365`. This looked authoritative but was
+pure fabrication — a customer who had never discussed Nerdio saw it
+appear on their MAP because the builder always drew it. Same story for
+the `Office Workers / Remote / VDI Users / External Users` persona row
+below it.
+
+V1.6 replaces that block entirely with a customer-anchored
+**How It Fits Together** layout inspired by the Recast product
+one-pager:
+
+```
+          HOW IT FITS TOGETHER
+      YOUR EXISTING MGMT TOOLS
+    [Intune][ConfigMgr][Citrix][AVD / W365][macOS]
+  ┌──────────────────────────────────────────────┐
+  │           Application Workspace              │
+  │  Package · Deliver · Update · Self-Service  │
+  └──────────────────────────────────────────────┘
+            END USERS & DEVICES
+    [Laptop][Virtual Desktop][Cloud PC / W365]
+```
+
+- The top pill row renders `existing_mgmt_tools` — the customer's
+  actual management/delivery stack, extracted by Claude from analysis
+  of the opportunity description.
+- The bottom pill row renders `end_users_devices` — how that customer's
+  end users receive applications today (laptops, VDs, Cloud PCs, BYOD).
+- The centerpiece bar is the only hardcoded element left on Page 3:
+  `Application Workspace · Package · Deliver · Update · Self-Service ·
+  Audit`. That's Recast product positioning, not customer content,
+  and it always reads true whenever a customer anchor is present.
+
+**Gate**: the entire How-It-Fits-Together section is skipped if
+`existing_mgmt_tools` AND `end_users_devices` are both empty. Without a
+customer anchor the Application Workspace bar would be pure boilerplate.
+
+The V1.5 `end_users_personas` field was removed in this redesign — it
+was supplanted by `end_users_devices`, which maps cleanly onto the
+pill-row visual.
