@@ -1253,8 +1253,146 @@ export async function requestMapPdfJson(opportunity, descriptionEntries, signal)
   return parseMapJsonResponse(text);
 }
 
+// ── Multi-description MAP flow (click-driven, V1.5) ────────────
+//
+// When the user picks 2+ descriptions via the Opportunity dialog's
+// "Generate MAP" button, we need Claude to synthesize across all of
+// them instead of treating the most-recent as the source and the rest
+// as "prior context". A separate prompt builder keeps the voice flow
+// byte-identical while letting the click flow spell out the synthesis
+// contract — including temporal-conflict resolution (later entry wins).
+
+function formatDateHeader(dateRaw) {
+  const s = String(dateRaw || '').trim();
+  if (!s) return 'Undated';
+  const match = s.match(/^\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : s;
+}
+
+function buildMapJsonPromptFromMultiple(opportunity, descriptionEntries) {
+  const entries = (descriptionEntries || [])
+    .map(e => ({ date: e?.date || '', content: e?.content || e?.text || '' }))
+    .filter(e => e.content && String(e.content).trim().length > 0);
+
+  // Keep the single-source path behaviourally identical to the voice
+  // flow so the existing V1 prompt is reused verbatim when N=1.
+  if (entries.length <= 1) {
+    return buildMapJsonPrompt(opportunity, entries);
+  }
+
+  const extras = [];
+  if (opportunity?.dealName)       extras.push(`Deal name: ${opportunity.dealName}`);
+  if (opportunity?.stage)          extras.push(`Stage: ${opportunity.stage}`);
+  if (opportunity?.dealValue)      extras.push(`Deal value: ${opportunity.dealValue}`);
+  if (opportunity?.expectedClose)  extras.push(`Expected close: ${opportunity.expectedClose}`);
+  if (opportunity?.partner)        extras.push(`Partner: ${opportunity.partner}`);
+  const extrasBlock = extras.length > 0 ? `\n\n${extras.join('\n')}` : '';
+
+  const customer = opportunity?.name || opportunity?.customerName || '';
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const n = entries.length;
+
+  // Newest-first so "later entries win" is visually obvious, but each
+  // DATE marker still lets Claude resolve temporal conflicts on its own.
+  const sorted = entries.slice().sort((a, b) => {
+    const ad = Date.parse(a.date) || 0;
+    const bd = Date.parse(b.date) || 0;
+    return bd - ad;
+  });
+
+  const sourceBlocks = sorted.map(e => {
+    const header = formatDateHeader(e.date);
+    return `--- DATE: ${header} ---\n${e.content.trim()}`;
+  }).join('\n\n');
+
+  return `You are generating a Mutual Action Plan for ${customer}. The source material below consists of ${n} separate description entries from the opportunity history, each with its own date. Treat all of these entries as equally important source material. Your job is to synthesize and condense across ALL of them into one cohesive MAP — NOT just the most recent. If the entries contain conflicting information (e.g., an action item marked "pending" in an earlier entry that's "complete" in a later one), the more recent entry wins. Preserve the full spectrum of context: early-phase discovery notes, mid-phase decisions, and late-phase status updates all contribute to the final MAP.
+
+Customer: ${customer}
+Generation date: ${todayISO}
+Source entry count: ${n}${extrasBlock}
+
+Source content (${n} description entries, newest first — each prefixed with its date):
+${sourceBlocks}
+
+Return ONLY a single valid JSON object. No prose. No markdown. No code fences. No explanation. The object must match this exact shape and field names:
+
+${MAP_JSON_SCHEMA_EXAMPLE}
+
+Rules:
+- Use the exact field names shown. Nested objects and array shapes must match.
+- For "mutual_action_plan", generate 12-16 rows covering the natural lifecycle: Discovery → POC Setup → Validation → Business Case → Decision → Rollout.
+- Each row's "status" must be one of: "Complete", "In Progress", "Pending", "Blocked", "Not Started".
+- Dates in ISO format YYYY-MM-DD.
+- For "meeting_recap", return 4-7 entries as {label, detail} objects. Each "label" is a 2-5 word bolded title (e.g., "Pricing delivered", "Total Users", "Biweekly cadence established"). Each "detail" is a single concise sentence with the specifics (numbers, names, dates, decisions). Do not write narrative paragraph-style bullets. Skim-readable only.
+- For "current_environment.infrastructure", return 6-10 entries as {name, subline} objects. "name" is the tool/system name (e.g., "Citrix XenApp / XenDesktop", "NetScaler", "SCCM / ConfigMgr", "Microsoft Intune", "Nerdio + AVD"). "subline" is a short factual context detail (user counts, license info, deployment scope, replacement status). When no supporting detail exists in the source, return an empty string for "subline".
+- Keep each "current_environment.current_state_pain" and "stakeholders_and_decision_process" subsection to 3-5 plain-string bullets.
+- "document_date" should be today's date in "Month DD, YYYY" format.
+- Return the JSON object and nothing else.
+
+GROUNDING RULES (these are mandatory):
+- Every fact you place in the JSON must be traceable to the source description content provided above.
+- When the entries disagree on a concrete detail, use the value from the most recent DATE-marked entry.
+- When a field would require fabricating specifics not in ANY source entry (a tool name, a user count, a date, a decision), prefer in this order:
+  1. Omit the field if the schema allows
+  2. Return an empty string for optional sublines
+  3. Use a generic placeholder ONLY when the schema requires a value
+- NEVER invent: license expiration dates, user counts, employee names, decision dates, or tool names not mentioned in any source entry.
+- It is better to return a shorter, more accurate MAP than a longer fabricated one.`;
+}
+
+/**
+ * Ask Claude to produce a JSON representation of a Mutual Action Plan
+ * by synthesizing across MULTIPLE description entries. When N=1, this
+ * behaves identically to requestMapPdfJson() (same prompt, same shape)
+ * so callers don't need to branch. When N>=2, the prompt tells Claude
+ * to treat every entry as equally-weighted source material and resolve
+ * temporal conflicts in favour of the most recent DATE marker.
+ *
+ * @param {object} opportunity      { name / customerName, dealName?, stage?, ... }
+ * @param {Array}  descriptionEntries  Array of { date, content } — order doesn't matter;
+ *                                     the prompt builder normalizes newest-first.
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<object>} Parsed JSON matching the MAP schema.
+ */
+export async function requestMapPdfJsonFromMultiple(opportunity, descriptionEntries, signal) {
+  const apiKey = requireApiKey();
+  const prompt = buildMapJsonPromptFromMultiple(opportunity, descriptionEntries);
+
+  const body = {
+    model: MAP_JSON_MODEL,
+    max_tokens: MAP_JSON_MAX_TOKENS,
+    messages: [{ role: 'user', content: prompt }],
+  };
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: buildRequestHeaders(apiKey),
+    body: JSON.stringify(body),
+    signal: withTimeout(signal, MAP_JSON_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    let errBody = {};
+    try { errBody = await response.json(); } catch { /* ignore */ }
+    const msg = errBody.error?.message || `API error: ${response.status}`;
+    console.error('[MAP PDF from selection] API error', { status: response.status, body: errBody });
+    const err = new Error(msg);
+    err.status = response.status;
+    err.code = 'MAP_JSON_API_ERROR';
+    throw err;
+  }
+
+  const data = await response.json();
+  const text = (data.content || [])
+    .filter(b => b?.type === 'text' && typeof b.text === 'string')
+    .map(b => b.text)
+    .join('\n');
+  return parseMapJsonResponse(text);
+}
+
 // Exported for unit testing — pure helpers don't need the real API.
 export const __mapJsonInternals = {
   buildMapJsonPrompt,
+  buildMapJsonPromptFromMultiple,
   parseMapJsonResponse,
 };

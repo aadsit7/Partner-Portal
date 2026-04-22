@@ -56,13 +56,26 @@ export function slugName(name) {
  * (`April_20_`). The optional dateISO arg is accepted for caller
  * convenience but validated: anything that isn't YYYY-MM-DD is ignored
  * in favour of today.
+ *
+ * `sourceCount` is optional. When null/undefined it's omitted (voice
+ * flow behaviour — byte-identical to the pre-V1.5 filename). When a
+ * positive integer is passed, a `_Nsource(s)` suffix is appended so
+ * the file stands out in Drive — `1source` when N=1, `Nsources` when
+ * N>=2. Non-positive or non-integer values fall back to the no-suffix
+ * filename rather than throwing, which keeps the click path resilient
+ * if a caller accidentally passes zero descriptions (the selection UI
+ * already blocks that with a disabled CTA).
  */
-export function mapFilename(customerName, dateISO) {
+export function mapFilename(customerName, dateISO, sourceCount) {
   const today = new Date().toISOString().slice(0, 10);
   const d = (typeof dateISO === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateISO))
     ? dateISO.slice(0, 10)
     : today;
-  return `MAP_${slugName(customerName)}_${d}.pdf`;
+  const base = `MAP_${slugName(customerName)}_${d}`;
+  if (sourceCount === null || sourceCount === undefined) return `${base}.pdf`;
+  if (!Number.isInteger(sourceCount) || sourceCount < 1) return `${base}.pdf`;
+  const suffix = sourceCount === 1 ? '1source' : `${sourceCount}sources`;
+  return `${base}_${suffix}.pdf`;
 }
 
 // Promise → base64 string (no data: prefix). Matches what

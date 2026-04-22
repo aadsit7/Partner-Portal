@@ -15,6 +15,9 @@ import { statCard } from '../components/card.js';
 import { filterPartners, filterOpportunities } from '../utils/filters.js';
 import { initQuillEditor, ensureHtml, stripHtml } from '../components/quill-editor.js';
 import { loadTypeFilter, computeTypeData, buildTypeFilterBar, applyTypeFilter } from '../components/type-filter.js';
+import { generateMapPdfFromSelection } from '../utils/map-pdf-from-selection.js';
+import { createPill, updatePillStage, markPillSuccess, markPillFailure } from '../components/map-pdf-pill.js';
+import { fileApiRequest as fileApiRequestImpl } from '../utils/file-api.js';
 
 export const title = 'Opportunities';
 
@@ -736,16 +739,22 @@ function buildDetailsDescriptionsSection(descriptions, options = {}) {
   return list;
 }
 
-function buildDescriptionsSelectionToolbar({ count, onCopy, onSelectAll, onCancel }) {
+function buildDescriptionsSelectionToolbar({ count, intent, onConfirm, onSelectAll, onCancel }) {
+  const ctaLabel = intent === 'generate'
+    ? `Generate from Selected (${count})`
+    : 'Copy Selected';
+  const ctaClass = intent === 'generate'
+    ? 'btn btn--primary btn--sm description-select__cta description-select__cta--generate'
+    : 'btn btn--primary btn--sm';
   return el('div', { class: 'description-select__toolbar' },
     el('span', { class: 'description-select__count' }, `${count} selected`),
     el('div', { class: 'description-select__actions' },
       el('button', {
-        class: 'btn btn--primary btn--sm',
+        class: ctaClass,
         type: 'button',
         disabled: count === 0,
-        onClick: onCopy,
-      }, 'Copy Selected'),
+        onClick: onConfirm,
+      }, ctaLabel),
       el('button', {
         class: 'description-select__link',
         type: 'button',
@@ -794,27 +803,33 @@ async function copyTextToClipboard(text) {
   }
 }
 
-function setupDescriptionsSelection({ descriptions, copyBtn, toolbarSlot, listSlot }) {
+function setupDescriptionsSelection({ descriptions, copyBtn, generateBtn, toolbarSlot, listSlot, onGenerate }) {
   if (!descriptions || descriptions.length === 0) {
     copyBtn.hidden = true;
+    if (generateBtn) generateBtn.hidden = true;
     return;
   }
   copyBtn.hidden = false;
+  if (generateBtn) generateBtn.hidden = false;
 
-  const state = { selectionMode: false, selected: new Set() };
+  // intent: null → inactive, 'copy' → Copy Selected, 'generate' → Generate from Selected
+  const state = { intent: null, selected: new Set() };
 
   const render = () => {
-    copyBtn.hidden = state.selectionMode;
-    if (state.selectionMode) {
+    const active = !!state.intent;
+    copyBtn.hidden = active;
+    if (generateBtn) generateBtn.hidden = active;
+    if (active) {
       toolbarSlot.replaceChildren(buildDescriptionsSelectionToolbar({
         count: state.selected.size,
-        onCopy: handleCopy,
+        intent: state.intent,
+        onConfirm: state.intent === 'generate' ? handleGenerate : handleCopy,
         onSelectAll: () => {
           for (let i = 0; i < descriptions.length; i++) state.selected.add(i);
           render();
         },
         onCancel: () => {
-          state.selectionMode = false;
+          state.intent = null;
           state.selected.clear();
           render();
         },
@@ -823,7 +838,7 @@ function setupDescriptionsSelection({ descriptions, copyBtn, toolbarSlot, listSl
       toolbarSlot.replaceChildren();
     }
     listSlot.replaceChildren(buildDetailsDescriptionsSection(descriptions, {
-      selectionMode: state.selectionMode,
+      selectionMode: active,
       selected: state.selected,
       onToggle: (idx, checked) => {
         if (checked) state.selected.add(idx);
@@ -841,7 +856,7 @@ function setupDescriptionsSelection({ descriptions, copyBtn, toolbarSlot, listSl
     if (ok) {
       const n = entries.length;
       showToast(`${n} description${n === 1 ? '' : 's'} copied to clipboard`, 'success');
-      state.selectionMode = false;
+      state.intent = null;
       state.selected.clear();
       render();
     } else {
@@ -849,10 +864,31 @@ function setupDescriptionsSelection({ descriptions, copyBtn, toolbarSlot, listSl
     }
   };
 
+  const handleGenerate = () => {
+    if (state.selected.size === 0) return;
+    const entries = [...state.selected].sort((a, b) => a - b).map(i => descriptions[i]);
+    // Hand selection off to the caller's orchestrator, then drop out
+    // of selection mode immediately — generation runs in the background
+    // behind the modal pill so the modal stays interactive.
+    state.intent = null;
+    state.selected.clear();
+    render();
+    if (typeof onGenerate === 'function') onGenerate(entries);
+  };
+
   copyBtn.addEventListener('click', () => {
-    state.selectionMode = true;
+    // If the user was mid-Generate selection, preserve their checked
+    // boxes but switch the CTA back to Copy — least-surprise behaviour.
+    state.intent = 'copy';
     render();
   });
+
+  if (generateBtn) {
+    generateBtn.addEventListener('click', () => {
+      state.intent = 'generate';
+      render();
+    });
+  }
 }
 
 function buildDetailsDocumentsSection(files) {
@@ -877,6 +913,204 @@ function buildDetailsDocumentsSection(files) {
   });
 
   return list;
+}
+
+// ============================================
+// MAP PDF from selection — click flow glue
+// ============================================
+// Orchestrates pill + card + Documents refresh for the click-driven
+// MAP PDF feature launched from the Descriptions toolbar in the
+// Opportunity Details modal. The voice path in randy.js is unchanged;
+// this is a parallel thin wrapper over generateMapPdfFromSelection().
+
+function runOppMapPdfFromSelection({ opp, entries, modalEl, cardSlot, onFileSaved }) {
+  if (!entries || entries.length === 0) return;
+  const count = entries.length;
+  const opportunity = {
+    id: opp.opportunity_id,
+    opportunityId: opp.opportunity_id,
+    customerName: opp.customer_name || '',
+    dealName: opp.deal_name || '',
+    name: opp.customer_name || opp.deal_name || '',
+    stage: opp.stage || '',
+    dealValue: opp.deal_value || '',
+    expectedClose: opp.expected_close || '',
+  };
+
+  // Pill anchored inside the modal so it stays visible even if the
+  // user scrolls the body. options.scopeContainer was added on the
+  // pill component for this V1.5 flow.
+  const pill = createPill(
+    count > 1 ? `Synthesizing ${count} descriptions…` : 'Reading description…',
+    { scopeContainer: modalEl },
+  );
+
+  const onStage = (stage) => {
+    if (stage === 'synthesizing') updatePillStage(pill, `Synthesizing ${count} descriptions…`);
+    else if (stage === 'reading')  updatePillStage(pill, 'Reading description…');
+    else if (stage === 'building') updatePillStage(pill, 'Building PDF…');
+    else if (stage === 'saving')   updatePillStage(pill, 'Saving to Drive…');
+  };
+
+  const normalizedEntries = entries.map(d => ({
+    date: d?.description_date || d?.date || d?.created_at || '',
+    content: stripHtml(d?.description_text || d?.content || '').trim(),
+  }));
+
+  generateMapPdfFromSelection(opportunity, normalizedEntries, { onStage })
+    .then((result) => {
+      markPillSuccess(pill, 'Saved!');
+      if (typeof onFileSaved === 'function') onFileSaved(result.file);
+      renderOppMapPdfSuccessCard(cardSlot, {
+        opportunity,
+        driveUrl: result.driveUrl,
+        filename: result.filename,
+        onTryAgainReset: () => cardSlot.replaceChildren(),
+      });
+    })
+    .catch((err) => {
+      console.error('[MAP PDF from selection] failure', err);
+      markPillFailure(pill, 'Failed — see card');
+      renderOppMapPdfErrorCard(cardSlot, {
+        opportunity,
+        error: err,
+        onRetry: () => {
+          // Retry re-runs the entire pipeline with the SAME selection;
+          // user doesn't need to re-check boxes. The retry CTA replaces
+          // itself with a fresh card rendered by the resolved/rejected
+          // branch above.
+          cardSlot.replaceChildren();
+          runOppMapPdfFromSelection({ opp, entries, modalEl, cardSlot, onFileSaved });
+        },
+      });
+    });
+}
+
+function buildOppMapSuccessCard({ customerName, filename, driveUrl, onViewInDocuments, onDismiss }) {
+  const header = el('div', { class: 'opp-map-card__title-row' },
+    el('span', {
+      class: 'opp-map-card__title-icon',
+      html: '<svg viewBox="0 0 20 20" fill="none"><path d="M4 10l4 4 8-8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    }),
+    el('div', { class: 'opp-map-card__header' }, 'MAP PDF Saved'),
+    el('button', {
+      class: 'opp-map-card__dismiss',
+      type: 'button',
+      'aria-label': 'Dismiss',
+      onClick: onDismiss,
+      html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    }),
+  );
+
+  let primaryBtn;
+  if (driveUrl) {
+    primaryBtn = el('a', {
+      class: 'opp-map-card__btn',
+      href: driveUrl,
+      target: '_blank',
+      rel: 'noopener',
+    }, 'View in Drive');
+  } else {
+    primaryBtn = el('button', {
+      class: 'opp-map-card__btn opp-map-card__btn--in-portal',
+      type: 'button',
+      onClick: onViewInDocuments,
+    }, 'View in Documents');
+  }
+
+  return el('div', { class: 'opp-map-card opp-map-card--success' },
+    header,
+    el('div', { class: 'opp-map-card__subline' }, customerName || ''),
+    el('div', { class: 'opp-map-card__filename' }, filename || ''),
+    primaryBtn,
+  );
+}
+
+function renderOppMapPdfSuccessCard(slot, { opportunity, driveUrl, filename, onTryAgainReset }) {
+  let dismissTimer = null;
+  const dismiss = () => {
+    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
+    slot.replaceChildren();
+  };
+  const viewInDocuments = () => {
+    // No Drive URL — scroll/highlight the freshly-added file below.
+    const host = slot.closest('.details-modal') || slot.parentElement;
+    const firstDocRow = host ? host.querySelector('.document-row') : null;
+    if (firstDocRow) {
+      firstDocRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      firstDocRow.classList.add('document-row--just-added');
+      setTimeout(() => firstDocRow.classList.remove('document-row--just-added'), 1500);
+    }
+  };
+  const card = buildOppMapSuccessCard({
+    customerName: opportunity.customerName || opportunity.name || '',
+    filename,
+    driveUrl,
+    onViewInDocuments: viewInDocuments,
+    onDismiss: dismiss,
+  });
+  slot.replaceChildren(card);
+  // 30-second auto-dismiss, per spec. Dismissing manually also clears
+  // the timer so we never call replaceChildren on a stale slot.
+  dismissTimer = setTimeout(dismiss, 30_000);
+  if (typeof onTryAgainReset === 'function') onTryAgainReset();
+}
+
+function renderOppMapPdfErrorCard(slot, { opportunity, error, onRetry }) {
+  const msg = (error && error.message) || String(error || 'Unknown error');
+  let userSummary;
+  if (error?.code === 'MAP_JSON_API_ERROR' && error?.status === 401) {
+    userSummary = 'The Anthropic API key is invalid or expired. Check it on the Setup page.';
+  } else if (error?.code === 'MAP_JSON_INVALID' || error?.code === 'MAP_JSON_SCHEMA' || error?.code === 'MAP_JSON_EMPTY') {
+    userSummary = "Claude's response didn't parse as the expected JSON. Try again, or simplify the source descriptions.";
+  } else if (error?.code === 'MAP_SELECTION_EMPTY' || error?.code === 'MAP_SELECTION_INVALID_OPPORTUNITY') {
+    userSummary = msg;
+  } else if (error?.name === 'TimeoutError' || /timeout|timed out/i.test(msg)) {
+    userSummary = 'The request took longer than 2 minutes. Usually transient — try again.';
+  } else if (/Failed to fetch|network|NetworkError/i.test(msg)) {
+    userSummary = 'Network request to Anthropic or Google Drive failed. Check your connection.';
+  } else if (/upload|drive/i.test(msg)) {
+    userSummary = 'The PDF was built but Google Drive rejected the upload. Documents list wasn\'t updated.';
+  } else {
+    userSummary = 'Something went wrong while generating the MAP PDF.';
+  }
+
+  const dismiss = () => slot.replaceChildren();
+
+  const header = el('div', { class: 'opp-map-card__title-row' },
+    el('span', {
+      class: 'opp-map-card__title-icon',
+      html: '<svg viewBox="0 0 20 20" fill="none"><path d="M10 3l8 14H2z" fill="currentColor" opacity="0.2"/><path d="M10 3l8 14H2z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/><path d="M10 8v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="14.5" r="1" fill="currentColor"/></svg>',
+    }),
+    el('div', { class: 'opp-map-card__header' },
+      `Couldn't generate MAP PDF${opportunity?.customerName ? ' — ' + opportunity.customerName : ''}`),
+    el('button', {
+      class: 'opp-map-card__dismiss',
+      type: 'button',
+      'aria-label': 'Dismiss',
+      onClick: dismiss,
+      html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    }),
+  );
+
+  const details = el('details', { class: 'opp-map-card__details' });
+  details.appendChild(el('summary', {}, 'Show technical details'));
+  details.appendChild(el('pre', {}, msg));
+
+  const retryBtn = el('button', {
+    class: 'opp-map-card__retry',
+    type: 'button',
+    onClick: onRetry,
+  }, 'Try again');
+
+  slot.replaceChildren(
+    el('div', { class: 'opp-map-card opp-map-card--warning' },
+      header,
+      el('div', { class: 'opp-map-card__subline' }, userSummary),
+      details,
+      retryBtn,
+    ),
+  );
 }
 
 export async function openOppDetailsModal(opp) {
@@ -921,6 +1155,15 @@ export async function openOppDetailsModal(opp) {
     type: 'button',
     hidden: true,
   }, 'Copy');
+  const descriptionsGenerateBtn = el('button', {
+    class: 'btn btn--sm details-modal__generate-map-btn',
+    type: 'button',
+    hidden: true,
+  }, 'Generate MAP');
+  // Slot that sits above the Documents list so the success/failure
+  // card from the click flow lands right where the user expects new
+  // documents to appear.
+  const mapPdfCardSlot = el('div', { class: 'details-modal__map-card-slot' });
   const documentsSlot = el('div', { class: 'details-modal__documents-slot' },
     buildDetailsLoadingPlaceholder(),
   );
@@ -930,13 +1173,17 @@ export async function openOppDetailsModal(opp) {
     el('div', { class: 'details-modal__section' },
       el('div', { class: 'details-modal__section-header' },
         el('h3', { class: 'details-modal__section-title' }, 'Descriptions'),
-        descriptionsCopyBtn,
+        el('div', { class: 'details-modal__section-actions' },
+          descriptionsGenerateBtn,
+          descriptionsCopyBtn,
+        ),
       ),
       descriptionsToolbarSlot,
       descriptionsSlot,
     ),
     el('div', { class: 'details-modal__section details-modal__section--documents' },
       el('h3', { class: 'details-modal__section-title' }, 'Documents'),
+      mapPdfCardSlot,
       documentsSlot,
     ),
   );
@@ -952,6 +1199,41 @@ export async function openOppDetailsModal(opp) {
   const headerEl = modalResult.element.querySelector('.modal__header');
   const closeX = headerEl.querySelector('.modal__close');
   headerEl.insertBefore(editBtn, closeX);
+
+  // The pill stack attaches to the modal backdrop (which is position:
+  // fixed; inset: 0) so an `position: absolute; bottom/right` pill
+  // anchors against the modal's visual bottom-right corner without
+  // scrolling with the modal body's overflow. When the modal closes
+  // the backdrop is removed so the stack tears down with it.
+  const modalEl = modalResult.element;
+
+  // Mutable cache of the documents list — lets the success card inject
+  // the newly uploaded file without refetching from Apps Script. The
+  // read-only details modal doesn't use buildDocumentsPanel(), so this
+  // closure plays the same role as activeDocsPanel.addFile().
+  let currentFiles = [];
+  const injectNewDocument = (file) => {
+    if (!file) return;
+    currentFiles = [file, ...currentFiles];
+    documentsSlot.replaceChildren(buildDetailsDocumentsSection(currentFiles));
+    const firstRow = documentsSlot.querySelector('.document-row');
+    if (firstRow) {
+      firstRow.classList.add('document-row--just-added');
+      setTimeout(() => {
+        try { firstRow.classList.remove('document-row--just-added'); } catch { /* modal closed */ }
+      }, 1500);
+    }
+  };
+
+  const handleGenerateFromSelection = (entries) => {
+    runOppMapPdfFromSelection({
+      opp,
+      entries,
+      modalEl,
+      cardSlot: mapPdfCardSlot,
+      onFileSaved: injectNewDocument,
+    });
+  };
 
   // Stream descriptions and documents in parallel after the modal is visible.
   // replaceChildren on a detached node (modal already closed) is a no-op.
@@ -976,12 +1258,14 @@ export async function openOppDetailsModal(opp) {
     setupDescriptionsSelection({
       descriptions,
       copyBtn: descriptionsCopyBtn,
+      generateBtn: descriptionsGenerateBtn,
       toolbarSlot: descriptionsToolbarSlot,
       listSlot: descriptionsSlot,
+      onGenerate: handleGenerateFromSelection,
     });
 
-    const files = docsResult.status === 'fulfilled' ? docsResult.value : [];
-    documentsSlot.replaceChildren(buildDetailsDocumentsSection(files));
+    currentFiles = docsResult.status === 'fulfilled' ? [...docsResult.value] : [];
+    documentsSlot.replaceChildren(buildDetailsDocumentsSection(currentFiles));
   });
 }
 
@@ -1693,20 +1977,7 @@ const ALLOWED_FILE_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt
  * (including the critical missing-Content-Type CORS behavior) without
  * maintaining a parallel Drive client.
  */
-export async function fileApiRequest(payload) {
-  const res = await fetch(CONFIG.FILE_API_URL, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    throw new Error(`File API returned ${res.status}`);
-  }
-  const data = await res.json();
-  if (!data.ok) {
-    throw new Error(data.error || 'File API request failed');
-  }
-  return data;
-}
+export const fileApiRequest = fileApiRequestImpl;
 
 async function listOpportunityDocuments(opportunityId) {
   if (!opportunityId) return [];

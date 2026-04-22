@@ -278,3 +278,137 @@ V1. Only the rendered PDF is different.
   tool names not in the source description.
 - **Removed** the V1 "Tailored for {Customer}" footer text on Page 3 —
   the green callout is now the natural conclusion.
+
+---
+
+## V1.5 — click-driven "Generate MAP" button
+
+V1.5 adds a second, deliberately click-driven entry point next to the
+voice flow. The existing voice pipeline is untouched: every module that
+it invokes (`requestMapPdfJson`, `buildMapPdf`, `mapFilename`,
+`fileApiRequest`, and the pill component) is reused by the click path
+rather than forked.
+
+### Where it lives
+
+- A new **Generate MAP** button sits next to the existing **Copy**
+  button in the Opportunity detail modal's Descriptions section header.
+- Styled as the primary/featured CTA: solid Recast Primary Blue
+  (`#0000CC`) with white text, so it reads as the hero action vs. the
+  secondary Copy treatment.
+- Clicking it activates the same checkbox selection mode that Copy
+  uses. The confirming CTA dynamically swaps between **Copy Selected**
+  and **Generate from Selected (N)** based on which entry button put
+  the user in selection mode — a second click on the other button
+  switches context without clearing already-checked boxes.
+
+### Flow
+
+```
+  Opportunity detail modal
+  User clicks "Generate MAP"
+         │
+         ▼
+  Checkboxes appear on each description row
+  User checks 1 or more
+  User clicks "Generate from Selected (N)"
+         │  (no confirmation dialog)
+         ▼
+  runOppMapPdfFromSelection()                 ← js/views/admin-opportunities.js
+         │
+         ▼
+  Pill mounts at bottom-right of modal
+  (scopeContainer = modal backdrop)
+         │
+         ▼
+  generateMapPdfFromSelection()               ← js/utils/map-pdf-from-selection.js
+         │
+         ▼
+  requestMapPdfJsonFromMultiple()             ← js/utils/ai.js
+         │  multi-desc synthesis prompt (see below)
+         ▼
+  buildMapPdf(json)                            ← js/utils/map-pdf-builder.js
+         │  same builder, same jsPDF pipeline
+         ▼
+  mapFilename(customer, today, N)              ← extended to accept sourceCount
+         │  → "MAP_Greenshield_2026-04-22_3sources.pdf"
+         ▼
+  fileApiRequest({ action:'uploadFile', … })   ← js/utils/file-api.js (extracted)
+         │
+         ▼
+  Apps Script → Drive
+         │
+         ▼
+  Success card renders in the modal's Documents slot
+  Documents list gets the new file prepended automatically
+```
+
+### Multi-description synthesis
+
+When N = 1 the click flow uses `buildMapJsonPrompt` verbatim — the
+exact prompt the voice flow has always used. This is a byte-identical
+reuse and covered by a regression test.
+
+When N ≥ 2, `buildMapJsonPromptFromMultiple` adds:
+
+1. A synthesis preamble telling Claude there are N equally-weighted
+   source entries and that the more recent DATE marker wins on any
+   temporal conflict.
+2. `--- DATE: YYYY-MM-DD ---` headers before each entry so Claude has
+   unambiguous anchoring for conflict resolution.
+3. Entries are sorted newest-first regardless of input order.
+
+All grounding rules from the voice flow are preserved — the same
+"NEVER invent license dates, user counts, employee names, or tool
+names not in the source" directive applies to the multi-source prompt.
+
+### Filename
+
+`mapFilename(customer, dateISO, sourceCount)` — `sourceCount` is
+optional:
+
+| `sourceCount` | Filename                                     |
+| ------------- | -------------------------------------------- |
+| `null` (voice flow) | `MAP_Greenshield_2026-04-22.pdf`       |
+| `1`           | `MAP_Greenshield_2026-04-22_1source.pdf`     |
+| `3`           | `MAP_Greenshield_2026-04-22_3sources.pdf`    |
+| `0`, `-1`, `'3'`, `1.5` | falls back to no-suffix form       |
+
+The `null` path is identical byte-for-byte to V1 — the voice flow keeps
+producing its historic filenames without any change.
+
+### Pill anchoring
+
+`createPill()` now accepts an optional `options.scopeContainer`. When
+provided, the stack is created inside that container instead of the
+global `#randy-root`. The click flow passes the modal backdrop so the
+pill positions absolutely at the dialog's bottom-right and tears down
+with the modal.
+
+### Success / error cards
+
+The success card renders in a new `.details-modal__map-card-slot`
+positioned directly above the Documents list. It shows:
+
+- Green ✓ header "MAP PDF Saved"
+- Customer name line
+- Monospace filename line
+- Primary CTA: **View in Drive** if the Apps Script response included
+  a Drive URL, **View in Documents** as a fallback that scrolls and
+  highlights the freshly-added file below
+- Dismiss X; auto-dismisses after 30s
+
+Failure surfaces the same visual language with amber warning chrome,
+an expandable technical-details `<details>` block, and a **Try again**
+button that re-runs the entire pipeline with the original selection.
+
+### What this flow does NOT do
+
+- No Randy involvement. Nothing is appended to Randy's chat history;
+  no TTS plays.
+- No confirmation dialog between click and generation.
+- No intent detection — the user explicitly picked the opportunity
+  (they're in its modal) and explicitly picked the descriptions (via
+  checkboxes).
+- No deduplication. Triggering three generations in five minutes
+  produces three Drive files.
