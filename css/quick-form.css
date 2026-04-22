@@ -166,6 +166,7 @@
 /* ── Body / scrollable form area ────────────────────────────────── */
 .qf-body {
   flex: 1;
+  min-height: 0; /* allows flex child to shrink so footer stays visible */
   overflow-y: auto;
   padding: 12px;
   display: flex;
