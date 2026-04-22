@@ -303,14 +303,18 @@ function drawMeetingRecap(doc, items, yStart) {
 }
 
 // Draws a list of plain-string bullets under a bold subsection label.
+// Returns the input y unchanged when items is empty — the whole
+// subsection (heading bar + bullets) is skipped under the Golden Rule.
 function drawEnvSubsection(doc, label, items, color, yStart) {
+  const list = (items || []).map(s => String(s || '').trim()).filter(Boolean).slice(0, 5);
+  if (list.length === 0) return yStart;
   setText(doc, INK);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.text(label, MARGIN, yStart);
   let y = yStart + 14;
   doc.setFont('helvetica', 'normal');
-  for (const line of (items || []).slice(0, 5)) {
+  for (const line of list) {
     const wrapped = wrapText(doc, line, CONTENT_W - 14);
     drawSquareBullet(doc, MARGIN + 3, y - 2, color);
     doc.text(wrapped, MARGIN + 12, y);
@@ -322,30 +326,37 @@ function drawEnvSubsection(doc, label, items, color, yStart) {
 // Infrastructure is richer than the other env subsections — each entry
 // is {name, subline}. The name renders like a normal bullet; the subline
 // sits underneath in muted colour and is suppressed when empty.
+// Returns the input y unchanged when items is empty — the subsection is
+// skipped entirely (heading + bullets) under the Golden Rule.
 function drawInfrastructureSubsection(doc, items, yStart) {
+  const entries = (items || [])
+    .map(raw => (typeof raw === 'string' ? { name: raw, subline: '' } : (raw || {})))
+    .map(entry => ({
+      name: String(entry.name || '').trim(),
+      subline: String(entry.subline || '').trim(),
+    }))
+    .filter(e => e.name)
+    .slice(0, 10);
+  if (entries.length === 0) return yStart;
+
   setText(doc, INK);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.text('Infrastructure', MARGIN, yStart);
   let y = yStart + 14;
-  for (const raw of (items || []).slice(0, 10)) {
-    const entry = typeof raw === 'string' ? { name: raw, subline: '' } : (raw || {});
-    const name = String(entry.name || '').trim();
-    const subline = String(entry.subline || '').trim();
-    if (!name) continue;
-
+  for (const entry of entries) {
     drawSquareBullet(doc, MARGIN + 3, y - 2, CYAN);
     setText(doc, INK);
     doc.setFont('helvetica', 'bold');
-    const nameWrapped = wrapText(doc, name, CONTENT_W - 14);
+    const nameWrapped = wrapText(doc, entry.name, CONTENT_W - 14);
     doc.text(nameWrapped, MARGIN + 12, y);
     y += nameWrapped.length * 11;
 
-    if (subline) {
+    if (entry.subline) {
       setText(doc, MUTED);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
-      const subWrapped = wrapText(doc, subline, CONTENT_W - 14);
+      const subWrapped = wrapText(doc, entry.subline, CONTENT_W - 14);
       y += 9;
       doc.text(subWrapped, MARGIN + 12, y);
       y += subWrapped.length * 10;
@@ -356,12 +367,24 @@ function drawInfrastructureSubsection(doc, items, yStart) {
   return y + 6;
 }
 
+// Whole-section gate: if infrastructure, pain, and stakeholders are ALL
+// empty, the blue "YOUR CURRENT ENVIRONMENT" heading is skipped too —
+// the Meeting Recap and MAP table carry the page on their own.
 function drawCurrentEnvironment(doc, env, yStart) {
+  const infra = Array.isArray(env?.infrastructure) ? env.infrastructure : [];
+  const pain = Array.isArray(env?.current_state_pain) ? env.current_state_pain : [];
+  const stakeholders = Array.isArray(env?.stakeholders_and_decision_process)
+    ? env.stakeholders_and_decision_process : [];
+  const hasAny = infra.some(e => (typeof e === 'string' ? e.trim() : String(e?.name || '').trim()))
+    || pain.some(s => String(s || '').trim())
+    || stakeholders.some(s => String(s || '').trim());
+  if (!hasAny) return yStart;
+
   let y = drawSectionHeading(doc, 'Your Current Environment', yStart);
   y += 14;
-  y = drawInfrastructureSubsection(doc, env?.infrastructure, y);
-  y = drawEnvSubsection(doc, 'Current State Pain Points',      env?.current_state_pain,              RED,  y);
-  y = drawEnvSubsection(doc, 'Stakeholders & Decision Process', env?.stakeholders_and_decision_process, NAVY, y);
+  y = drawInfrastructureSubsection(doc, infra, y);
+  y = drawEnvSubsection(doc, 'Current State Pain Points',      pain,         RED,  y);
+  y = drawEnvSubsection(doc, 'Stakeholders & Decision Process', stakeholders, NAVY, y);
   return y;
 }
 
@@ -407,20 +430,22 @@ function makeMapTableDidDrawCell(statusColIndex) {
 }
 
 function drawMapTable(doc, rows, yStart) {
-  const headingBottom = drawSectionHeading(doc, 'Mutual Action Plan', yStart);
   const safeRows = (rows || []).filter(r => r && typeof r === 'object');
-  // Autotable will render a bare header if body is empty; that looks
-  // wrong. Insert a single placeholder row so the table has visual
-  // weight even when the JSON degenerate case sneaks through.
-  const body = safeRows.length > 0
-    ? safeRows.map(r => [
-        r.phase || '',
-        r.action || '',
-        r.owner || '',
-        r.due_date || '',
-        r.status || 'Pending',
-      ])
-    : [['—', 'No action items captured yet', '—', '—', 'Pending']];
+  // Golden-rule skip: if there are no MAP rows at all, suppress the
+  // whole section — no heading bar, no empty table. This is an edge
+  // case (most MAPs have action items) but if the source described
+  // nothing actionable, a fabricated "No action items captured yet"
+  // placeholder would violate the grounding contract.
+  if (safeRows.length === 0) return yStart;
+
+  const headingBottom = drawSectionHeading(doc, 'Mutual Action Plan', yStart);
+  const body = safeRows.map(r => [
+    r.phase || '',
+    r.action || '',
+    r.owner || '',
+    r.due_date || '',
+    r.status || 'Pending',
+  ]);
   const statusColIndex = 4;
   doc.autoTable({
     startY: headingBottom + 6,
@@ -548,8 +573,16 @@ function pickStringList(list, max) {
 
 function drawArchitecturePage(doc, json) {
   const env = json?.current_environment || {};
-  const infra = Array.isArray(env.infrastructure) ? env.infrastructure : [];
+  const infraEntries = (Array.isArray(env.infrastructure) ? env.infrastructure : [])
+    .map(e => (typeof e === 'string' ? { name: e, subline: '' } : (e || {})))
+    .filter(e => e && String(e.name || '').trim())
+    .slice(0, 10);
   const pains = pickStringList(env.current_state_pain, 4);
+  const personas = (Array.isArray(json?.end_users_personas) ? json.end_users_personas : [])
+    .map(e => (typeof e === 'string' ? { label: e, subline: '' } : (e || {})))
+    .filter(e => e && String(e.label || '').trim())
+    .slice(0, 6);
+  const whatChanges = String(json?.what_changes || '').trim();
   const customerName = json?.customer_name || '';
 
   // ── Header band: compact blue band to match Page 1 treatment ──
@@ -581,35 +614,26 @@ function drawArchitecturePage(doc, json) {
   doc.text(introLines, MARGIN, y);
   y += introLines.length * 11 + 10;
 
-  // ── Layer 2: current-tools grid (6-10 {name, subline} boxes) ──
-  y = drawSectionHeading(doc, 'Current State — Per-Platform Delivery, Multiple Dependencies', y);
-  y += 10;
-
-  const entries = infra
-    .map(e => (typeof e === 'string' ? { name: e, subline: '' } : (e || {})))
-    .filter(e => e && String(e.name || '').trim())
-    .slice(0, 10);
-
-  if (entries.length > 0) {
-    const cols = entries.length <= 4 ? 2 : 3;
+  // ── Layer 2: current-tools grid (3-10 {name, subline} boxes) ──
+  // Skipped entirely when infrastructure is empty — no heading, no
+  // "No infrastructure details captured" placeholder (which was itself
+  // a subtle fabrication of narrative).
+  if (infraEntries.length > 0) {
+    y = drawSectionHeading(doc, 'Current State — Per-Platform Delivery, Multiple Dependencies', y);
+    y += 10;
+    const cols = infraEntries.length <= 4 ? 2 : 3;
     const gap = 10;
     const boxW = (CONTENT_W - gap * (cols - 1)) / cols;
     const boxH = 44;
-    const rows = Math.ceil(entries.length / cols);
-    for (let i = 0; i < entries.length; i++) {
+    const rows = Math.ceil(infraEntries.length / cols);
+    for (let i = 0; i < infraEntries.length; i++) {
       const col = i % cols;
       const row = Math.floor(i / cols);
       const x = MARGIN + col * (boxW + gap);
       const by = y + row * (boxH + gap);
-      drawToolBox(doc, x, by, boxW, boxH, entries[i].name, entries[i].subline);
+      drawToolBox(doc, x, by, boxW, boxH, infraEntries[i].name, infraEntries[i].subline);
     }
     y += rows * (boxH + gap);
-  } else {
-    setText(doc, MUTED);
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(9);
-    doc.text('No infrastructure details captured from the source.', MARGIN, y + 6);
-    y += 24;
   }
 
   // ── Layer 3: amber "Key Friction" callout ─────────────────────
@@ -727,44 +751,49 @@ function drawArchitecturePage(doc, json) {
   y = diagramY + diagramH + 14;
 
   // ── Layer 7: End Users persona row ───────────────────────────
-  setText(doc, RECAST_BLUE);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('End Users', MARGIN, y);
-  y += 8;
-
-  const personas = [
-    ['Office Workers',  'Standard desktops'],
-    ['Remote / Hybrid', 'Home + travel'],
-    ['VDI Users',       'Non-persistent sessions'],
-    ['External Users',  'Secure access'],
-  ];
-  const pGap = 10;
-  const pBoxW = (CONTENT_W - pGap * (personas.length - 1)) / personas.length;
-  const pBoxH = 36;
-  for (let i = 0; i < personas.length; i++) {
-    const x = MARGIN + i * (pBoxW + pGap);
-    setFill(doc, LIGHT_BLUE);
-    setStroke(doc, BORDER_GRAY);
-    doc.setLineWidth(0.5);
-    doc.roundedRect(x, y, pBoxW, pBoxH, 4, 4, 'FD');
-    setText(doc, NAVY);
+  // Only renders when Claude returned grounded personas. Generic
+  // fallback rows ("Office Workers / Remote / VDI Users / External
+  // Users") were removed in V1.6 — they were customer-shaped narrative
+  // that wasn't actually traceable to any source description.
+  if (personas.length > 0) {
+    setText(doc, RECAST_BLUE);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.text(personas[i][0], x + pBoxW / 2, y + 14, { align: 'center' });
-    setText(doc, MUTED);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.text(personas[i][1], x + pBoxW / 2, y + 26, { align: 'center' });
+    doc.setFontSize(10);
+    doc.text('End Users', MARGIN, y);
+    y += 8;
+
+    const pGap = 10;
+    const pBoxW = (CONTENT_W - pGap * (personas.length - 1)) / personas.length;
+    const pBoxH = 36;
+    for (let i = 0; i < personas.length; i++) {
+      const x = MARGIN + i * (pBoxW + pGap);
+      setFill(doc, LIGHT_BLUE);
+      setStroke(doc, BORDER_GRAY);
+      doc.setLineWidth(0.5);
+      doc.roundedRect(x, y, pBoxW, pBoxH, 4, 4, 'FD');
+      setText(doc, NAVY);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text(personas[i].label, x + pBoxW / 2, y + 14, { align: 'center' });
+      if (personas[i].subline) {
+        setText(doc, MUTED);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.text(personas[i].subline, x + pBoxW / 2, y + 26, { align: 'center' });
+      }
+    }
+    y += pBoxH + 14;
   }
-  y += pBoxH + 14;
 
   // ── Layer 8: green "What Changes" outcome callout ────────────
-  const changesBody =
-    'RES eliminated • Per-platform packaging eliminated • Citrix-to-AVD migration ' +
-    'absorbed without user disruption • Non-persistent VDI apps delivered on demand • ' +
-    'Single console across all delivery targets';
-  drawCalloutBox(doc, y, GREEN_TINT, GREEN, 'What Changes:', changesBody);
+  // Only renders when Claude returned a grounded transformation
+  // summary. The hardcoded "RES eliminated • Per-platform packaging
+  // eliminated …" fallback was removed in V1.6 — when the source
+  // doesn't describe outcomes, the architecture diagram itself is the
+  // visual conclusion.
+  if (whatChanges) {
+    drawCalloutBox(doc, y, GREEN_TINT, GREEN, 'What Changes:', whatChanges);
+  }
 }
 
 // ── Footer on every page ─────────────────────────────────────
@@ -821,11 +850,20 @@ export async function buildMapPdf(json, opportunity, options) {
   y = drawCurrentEnvironment(doc, json.current_environment, y + 4);
   drawMapTable(doc, json.mutual_action_plan, y + 6);
 
-  // Architecture page — always a fresh page, whatever page the MAP
-  // table ended on. Passes the full json so the page can personalize
-  // Layer 1 (customer name) and Layers 2/3 (infra + pain data).
-  doc.addPage();
-  drawArchitecturePage(doc, json);
+  // Architecture page — conditional under the Golden Rule. If the
+  // source doesn't support a current state (infrastructure) OR a
+  // friction narrative (pain points), there's nothing factual to
+  // anchor a transformation story, so the page is skipped entirely:
+  // no doc.addPage(), no visible "skipped" marker, no fabricated
+  // placeholders. prefer a clean 2-page MAP to a padded 3-page one.
+  const env = json.current_environment || {};
+  const archPageHasAnchor =
+    (Array.isArray(env.infrastructure) && env.infrastructure.length > 0) ||
+    (Array.isArray(env.current_state_pain) && env.current_state_pain.length > 0);
+  if (archPageHasAnchor) {
+    doc.addPage();
+    drawArchitecturePage(doc, json);
+  }
 
   // Footers last, once we know the final page count.
   drawFooters(doc, customerName);

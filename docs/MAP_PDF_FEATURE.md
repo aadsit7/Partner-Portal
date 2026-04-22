@@ -412,3 +412,104 @@ button that re-runs the entire pipeline with the original selection.
   checkboxes).
 - No deduplication. Triggering three generations in five minutes
   produces three Drive files.
+
+---
+
+## Grounding Rules (V1.6)
+
+Customer-facing documents should be accurate, not exhaustive. V1.6 tightens
+the grounding contract so every fact in a generated MAP is traceable to
+something the source description actually says. Sections the source
+doesn't support are omitted — silently — rather than padded with
+plausible-sounding filler.
+
+### The Golden Rule
+
+> Every fact in the generated PDF must be traceable to a specific phrase
+> or sentence in the source description(s). If Claude cannot point to
+> the source, it cannot include it. A shorter, accurate MAP beats a
+> longer fabricated one every single time.
+
+The prompt spells this out as the very first instruction — ahead of
+any schema guidance. Claude is explicitly told:
+
+- **NOT allowed** to infer tool names, fabricate user counts, invent
+  license dates, generalize from "common enterprise patterns", or pad
+  sections with likely-but-unverified content.
+- **Expected** to return empty arrays for sections the source doesn't
+  support and empty strings for sublines the source doesn't provide.
+- **When uncertain**: leave it out. The renderer silently skips empty
+  sections — an empty array is a feature, not a failure.
+
+### How sections become conditional
+
+The renderer applies a uniform rule: **if the content for a section is
+empty, skip the section entirely — no heading bar, no placeholder, no
+blank space beyond natural page flow.**
+
+| Section                        | When it renders                                      |
+|--------------------------------|------------------------------------------------------|
+| Meeting Recap                  | Always. Failure to populate is a generation error.   |
+| Current Environment heading    | Any of infra / pain / stakeholders is non-empty.     |
+| Infrastructure sub-section     | `infrastructure` array is non-empty.                 |
+| Current State Pain Points      | `current_state_pain` array is non-empty.             |
+| Stakeholders & Decision Process| `stakeholders_and_decision_process` non-empty.       |
+| Mutual Action Plan table       | `mutual_action_plan` array is non-empty.             |
+| Page 3 — Architecture          | `infrastructure` OR `current_state_pain` non-empty.  |
+| Page 3 current-state box grid  | `infrastructure` non-empty.                          |
+| Page 3 Key Friction callout    | `current_state_pain` non-empty.                      |
+| Page 3 End Users persona row   | `end_users_personas` non-empty.                      |
+| Page 3 What Changes callout    | `what_changes` non-empty.                            |
+
+No thresholds. No "skip only if fewer than N items" heuristics. Empty
+array → skip is the only rule.
+
+### What's guaranteed in every MAP
+
+- `customer_name` (validated non-empty at parse time).
+- Meeting Recap — at least 1 entry; an empty recap is treated as a
+  generation failure and surfaces a `MAP_JSON_SCHEMA` error.
+- Footer on every page: `Recast Software`, page number, and
+  `Confidential — Prepared for {customer}`.
+
+### What's conditional
+
+Everything else. Infrastructure, pain points, stakeholders, MAP table,
+Page 3 in its entirety, persona row, What Changes callout — each is
+driven by what the source description supports. A MAP from a thin
+description ("met with Joe, discussed pricing, sent follow-up") will
+render as a clean 2-page document: Meeting Recap + MAP table, nothing
+else.
+
+### Parser — `meta.sections_rendered`
+
+`parseMapJsonResponse()` attaches a computed summary so callers can
+inspect the shape of the output without re-deriving the predicates:
+
+```json
+{
+  "meta": {
+    "sections_rendered": {
+      "recap": true,
+      "infrastructure": false,
+      "pain": false,
+      "stakeholders": true,
+      "environment": true,
+      "map_table": true,
+      "architecture_page": false,
+      "personas": false,
+      "what_changes": false
+    }
+  }
+}
+```
+
+This block is pure derived state — it never comes from Claude.
+
+### Why
+
+The portal lives inside a trust contract with customers: the
+Opportunity modal is a system of record, and documents generated from
+it are presented to customers as truth. A shorter MAP that says only
+what the source supports is more valuable than a longer MAP that pads
+with confident-sounding filler. V1.6 makes that the enforced default.

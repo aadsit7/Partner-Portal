@@ -136,11 +136,14 @@ test('throws MAP_JSON_EMPTY on empty text response', async () => {
 });
 
 test('throws MAP_JSON_SCHEMA when required fields missing', async () => {
-  const bad = JSON.stringify({ customer_name: 'X' });  // missing everything else
+  // V1.6: only customer_name (non-empty) and meeting_recap (>= 1 entry)
+  // are hard-required. Everything else is allowed to be empty. So the
+  // failing case now trips on meeting_recap, not mutual_action_plan.
+  const bad = JSON.stringify({ customer_name: 'X' });
   globalThis.fetch = async () => messagesResponse(bad);
   await assert.rejects(
     () => requestMapPdfJson({ name: 'X' }, [{ date: '2026-04-15', content: 'x' }]),
-    (err) => err.code === 'MAP_JSON_SCHEMA' && /mutual_action_plan/.test(err.message),
+    (err) => err.code === 'MAP_JSON_SCHEMA' && /meeting_recap/.test(err.message),
   );
 });
 
@@ -218,13 +221,129 @@ test('parseMapJsonResponse converts legacy flat-string infrastructure to {name, 
   assert.equal(infra[0].name, 'Citrix XenApp');
 });
 
-test('buildMapJsonPrompt includes the defensive grounding rules', () => {
+// ── V1.6: parser accepts empty arrays and strings as valid ──
+
+test('V1.6 parseMapJsonResponse accepts empty arrays for optional sections', () => {
+  const thin = {
+    customer_name: 'Thin Customer',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'Met', detail: 'Short intro call' }],
+    current_environment: {
+      infrastructure: [],
+      current_state_pain: [],
+      stakeholders_and_decision_process: [],
+    },
+    end_users_personas: [],
+    what_changes: '',
+    mutual_action_plan: [],
+  };
+  const parsed = parseMapJsonResponse(JSON.stringify(thin));
+  assert.equal(parsed.customer_name, 'Thin Customer');
+  assert.deepEqual(parsed.current_environment.infrastructure, []);
+  assert.deepEqual(parsed.current_environment.current_state_pain, []);
+  assert.deepEqual(parsed.current_environment.stakeholders_and_decision_process, []);
+  assert.deepEqual(parsed.end_users_personas, []);
+  assert.equal(parsed.what_changes, '');
+  assert.deepEqual(parsed.mutual_action_plan, []);
+});
+
+test('V1.6 parseMapJsonResponse accepts a missing current_environment entirely', () => {
+  const thin = {
+    customer_name: 'Thin Customer',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'Met', detail: 'Short call' }],
+    // current_environment, end_users_personas, what_changes, mutual_action_plan all omitted
+  };
+  const parsed = parseMapJsonResponse(JSON.stringify(thin));
+  assert.deepEqual(parsed.current_environment.infrastructure, []);
+  assert.deepEqual(parsed.current_environment.current_state_pain, []);
+  assert.deepEqual(parsed.current_environment.stakeholders_and_decision_process, []);
+  assert.deepEqual(parsed.end_users_personas, []);
+  assert.equal(parsed.what_changes, '');
+  assert.deepEqual(parsed.mutual_action_plan, []);
+});
+
+test('V1.6 parseMapJsonResponse still hard-fails when meeting_recap is empty', () => {
+  const bad = {
+    customer_name: 'X',
+    document_date: 'April 22, 2026',
+    meeting_recap: [],  // <-- empty = generation failure, not a thin source
+  };
+  assert.throws(
+    () => parseMapJsonResponse(JSON.stringify(bad)),
+    (err) => err.code === 'MAP_JSON_SCHEMA' && /meeting_recap/.test(err.message),
+  );
+});
+
+test('V1.6 parseMapJsonResponse still hard-fails when customer_name is missing/empty', () => {
+  const bad = {
+    customer_name: '',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'x', detail: 'y' }],
+  };
+  assert.throws(
+    () => parseMapJsonResponse(JSON.stringify(bad)),
+    (err) => err.code === 'MAP_JSON_SCHEMA' && /customer_name/.test(err.message),
+  );
+});
+
+test('V1.6 parseMapJsonResponse computes meta.sections_rendered for thin source', () => {
+  const thin = {
+    customer_name: 'Thin',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'x', detail: 'y' }],
+  };
+  const parsed = parseMapJsonResponse(JSON.stringify(thin));
+  const m = parsed.meta.sections_rendered;
+  assert.equal(m.recap, true, 'recap always true');
+  assert.equal(m.infrastructure, false);
+  assert.equal(m.pain, false);
+  assert.equal(m.stakeholders, false);
+  assert.equal(m.environment, false);
+  assert.equal(m.map_table, false);
+  assert.equal(m.architecture_page, false);
+  assert.equal(m.personas, false);
+  assert.equal(m.what_changes, false);
+});
+
+test('V1.6 parseMapJsonResponse computes meta.sections_rendered for full source', () => {
+  const full = {
+    customer_name: 'Full',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'x', detail: 'y' }],
+    current_environment: {
+      infrastructure: [{ name: 'Citrix', subline: '' }],
+      current_state_pain: ['p'],
+      stakeholders_and_decision_process: ['s'],
+    },
+    end_users_personas: [{ label: 'A', subline: '' }],
+    what_changes: 'Outcome summary.',
+    mutual_action_plan: [{ phase: 'Discovery', action: 'x', owner: 'Recast', due_date: '2026-05-01', status: 'Complete' }],
+  };
+  const parsed = parseMapJsonResponse(JSON.stringify(full));
+  const m = parsed.meta.sections_rendered;
+  assert.equal(m.infrastructure, true);
+  assert.equal(m.pain, true);
+  assert.equal(m.stakeholders, true);
+  assert.equal(m.environment, true);
+  assert.equal(m.map_table, true);
+  assert.equal(m.architecture_page, true);
+  assert.equal(m.personas, true);
+  assert.equal(m.what_changes, true);
+});
+
+test('buildMapJsonPrompt includes the Golden Rule grounding language', () => {
   const prompt = buildMapJsonPrompt(
     { name: 'ANICO' },
     [{ date: '2026-04-15', content: 'Discovery call.' }],
   );
-  assert.match(prompt, /GROUNDING RULES/);
-  assert.match(prompt, /NEVER invent/);
+  // V1.6 replaced the older "GROUNDING RULES" footer with a top-level
+  // "GOLDEN RULE" block — the strictest grounding language the prompt
+  // has ever carried. Every downstream assertion hangs off this.
+  assert.match(prompt, /GOLDEN RULE/);
+  assert.match(prompt, /traceable to a specific phrase or sentence/i);
+  assert.match(prompt, /shorter, accurate MAP is ALWAYS better/i);
+  assert.match(prompt, /EMPTY ARRAYS for sections/i);
   // The new shape rules are also spelled out.
   assert.match(prompt, /\{label, detail\}/);
   assert.match(prompt, /\{name, subline\}/);
