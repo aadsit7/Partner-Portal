@@ -1726,16 +1726,16 @@ function createWidget() {
         <div class="randy-window__bottom">
           <div class="randy-window__voice-row">
             <div class="randy-btn-wrap">
-              <button class="randy-ctrl-btn randy-ctrl-btn--voice-active" id="randy-voice-btn" aria-label="Voice mode">${MIC_SVG}</button>
+              <button class="randy-ctrl-btn" id="randy-voice-btn" aria-label="Voice mode">${MIC_SVG}</button>
               <span class="randy-btn-label">Voice</span>
-            </div>
-            <div class="randy-btn-wrap">
-              <button class="randy-ctrl-btn" id="randy-edit-btn" aria-label="Type a message">${PENCIL_SVG}</button>
-              <span class="randy-btn-label">Type</span>
             </div>
             <div class="randy-btn-wrap">
               <button class="randy-ctrl-btn" id="randy-mute-btn" aria-label="Mute voice">${SPEAKER_SVG}</button>
               <span class="randy-btn-label">Mute</span>
+            </div>
+            <div class="randy-btn-wrap">
+              <button class="randy-ctrl-btn" id="randy-edit-btn" aria-label="Type a message">${PENCIL_SVG}</button>
+              <span class="randy-btn-label">Type</span>
             </div>
           </div>
           <div class="randy-input-row" id="randy-input-row" hidden>
@@ -1965,7 +1965,7 @@ function updateVoiceButton() {
   // Voice button: green fill when voice is selected mode (voiceEnabled or actively listening/speaking/processing/confirming)
   // listening pulse only during ACTIVE_LISTENING
   btn.className = 'randy-ctrl-btn';
-  const voiceIsSelected = voiceEnabled || (currentState !== STATES.OFF && currentState !== STATES.PASSIVE) || (!isTypeModeActive);
+  const voiceIsSelected = voiceEnabled || (currentState !== STATES.OFF && currentState !== STATES.PASSIVE);
 
   if (currentState === STATES.ACTIVE_LISTENING) {
     btn.classList.add('randy-ctrl-btn--voice-listening');
