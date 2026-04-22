@@ -281,13 +281,19 @@ function makeMapTableDidDrawCell(statusColIndex) {
 
 function drawMapTable(doc, rows, yStart) {
   drawSectionHeading(doc, 'Mutual Action Plan', yStart);
-  const body = (rows || []).map(r => [
-    r.phase || '',
-    r.action || '',
-    r.owner || '',
-    r.due_date || '',
-    r.status || 'Pending',
-  ]);
+  const safeRows = (rows || []).filter(r => r && typeof r === 'object');
+  // Autotable will render a bare header if body is empty; that looks
+  // wrong. Insert a single placeholder row so the table has visual
+  // weight even when the JSON degenerate case sneaks through.
+  const body = safeRows.length > 0
+    ? safeRows.map(r => [
+        r.phase || '',
+        r.action || '',
+        r.owner || '',
+        r.due_date || '',
+        r.status || 'Pending',
+      ])
+    : [['—', 'No action items captured yet', '—', '—', 'Pending']];
   const statusColIndex = 4;
   doc.autoTable({
     startY: yStart + 10,

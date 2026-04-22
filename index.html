@@ -27,8 +27,21 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js" defer></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" defer></script>
+  <!-- jsPDF + autotable — eager loaded, jsPDF first so autotable can
+       attach itself to jsPDF.API during script execution. NOT deferred:
+       keeping these synchronous at parse time makes the libraries
+       guaranteed-ready before any application script runs, at the cost
+       of a few hundred ms of HTML parse block. Worth it to kill off
+       the race-condition class of bugs we hit in early portal testing.
+
+       IMPORTANT: use jspdf 2.5.1, NOT 2.5.2 or later 2.5.x. cdnjs
+       only mirrors 2.5.1 and 3.0.x on the 2.x/3.x lines — 2.5.2+ all
+       return 404. The portal previously referenced 2.5.2 silently,
+       which the first production MAP PDF test surfaced. Verified
+       empirically that autotable 3.8.2 attaches to jsPDF 2.5.1's
+       prototype at jsPDF.API.autoTable (see waitForJsPdf). -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
