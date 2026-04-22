@@ -122,6 +122,11 @@ export async function waitForJsPdf({ timeoutMs = DEFAULT_READY_TIMEOUT_MS, pollM
 
 // ── Primitives ───────────────────────────────────────────────
 
+// Reserve 40pt at the foot of every page. drawFooters() draws its
+// text at PAGE_H - 20, so 40pt of reserve leaves 13pt of breathing
+// room between the deepest body content and the footer baseline.
+const PAGE_BOTTOM_RESERVE = 40;
+
 function setFill(doc, rgb)   { doc.setFillColor(rgb[0], rgb[1], rgb[2]); }
 function setStroke(doc, rgb) { doc.setDrawColor(rgb[0], rgb[1], rgb[2]); }
 function setText(doc, rgb)   { doc.setTextColor(rgb[0], rgb[1], rgb[2]); }
@@ -130,6 +135,34 @@ function setText(doc, rgb)   { doc.setTextColor(rgb[0], rgb[1], rgb[2]); }
 // want but wants the width in the current unit — we're in pt already.
 function wrapText(doc, text, maxW) {
   return doc.splitTextToSize(String(text || ''), maxW);
+}
+
+// Returns whether drawing `needed` more pt at `y` would push past the
+// footer reserve zone.
+function wouldOverflow(y, needed) {
+  return (y + needed) > (PAGE_H - PAGE_BOTTOM_RESERVE);
+}
+
+// If drawing `needed` more pt at `y` would overflow the page, start a
+// new page and return the new starting y — optionally decorated with a
+// compact "(continued)" blue bar + a subsection label so the reader
+// knows where they are. Otherwise returns `y` untouched.
+function ensureSpaceOrBreak(doc, y, needed, { continuationLabel, subsectionLabel } = {}) {
+  if (!wouldOverflow(y, needed)) return y;
+  doc.addPage();
+  let newY = MARGIN;
+  if (continuationLabel) {
+    newY = drawSectionHeading(doc, continuationLabel, newY);
+    newY += 14;
+  }
+  if (subsectionLabel) {
+    setText(doc, INK);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(subsectionLabel, MARGIN, newY);
+    newY += 14;
+  }
+  return newY;
 }
 
 // ── Page 1 ───────────────────────────────────────────────────
@@ -143,21 +176,25 @@ const HEADER_DIVIDER_H = 3;
 const HEADER_TOTAL_H = HEADER_BAND_H + HEADER_DIVIDER_H;
 
 function drawPlusMarks(doc) {
-  // Subtle "+" brand markers scattered in the upper band at low opacity.
+  // Subtle "+" brand markers — small, low-opacity white-on-blue strokes
+  // that read as texture, not content. Clustered loosely around the
+  // Recast wordmark (left) and the title (right); center is left clean.
   const saveGState = doc.saveGraphicsState ? doc.saveGraphicsState.bind(doc) : null;
   const restoreGState = doc.restoreGraphicsState ? doc.restoreGraphicsState.bind(doc) : null;
   if (saveGState) saveGState();
   if (doc.setGState && doc.GState) {
-    try { doc.setGState(new doc.GState({ opacity: 0.25 })); } catch { /* graceful degrade */ }
+    try { doc.setGState(new doc.GState({ opacity: 0.18 })); } catch { /* graceful degrade */ }
   }
   setStroke(doc, WHITE);
-  doc.setLineWidth(0.9);
-  // Deterministic-ish scatter so every MAP PDF looks the same but not
-  // mechanical. Positions are hand-picked to avoid colliding with text.
+  doc.setLineWidth(0.5);
+  // 6 marks total, size 2 pt. Hand-placed to avoid the wordmark
+  // (x≈40-110) and the title (x≈370-572), and to leave the center
+  // of the band (x≈150-360) clean.
   const marks = [
-    [150, 14, 4], [210, 28, 3], [275, 10, 4], [330, 24, 3],
-    [150, 52, 3], [225, 60, 4], [280, 46, 3], [345, 56, 4],
-    [180, 72, 3], [260, 72, 3],
+    // Left cluster — around the Recast wordmark
+    [18, 18, 2], [115, 20, 2], [22, 66, 2],
+    // Right cluster — around the title
+    [370, 16, 2], [592, 20, 2], [588, 66, 2],
   ];
   for (const [x, y, size] of marks) {
     doc.line(x - size, y, x + size, y);
@@ -290,6 +327,9 @@ function drawMeetingRecap(doc, items, yStart) {
 }
 
 // Draws a list of plain-string bullets under a bold subsection label.
+// Paginates defensively: if a bullet would spill past the footer
+// reserve zone, the page is broken and rendering resumes under a
+// compact "(continued)" heading on the next page.
 function drawEnvSubsection(doc, label, items, color, yStart) {
   setText(doc, INK);
   doc.setFont('helvetica', 'bold');
@@ -297,18 +337,30 @@ function drawEnvSubsection(doc, label, items, color, yStart) {
   doc.text(label, MARGIN, yStart);
   let y = yStart + 14;
   doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
   for (const line of (items || []).slice(0, 5)) {
     const wrapped = wrapText(doc, line, CONTENT_W - 14);
+    const needed = wrapped.length * 11 + 2;
+    y = ensureSpaceOrBreak(doc, y, needed, {
+      continuationLabel: 'Your Current Environment (continued)',
+      subsectionLabel: label,
+    });
+    // After a page break the font may have been temporarily changed to
+    // draw the heading and subsection label — restore.
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    setText(doc, INK);
     drawSquareBullet(doc, MARGIN + 3, y - 2, color);
     doc.text(wrapped, MARGIN + 12, y);
-    y += wrapped.length * 11 + 2;
+    y += needed;
   }
   return y + 6;
 }
 
 // Infrastructure is richer than the other env subsections — each entry
-// is {name, subline}. The name renders like a normal bullet; the subline
-// sits underneath in muted colour and is suppressed when empty.
+// is {name, subline}. Tight vertical rhythm: 2pt between name and
+// subline, 6pt between entries, so sublines read as attached to their
+// name but the list still separates entry-to-entry. Also paginates.
 function drawInfrastructureSubsection(doc, items, yStart) {
   setText(doc, INK);
   doc.setFont('helvetica', 'bold');
@@ -321,26 +373,45 @@ function drawInfrastructureSubsection(doc, items, yStart) {
     const subline = String(entry.subline || '').trim();
     if (!name) continue;
 
-    drawSquareBullet(doc, MARGIN + 3, y - 2, CYAN);
+    // Measure first so we can page-break before drawing the bullet.
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    const nameWrapped = wrapText(doc, name, CONTENT_W - 14);
+    let subWrapped = [];
+    if (subline) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      subWrapped = wrapText(doc, subline, CONTENT_W - 14);
+    }
+    const needed =
+      nameWrapped.length * 11
+      + (subline ? 2 + subWrapped.length * 9 : 0)
+      + 6;  // inter-entry gap baked in
+    y = ensureSpaceOrBreak(doc, y, needed, {
+      continuationLabel: 'Your Current Environment (continued)',
+      subsectionLabel: 'Infrastructure',
+    });
+
+    // Draw name
     setText(doc, INK);
     doc.setFont('helvetica', 'bold');
-    const nameWrapped = wrapText(doc, name, CONTENT_W - 14);
+    doc.setFontSize(10);
+    drawSquareBullet(doc, MARGIN + 3, y - 2, CYAN);
     doc.text(nameWrapped, MARGIN + 12, y);
     y += nameWrapped.length * 11;
 
+    // Draw subline (muted, font 9, tight 2pt gap above it)
     if (subline) {
+      y += 2;
       setText(doc, MUTED);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
-      const subWrapped = wrapText(doc, subline, CONTENT_W - 14);
-      y += 9;
       doc.text(subWrapped, MARGIN + 12, y);
-      y += subWrapped.length * 10;
-      doc.setFontSize(10);
+      y += subWrapped.length * 9;
     }
-    y += 3;
+    y += 6;
   }
-  return y + 6;
+  return y + 2;
 }
 
 function drawCurrentEnvironment(doc, env, yStart) {
@@ -615,10 +686,14 @@ function drawArchitecturePage(doc, json) {
   y += 12;
 
   // ── Layer 6: three-column diagram ─────────────────────────────
+  // Right column widened so target sublines ("Non-persistent VDI",
+  // "Physical endpoints", "Cloud PCs") stop wrapping awkwardly. Width
+  // borrowed from the left and center columns — the center box is
+  // still the dominant visual anchor.
   const diagramH = 110;
-  const leftW = 130;
-  const centerW = 220;
-  const rightW = 130;
+  const leftW = 110;
+  const centerW = 210;
+  const rightW = 160;
   const gap6 = 12;
   const totalW = leftW + centerW + rightW + gap6 * 2;
   const baseX = MARGIN + Math.max(0, (CONTENT_W - totalW) / 2);

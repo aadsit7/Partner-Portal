@@ -212,6 +212,53 @@ test('buildMapPdf renders the new {label, detail} + {name, subline} shapes witho
   );
 });
 
+test('V1.1.1 — env subsections page-break rather than overflowing the footer', async () => {
+  installJsPdfShim();
+  // Craft a Current Environment payload whose stakeholders list is so
+  // long that it cannot fit on a single page below the existing recap
+  // and infra content. With the V1.1.1 page-break fix the renderer
+  // should insert an addPage() + a "(continued)" heading rather than
+  // paint bullets over the footer.
+  const stakeholders = Array.from({ length: 5 }, (_, i) =>
+    `Decision-maker ${i + 1}: very long role description that eats plenty of vertical space on the page` +
+    ' — also contains additional trailing context to make wrapping likely and blow past the page height',
+  );
+  const json = {
+    customer_name: 'Overflow Test Customer',
+    document_date: 'April 22, 2026',
+    meeting_recap: Array.from({ length: 7 }, (_, i) => ({
+      label: `Label ${i + 1}`,
+      detail: 'A deliberately long detail line that will wrap across the available content width and consume several vertical points per bullet to drive the page content toward overflow',
+    })),
+    current_environment: {
+      infrastructure: Array.from({ length: 10 }, (_, i) => ({
+        name: `Tool ${i + 1}`,
+        subline: `Subline for tool ${i + 1} — a deliberately verbose context line`,
+      })),
+      current_state_pain: ['Pain 1', 'Pain 2', 'Pain 3'],
+      stakeholders_and_decision_process: stakeholders,
+    },
+    mutual_action_plan: [
+      { phase: 'Discovery', action: 'x', owner: 'Recast', due_date: '2026-05-01', status: 'Complete' },
+    ],
+  };
+  const blob = await buildMapPdf(json, { name: 'Overflow Test Customer' });
+  const calls = blob.__calls;
+  // Find addPage calls BEFORE the architecture page. Architecture page
+  // always calls addPage once; this test verifies there is AT LEAST one
+  // extra addPage driven by the env-subsection overflow guard.
+  const addPageCount = calls.filter(c => c.op === 'addPage').length;
+  assert.ok(
+    addPageCount >= 2,
+    `expected >=2 addPage calls (1 overflow break + 1 architecture page), got ${addPageCount}`,
+  );
+  // And the "(continued)" continuation heading must have been drawn.
+  assert.ok(
+    calls.some(c => c.op === 'text' && /\(CONTINUED\)/i.test(String(c.a?.[0] || ''))),
+    'overflow break must draw a "(continued)" heading on the new page',
+  );
+});
+
 test('waitForJsPdf throws a clear timeout error when libraries are missing', async () => {
   const { waitForJsPdf } = await import('../js/utils/map-pdf-builder.js');
   // Wipe the globals the builder probes for.
