@@ -6,7 +6,7 @@
 
 import { CONFIG, getRuntimeConfig, setRuntimeConfig } from '../config.js';
 import { setTopbarTitle } from '../components/sidebar.js';
-import { loadSheetData, callClaude, invalidateSheetCache } from '../utils/ai.js';
+import { loadSheetData, callClaudeStream, invalidateSheetCache } from '../utils/ai.js';
 import { parseActions, executeAction } from '../utils/ai-actions.js';
 import { activateVoiceMode, isVoiceModeActive, stopEverything as stopVoice } from '../components/voice-widget.js';
 import { attachSpeakerButton, autoSpeak, stopTTS, createSettingsButton, isTTSEnabled, extractVoiceText, extractVoiceTextFromString, isAutoSpeakEnabled, speak, cleanTextForSpeech } from '../components/tts.js';
@@ -490,16 +490,47 @@ async function handleSend() {
   renderLoading(chatArea);
   isStreaming = true;
 
+  let streamingWrapper = null;
+  let streamingBubble = null;
+
   try {
     const sheetData = await loadSheetData();
     const loadingText = document.querySelector('.chat-loading-text');
     if (loadingText) loadingText.textContent = 'Thinking...';
 
     abortController = new AbortController();
-    const response = await callClaude(conversationHistory, sheetData, text, abortController.signal);
+
+    const onChunk = (_chunk, accumulated) => {
+      if (!streamingBubble) {
+        removeLoading();
+        streamingWrapper = document.createElement('div');
+        streamingWrapper.className = 'chat-message chat-assistant';
+        const avatar = document.createElement('div');
+        avatar.className = 'chat-avatar';
+        avatar.textContent = 'C';
+        streamingBubble = document.createElement('div');
+        streamingBubble.className = 'chat-bubble';
+        streamingWrapper.appendChild(avatar);
+        streamingWrapper.appendChild(streamingBubble);
+        chatArea.appendChild(streamingWrapper);
+      }
+      // Strip complete and partial action blocks so raw JSON never shows
+      const displayText = accumulated
+        .replace(/:::ACTION[\s\S]*?:::/g, '')
+        .replace(/:::ACTION[\s\S]*$/, '')
+        .trim();
+      if (displayText) {
+        streamingBubble.innerHTML = renderMarkdown(displayText);
+        chatArea.scrollTop = chatArea.scrollHeight;
+      }
+    };
+
+    const response = await callClaudeStream(conversationHistory, sheetData, text, abortController.signal, null, onChunk);
+
+    // Replace live streaming bubble with the final rendered message
+    if (streamingWrapper) { streamingWrapper.remove(); streamingWrapper = null; streamingBubble = null; }
     removeLoading();
 
-    // Parse actions from response
     const { cleanText, actions } = parseActions(response);
 
     // Speak summary immediately BEFORE rendering — don't wait for DOM
@@ -508,16 +539,19 @@ async function handleSend() {
       if (earlyVoice) speak(earlyVoice);
     }
 
-    const assistantBubble = renderMessage('assistant', cleanText, chatArea);
+    renderMessage('assistant', cleanText, chatArea);
     conversationHistory.push({ role: 'assistant', content: response, timestamp: new Date().toISOString() });
 
-    // Render confirmation cards for any actions
     actions.forEach(action => renderConfirmationCard(action, chatArea));
 
-    // Save conversation
     await saveConversation(isNewConversation);
   } catch (err) {
+    if (streamingWrapper) { streamingWrapper.remove(); streamingWrapper = null; streamingBubble = null; }
     removeLoading();
+    // Roll back orphaned user message so the next turn starts clean
+    if (conversationHistory.length > 0 && conversationHistory[conversationHistory.length - 1].role === 'user') {
+      conversationHistory.pop();
+    }
     if (err.name === 'AbortError') return;
     renderMessage('assistant',
       `**Error:** ${err.message}\n\nMake sure your Google Sheet connection is working (check Setup page) and your API key is configured.`,
