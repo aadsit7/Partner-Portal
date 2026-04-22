@@ -858,3 +858,68 @@
   opacity: 1;
   pointer-events: auto;
 }
+
+/* MAP PDF download card — shown after Randy finishes generating a
+   Mutual Action Plan PDF. Rendered via the response-container /
+   sanitizeHTML path so it survives the XSS sanitizer. */
+.randy-map-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid #d8d8e8;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fafaff 0%, #f2f2fa 100%);
+  margin: 4px 0;
+}
+.randy-map-card__header {
+  font-weight: 600;
+  font-size: 14px;
+  color: #0000CC;
+  letter-spacing: -0.01em;
+}
+.randy-map-card__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  padding: 10px 18px;
+  background: #0000CC;
+  color: #fff !important;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1;
+  transition: background 0.15s, transform 0.05s;
+  cursor: pointer;
+}
+.randy-map-card__btn:hover {
+  background: #0000aa;
+}
+.randy-map-card__btn:active {
+  transform: translateY(1px);
+}
+.randy-map-card__filename {
+  font-size: 11px;
+  color: #888;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
+}
+.randy-map-card__flags {
+  margin-top: 4px;
+  padding: 8px 10px;
+  background: #fff6e0;
+  border: 1px solid #f0d79a;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #6b4e00;
+}
+.randy-map-card__flags summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.randy-map-card__flags > div {
+  margin-top: 6px;
+  white-space: pre-wrap;
+}
