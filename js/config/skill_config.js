@@ -8,7 +8,7 @@
 // locally after running the upload script. The skill ID is not a credential —
 // it identifies an entry in the operator's Anthropic workspace — but we keep
 // it out of the public repo so forks don't step on each other.
-export const RECAST_MAP_SKILL_ID = 'PASTE_SKILL_ID_HERE';
+export const RECAST_MAP_SKILL_ID = 'skill_01Wtozq5wP9bb8HedoYgQ6MV';
 
 // Sentinel — used by runtime code to detect "the user hasn't pasted the ID yet"
 // and give a friendly error instead of a 400 from the API.
