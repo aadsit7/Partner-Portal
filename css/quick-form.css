@@ -5,7 +5,7 @@
 /* ── Panel container ─────────────────────────────────────────────── */
 .qf-panel {
   position: fixed;
-  width: 340px;
+  width: 380px;
   max-height: min(600px, 90vh);
   background: #fff;
   border: 1px solid #e5e7eb;
@@ -78,6 +78,7 @@
 /* ── Type selector tabs ─────────────────────────────────────────── */
 .qf-type-selector {
   display: flex;
+  flex-wrap: wrap;
   border-bottom: 1px solid #e5e7eb;
   background: #f9fafb;
   flex-shrink: 0;

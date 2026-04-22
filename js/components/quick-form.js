@@ -6,10 +6,10 @@
 // navigating to their respective admin pages.
 
 import { CONFIG } from '../config.js';
-import { appendRow, isConfigured, addDemoRow, readSheetAsObjects } from '../sheets.js';
+import { appendRow, updateRow, isConfigured, addDemoRow, readSheetAsObjects } from '../sheets.js';
 import { showToast } from './toast.js';
 import { uuid } from '../utils/dom.js';
-import { nowISO } from '../utils/date.js';
+import { nowISO, todayISO } from '../utils/date.js';
 import { getCurrentUser } from '../auth.js';
 import { sha256 } from '../utils/hash.js';
 import { TIER_OPTIONS } from '../utils/tiers.js';
@@ -24,12 +24,15 @@ const SUBMIT_LABELS = {
   opportunity: 'Add Opportunity',
   partner:     'Add Partner',
   event:       'Create Event',
+  transcript:  'Add Transcript',
+  opp_note:    'Add Note',
 };
 
-let panelEl    = null;
-let isVisible  = false;
-let activeType = 'opportunity';
-let cachedPartners = null;
+let panelEl             = null;
+let isVisible           = false;
+let activeType          = 'opportunity';
+let cachedPartners      = null;
+let cachedOpportunities = null;
 
 // ── Public API ────────────────────────────────────────────────────
 
@@ -61,8 +64,8 @@ function showPanel() {
     bindEvents();
   }
 
-  // Load partners async, then (re)render current type
-  loadPartners().then(() => renderTypeForm(activeType));
+  // Load reference data, then (re)render current type
+  Promise.all([loadPartners(), loadOpportunities()]).then(() => renderTypeForm(activeType));
 
   requestAnimationFrame(() => panelEl.classList.add('qf-panel--visible'));
 }
@@ -136,6 +139,8 @@ function buildPanel() {
       <button class="qf-type-btn qf-type-btn--active" data-type="opportunity" role="tab" aria-selected="true">Opportunity</button>
       <button class="qf-type-btn" data-type="partner" role="tab" aria-selected="false">Partner</button>
       <button class="qf-type-btn" data-type="event" role="tab" aria-selected="false">Event</button>
+      <button class="qf-type-btn" data-type="transcript" role="tab" aria-selected="false">Transcript</button>
+      <button class="qf-type-btn" data-type="opp_note" role="tab" aria-selected="false">Opp Note</button>
     </div>
 
     <div class="qf-body" id="qf-body"></div>
@@ -196,6 +201,16 @@ async function loadPartners() {
   }
 }
 
+async function loadOpportunities() {
+  if (cachedOpportunities) return;
+  try {
+    const rows = await readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES);
+    cachedOpportunities = rows;
+  } catch {
+    cachedOpportunities = [];
+  }
+}
+
 // ── Form rendering ────────────────────────────────────────────────
 
 function renderTypeForm(type) {
@@ -207,9 +222,14 @@ function renderTypeForm(type) {
     opportunity: buildOpportunityFields,
     partner:     buildPartnerFields,
     event:       buildEventFields,
+    transcript:  buildTranscriptFields,
+    opp_note:    buildOppNoteFields,
   }[type]?.() || document.createDocumentFragment();
 
   body.appendChild(frag);
+
+  if (type === 'opp_note')                        wireOppNoteFilters();
+  if (type === 'transcript' || type === 'opp_note') setDateDefaults(type);
 }
 
 function buildOpportunityFields() {
@@ -298,6 +318,74 @@ function buildEventFields() {
   frag.appendChild(field('description', 'Description', 'textarea', false, 'Describe the event…'));
 
   return frag;
+}
+
+function buildTranscriptFields() {
+  const frag = document.createDocumentFragment();
+
+  frag.appendChild(selectField('partner_id', 'Partner', true, [
+    { value: '', label: 'Select partner…' },
+    ...(cachedPartners || []).map(p => ({ value: p.partner_id, label: p.display_name })),
+  ]));
+
+  frag.appendChild(field('conversation_date', 'Conversation Date', 'date', true));
+
+  const transcriptField = field('transcript_text', 'Transcript', 'textarea', true, 'Paste or type the call transcript here…');
+  const textarea = transcriptField.querySelector('textarea');
+  if (textarea) textarea.rows = 7;
+  frag.appendChild(transcriptField);
+
+  return frag;
+}
+
+function buildOppNoteFields() {
+  const frag = document.createDocumentFragment();
+
+  frag.appendChild(selectField('filter_partner_id', 'Filter by Partner', false, [
+    { value: '', label: 'All partners…' },
+    ...(cachedPartners || []).map(p => ({ value: p.partner_id, label: p.display_name })),
+  ]));
+
+  frag.appendChild(selectField('opportunity_id', 'Opportunity', true, [
+    { value: '', label: 'Select opportunity…' },
+    ...(cachedOpportunities || []).map(o => ({ value: o.opportunity_id, label: o.deal_name })),
+  ]));
+
+  frag.appendChild(field('description_date', 'Note Date', 'date', true));
+
+  const noteField = field('description_text', 'Note / Description', 'textarea', true, 'Add a note or update the opportunity description…');
+  const textarea = noteField.querySelector('textarea');
+  if (textarea) textarea.rows = 6;
+  frag.appendChild(noteField);
+
+  return frag;
+}
+
+function wireOppNoteFilters() {
+  const partnerFilter = panelEl.querySelector('#qf-filter_partner_id');
+  const oppSelect     = panelEl.querySelector('#qf-opportunity_id');
+  if (!partnerFilter || !oppSelect) return;
+
+  partnerFilter.addEventListener('change', () => {
+    const partnerId = partnerFilter.value;
+    const filtered  = (cachedOpportunities || []).filter(o => !partnerId || o.partner_id === partnerId);
+
+    oppSelect.innerHTML = '';
+    [{ value: '', label: 'Select opportunity…' }, ...filtered.map(o => ({ value: o.opportunity_id, label: o.deal_name }))]
+      .forEach(({ value, label: lbl }) => {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = lbl;
+        oppSelect.appendChild(opt);
+      });
+  });
+}
+
+function setDateDefaults(type) {
+  const today = todayISO();
+  const dateId = type === 'transcript' ? '#qf-conversation_date' : '#qf-description_date';
+  const input  = panelEl.querySelector(dateId);
+  if (input && !input.value) input.value = today;
 }
 
 // ── Field helpers ─────────────────────────────────────────────────
@@ -430,6 +518,8 @@ async function handleSubmit() {
       case 'opportunity': await submitOpportunity(data); break;
       case 'partner':     await submitPartner(data);     break;
       case 'event':       await submitEvent(data);       break;
+      case 'transcript':  await submitTranscript(data);  break;
+      case 'opp_note':    await submitOppNote(data);     break;
     }
     hidePanel();
   } catch (err) {
@@ -489,6 +579,58 @@ async function submitEvent(data) {
     addDemoRow(CONFIG.SHEET_EVENTS, values);
   }
   showToast('Event created!', 'success');
+}
+
+async function submitTranscript(data) {
+  const now     = nowISO();
+  const partner = (cachedPartners || []).find(p => p.partner_id === data.partner_id);
+  const values  = [
+    uuid('trn'),
+    data.partner_id,
+    partner?.display_name || '',
+    data.conversation_date,
+    data.transcript_text,
+    now,
+  ];
+
+  if (isConfigured()) {
+    await appendRow(CONFIG.SHEET_TRANSCRIPTS, values);
+  } else {
+    addDemoRow(CONFIG.SHEET_TRANSCRIPTS, values);
+  }
+  showToast(`Transcript added for ${partner?.display_name || 'partner'}!`, 'success');
+}
+
+async function submitOppNote(data) {
+  const now = nowISO();
+  const opp = (cachedOpportunities || []).find(o => o.opportunity_id === data.opportunity_id);
+
+  const descValues = [
+    uuid('dsc'),
+    data.opportunity_id,
+    opp?.deal_name || '',
+    data.description_date,
+    data.description_text,
+    now,
+  ];
+
+  if (isConfigured()) {
+    await appendRow(CONFIG.SHEET_OPP_DESCRIPTIONS, descValues);
+    if (opp?._rowIndex) {
+      const oppValues = [
+        opp.opportunity_id, opp.partner_id, opp.deal_name, opp.customer_name,
+        opp.deal_value, opp.status, opp.stage, opp.expected_close,
+        data.description_text, opp.created_at, now,
+        opp.notes || '', opp.lead_source || 'salesperson',
+      ];
+      await updateRow(CONFIG.SHEET_OPPORTUNITIES, opp._rowIndex, oppValues);
+    }
+  } else {
+    addDemoRow(CONFIG.SHEET_OPP_DESCRIPTIONS, descValues);
+  }
+
+  cachedOpportunities = null; // invalidate so next open reflects the update
+  showToast(`Note added to "${opp?.deal_name || 'opportunity'}"!`, 'success');
 }
 
 // ── Toggle button state helper ────────────────────────────────────
