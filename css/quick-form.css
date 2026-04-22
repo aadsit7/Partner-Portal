@@ -343,6 +343,34 @@
   color: #fff;
 }
 
+/* ── Quill editor overrides inside quick form ───────────────────── */
+.qf-panel .ql-toolbar {
+  border-radius: 6px 6px 0 0;
+  border-color: #d1d5db;
+  padding: 4px 6px;
+}
+
+.qf-panel .ql-container {
+  border-radius: 0 0 6px 6px;
+  border-color: #d1d5db;
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+.qf-panel .ql-editor {
+  min-height: 120px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  line-height: 1.5;
+}
+
+.qf-panel .ql-editor.ql-blank::before {
+  font-style: normal;
+  color: #9ca3af;
+  font-size: 13px;
+}
+
 /* ── Responsive ─────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .qf-panel {

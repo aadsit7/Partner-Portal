@@ -15,6 +15,7 @@ import { nowISO, todayISO } from '../utils/date.js';
 import { getCurrentUser } from '../auth.js';
 import { sha256 } from '../utils/hash.js';
 import { TIER_OPTIONS } from '../utils/tiers.js';
+import { initQuillEditor } from './quill-editor.js';
 
 const OPP_STAGES    = ['Prospect', 'Qualified', 'Proposal', 'Negotiation', 'Closed'];
 const OPP_STATUSES  = ['Registered', 'In Progress', 'Won', 'Lost'];
@@ -32,6 +33,8 @@ let isVisible           = false;
 let activeType          = 'opportunity';
 let cachedPartners      = null;
 let cachedOpportunities = null;
+let activeDescEditor    = null; // Quill instance for opp description
+let activeTransEditor   = null; // Quill instance for transcript
 
 // ── Public API ────────────────────────────────────────────────────
 
@@ -222,6 +225,8 @@ async function loadOpportunities() {
 function renderTypeForm(type) {
   const body = panelEl.querySelector('#qf-body');
   if (!body) return;
+  activeDescEditor  = null;
+  activeTransEditor = null;
   body.innerHTML = '';
 
   const frag = {
@@ -329,6 +334,8 @@ function buildModeToggle(label, stateKey) {
 
       const modeBody = panelEl.querySelector('.qf-mode-body');
       if (modeBody) {
+        activeDescEditor  = null;
+        activeTransEditor = null;
         modeBody.innerHTML = '';
         if (stateKey === 'partner') {
           renderPartnerModeBody(modeBody, isNew);
@@ -386,10 +393,14 @@ function renderPartnerModeBody(container, isNew) {
     if (dateInput) dateInput.value = todayISO();
     container.appendChild(dateWrap);
 
-    const transcriptField = field('transcript_text', 'Transcript', 'textarea', true, 'Paste or type the call transcript here…');
-    const textarea = transcriptField.querySelector('textarea');
-    if (textarea) textarea.rows = 7;
+    activeTransEditor = initQuillEditor({ placeholder: 'Paste or type the call transcript here…' });
+    const transcriptField = document.createElement('div');
+    transcriptField.className = 'qf-field';
+    transcriptField.appendChild(makeLabel('transcript_text', 'Transcript', true));
+    transcriptField.appendChild(activeTransEditor.wrapper);
+    transcriptField.appendChild(errEl('transcript_text'));
     container.appendChild(transcriptField);
+    requestAnimationFrame(() => activeTransEditor.mount());
   }
 }
 
@@ -432,10 +443,14 @@ function renderOppModeBody(container, isNew) {
     if (dateInput) dateInput.value = todayISO();
     container.appendChild(dateWrap);
 
-    const noteField = field('description_text', 'Description', 'textarea', true, 'Add or update the opportunity description…');
-    const textarea = noteField.querySelector('textarea');
-    if (textarea) textarea.rows = 5;
-    container.appendChild(noteField);
+    activeDescEditor = initQuillEditor({ placeholder: 'Add or update the opportunity description…' });
+    const descField = document.createElement('div');
+    descField.className = 'qf-field';
+    descField.appendChild(makeLabel('description_text', 'Description', true));
+    descField.appendChild(activeDescEditor.wrapper);
+    descField.appendChild(errEl('description_text'));
+    container.appendChild(descField);
+    requestAnimationFrame(() => activeDescEditor.mount());
   }
 }
 
@@ -565,6 +580,18 @@ function validate() {
     }
   });
 
+  // Validate Quill editors (they replace textareas, so not caught above)
+  if (activeTransEditor && activeTransEditor.isEmpty()) {
+    const err = body.querySelector('#qf-err-transcript_text');
+    if (err) err.textContent = 'Transcript is required';
+    valid = false;
+  }
+  if (activeDescEditor && activeDescEditor.isEmpty()) {
+    const err = body.querySelector('#qf-err-description_text');
+    if (err) err.textContent = 'Description is required';
+    valid = false;
+  }
+
   return valid;
 }
 
@@ -575,6 +602,9 @@ function collectData() {
   panelEl.querySelectorAll('#qf-body [name]').forEach(inp => {
     data[inp.name] = inp.value.trim();
   });
+  // Quill editors aren't standard inputs — pull HTML directly
+  if (activeTransEditor) data.transcript_text  = activeTransEditor.getHtml();
+  if (activeDescEditor)  data.description_text = activeDescEditor.getHtml();
   return data;
 }
 
