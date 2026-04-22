@@ -94,12 +94,16 @@ function positionPanel() {
     const r = randyWin.getBoundingClientRect();
     const top  = Math.max(20, r.top);
     const left = Math.max(20, r.left - PANEL_WIDTH - GAP);
-    panelEl.style.top    = top + 'px';
-    panelEl.style.left   = left + 'px';
-    panelEl.style.bottom = 'auto';
-    panelEl.style.right  = 'auto';
+    const availableHeight = window.innerHeight - top - 20;
+    panelEl.style.top       = top + 'px';
+    panelEl.style.left      = left + 'px';
+    panelEl.style.bottom    = 'auto';
+    panelEl.style.right     = 'auto';
+    panelEl.style.maxHeight = Math.min(600, availableHeight) + 'px';
     return;
   }
+
+  panelEl.style.maxHeight = '';
 
   // Collapsed state: appear above+left of the avatar button
   const randyBtn = document.getElementById('randy-btn');
