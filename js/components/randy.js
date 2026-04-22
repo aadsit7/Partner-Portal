@@ -11,6 +11,7 @@ import { getCurrentUser } from '../auth.js';
 import { appendRow, updateRow, readSheetAsObjects, loadCustomPrompts } from '../sheets.js';
 import { isVoiceModeActive } from './voice-widget.js';
 import { openOppModal } from '../views/admin-opportunities.js';
+import { initQuickForm, toggleQuickForm } from './quick-form.js';
 
 // ── Randy Personality Prompt ──────────────────────────────────────
 const RANDY_PERSONALITY = `
@@ -1667,6 +1668,8 @@ const MIC_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" str
 const PENCIL_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>`;
 const SPEAKER_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>`;
 const MUTED_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`;
+const FORM_SVG_SM = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
+const FORM_SVG_MD = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
 
 function createWidget() {
   const root = document.getElementById('randy-root');
@@ -1677,6 +1680,7 @@ function createWidget() {
       <button class="randy__btn" id="randy-btn" title="Randy Voice Assistant" aria-label="Open Randy assistant">
         <img src="assets/randy-avatar.png" alt="Randy" class="randy__avatar">
       </button>
+      <button class="randy__form-btn" id="randy-form-btn" title="Quick Add" aria-label="Quick add opportunity, partner, or event">${FORM_SVG_SM}</button>
       <span class="randy__hint">Say "Hey Randy"</span>
 
       <div class="randy__backdrop" id="randy-backdrop"></div>
@@ -1694,6 +1698,7 @@ function createWidget() {
           <img src="assets/randy-avatar.png" alt="" class="randy-window__titlebar-avatar">
           <span class="randy-window__titlebar-name">Randy</span>
           <div class="randy-window__controls">
+            <button class="randy-window__ctrl" id="randy-form-titlebar-btn" title="Quick Add" aria-label="Quick add opportunity, partner, or event">${FORM_SVG_MD}</button>
             <button class="randy-window__ctrl" id="randy-minimize" title="Minimize" aria-label="Minimize">&#8211;</button>
             <button class="randy-window__ctrl" id="randy-fullscreen-btn" title="Fullscreen" aria-label="Fullscreen">&#9633;</button>
             <button class="randy-window__ctrl" id="randy-close-window" title="Close" aria-label="Close">&times;</button>
@@ -1748,6 +1753,30 @@ function createWidget() {
     } else {
       setWindowState('collapsed');
     }
+  });
+
+  // Quick form toggle — collapsed-state button
+  document.getElementById('randy-form-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    initQuickForm();
+    toggleQuickForm();
+    const btn = document.getElementById('randy-form-btn');
+    const titleBtn = document.getElementById('randy-form-titlebar-btn');
+    const active = document.getElementById('qf-panel')?.classList.contains('qf-panel--visible');
+    if (btn) btn.classList.toggle('randy-form-btn--active', !!active);
+    if (titleBtn) titleBtn.classList.toggle('randy-form-btn--active', !!active);
+  });
+
+  // Quick form toggle — titlebar button (visible when window is open)
+  document.getElementById('randy-form-titlebar-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    initQuickForm();
+    toggleQuickForm();
+    const btn = document.getElementById('randy-form-btn');
+    const titleBtn = document.getElementById('randy-form-titlebar-btn');
+    const active = document.getElementById('qf-panel')?.classList.contains('qf-panel--visible');
+    if (btn) btn.classList.toggle('randy-form-btn--active', !!active);
+    if (titleBtn) titleBtn.classList.toggle('randy-form-btn--active', !!active);
   });
 
   // Window controls
