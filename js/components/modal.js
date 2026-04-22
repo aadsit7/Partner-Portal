@@ -76,29 +76,60 @@ export function closeModal() {
 }
 
 /**
- * Open a confirm dialog.
+ * Open a confirm dialog layered on top of any existing modal.
+ * Unlike openModal, this does NOT close the current modal — it mounts
+ * its own overlay so the caller's modal remains intact.
  * @param {string} title
  * @param {string} message
  * @returns {Promise<boolean>}
  */
 export function confirmDialog(title, message) {
   return new Promise((resolve) => {
-    const content = el('p', { class: 'confirm-text' }, message);
+    let settled = false;
+
+    function dismiss(value) {
+      if (settled) return;
+      settled = true;
+      backdrop.classList.remove('modal-backdrop--visible');
+      document.removeEventListener('keydown', escHandler);
+      setTimeout(() => backdrop.remove(), 250);
+      resolve(value);
+    }
 
     const cancelBtn = el('button', {
       class: 'btn btn--secondary',
-      onClick: () => { closeModal(); resolve(false); }
+      onClick: () => dismiss(false),
     }, 'Cancel');
 
     const confirmBtn = el('button', {
       class: 'btn btn--danger',
-      onClick: () => { closeModal(); resolve(true); }
+      onClick: () => dismiss(true),
     }, 'Delete');
 
-    openModal({
-      title,
-      content,
-      footer: [cancelBtn, confirmBtn],
-    });
+    const backdrop = el('div', {
+      class: 'modal-backdrop',
+      style: { zIndex: '10001' },
+      onClick: (e) => { if (e.target === backdrop) dismiss(false); },
+    },
+      el('div', { class: 'modal' },
+        el('div', { class: 'modal__header' },
+          el('h2', { class: 'modal__title' }, title),
+          el('button', {
+            class: 'modal__close',
+            html: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4.5 4.5l9 9M13.5 4.5l-9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+            onClick: () => dismiss(false),
+          }),
+        ),
+        el('div', { class: 'modal__body' }, el('p', { class: 'confirm-text' }, message)),
+        el('div', { class: 'modal__footer' }, cancelBtn, confirmBtn),
+      ),
+    );
+
+    const escHandler = (e) => { if (e.key === 'Escape') dismiss(false); };
+    document.addEventListener('keydown', escHandler);
+
+    const root = $('#modal-root') || document.body;
+    root.appendChild(backdrop);
+    requestAnimationFrame(() => backdrop.classList.add('modal-backdrop--visible'));
   });
 }
