@@ -1199,7 +1199,11 @@ function speakWithWebSpeech(clean) {
 
     const utterance = new SpeechSynthesisUtterance(parts[i]);
     if (selectedVoice) utterance.voice = selectedVoice;
-    utterance.pitch = 0.85;
+    // Neural voices (Natural/Online) are pre-tuned — keep pitch at 1.0 so they
+    // don't sound distorted; traditional phoneme voices benefit from a slight
+    // pitch reduction to sound less synthetic.
+    const isNeuralVoice = selectedVoice && /natural|online/i.test(selectedVoice.name);
+    utterance.pitch = isNeuralVoice ? 1.0 : 0.85;
     utterance.volume = 0.9;
     utterance.rate = getRateForIndex(i, parts.length);
 
@@ -1230,31 +1234,36 @@ function selectVoice() {
   const allVoices = synth.getVoices();
   if (!allVoices.length) return;
 
-  // Exclude feminine-sounding voices
-  const femaleNames = ['female', 'woman', 'girl', 'zira', 'hazel', 'susan',
-    'catherine', 'samantha', 'karen', 'moira', 'fiona', 'tessa', 'victoria', 'allison'];
-  const voices = allVoices.filter(v => {
-    const lower = v.name.toLowerCase();
-    return !femaleNames.some(f => lower.includes(f));
-  });
+  // Names that identify obviously feminine voices — skipped unless no alternative exists
+  const femininePattern = /\b(female|woman|girl|zira|hazel|susan|catherine|samantha|karen|moira|fiona|tessa|victoria|allison|jenny|aria|emma)\b/i;
 
-  // Priority order — aggressively prefer deep male voices
+  // Priority order — neural/online voices sound dramatically more natural than
+  // traditional phoneme synthesizers. "Natural" and "Online" in the name signal
+  // Microsoft Edge neural TTS; "Google US/UK English" is Chrome's neural engine.
   const priorities = [
-    v => v.name.includes('Mark'),
-    v => v.name.includes('David'),
-    v => v.name.includes('James'),
-    v => v.name.includes('Daniel'),
+    // Microsoft Edge neural voices (most natural, free in Edge/Windows)
+    v => /natural/i.test(v.name) && v.lang.startsWith('en') && !femininePattern.test(v.name),
+    v => /online/i.test(v.name) && v.lang.startsWith('en') && !femininePattern.test(v.name),
+    // Specific high-quality Microsoft neural male voices
+    v => /microsoft.*(guy|davis|tony|ryan|brian|andrew)/i.test(v.name) && v.lang.startsWith('en'),
+    // Google neural voices (Chrome)
+    v => /google us english/i.test(v.name),
+    v => /google uk english male/i.test(v.name),
+    // Traditional voices as fallback
+    v => v.name.includes('Mark') && v.lang.startsWith('en'),
+    v => v.name.includes('David') && v.lang.startsWith('en'),
+    v => v.name.includes('James') && v.lang.startsWith('en'),
+    v => v.name.includes('Daniel') && v.lang.startsWith('en'),
     v => v.name.includes('Alex') && v.lang.startsWith('en'),
-    v => v.name.includes('Google US English'),
     v => v.lang.startsWith('en-US'),
   ];
 
   for (const test of priorities) {
-    const match = voices.find(test);
+    const match = allVoices.find(test);
     if (match) { selectedVoice = match; console.log('Randy voice:', selectedVoice.name, selectedVoice.lang); return; }
   }
 
-  selectedVoice = voices[0] || allVoices[0] || null;
+  selectedVoice = allVoices.find(v => v.lang.startsWith('en')) || allVoices[0] || null;
   if (selectedVoice) console.log('Randy voice:', selectedVoice.name, selectedVoice.lang);
 }
 
