@@ -95,14 +95,17 @@ function positionPanel() {
     const top  = Math.max(20, r.top);
     const left = Math.max(20, r.left - PANEL_WIDTH - GAP);
     const availableHeight = window.innerHeight - top - 20;
+    const matchedHeight = Math.min(r.height, availableHeight);
     panelEl.style.top       = top + 'px';
     panelEl.style.left      = left + 'px';
     panelEl.style.bottom    = 'auto';
     panelEl.style.right     = 'auto';
-    panelEl.style.maxHeight = Math.min(600, availableHeight) + 'px';
+    panelEl.style.height    = matchedHeight + 'px';
+    panelEl.style.maxHeight = matchedHeight + 'px';
     return;
   }
 
+  panelEl.style.height = '';
   panelEl.style.maxHeight = '';
 
   // Collapsed state: appear above+left of the avatar button
@@ -748,7 +751,7 @@ async function submitOppNote(data) {
 // Called by randy.js to keep both toggle buttons in sync.
 
 function updateToggleButtons(active) {
-  ['randy-form-btn', 'randy-form-titlebar-btn'].forEach(id => {
+  ['randy-form-btn', 'randy-form-bottom-btn'].forEach(id => {
     const btn = document.getElementById(id);
     if (btn) btn.classList.toggle('randy-form-btn--active', active);
   });

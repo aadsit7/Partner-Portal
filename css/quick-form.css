@@ -6,7 +6,8 @@
 .qf-panel {
   position: fixed;
   width: 340px;
-  max-height: min(600px, 90vh);
+  height: min(820px, calc(100vh - 40px));
+  max-height: calc(100vh - 40px);
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
@@ -338,9 +339,10 @@
   display: none;
 }
 
-/* Titlebar form button: active highlight */
-#randy-form-titlebar-btn.randy-form-btn--active {
-  background: rgba(255, 255, 255, 0.18);
+/* Bottom-row form button: active highlight */
+#randy-form-bottom-btn.randy-form-btn--active {
+  background: #0000CC;
+  border-color: #0000CC;
   color: #fff;
 }
 

@@ -2165,10 +2165,18 @@ const PENCIL_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" 
 const SPEAKER_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>`;
 const MUTED_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`;
 const FORM_SVG_SM = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
-const FORM_SVG_MD = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
+const FORM_SVG_LG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
 // Sliders icon for the Mode selector — signals "configurable behavior"
 const MODE_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`;
 const CARET_SVG = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>`;
+
+function syncFormToggleButtons() {
+  const active = document.getElementById('qf-panel')?.classList.contains('qf-panel--visible');
+  ['randy-form-btn', 'randy-form-bottom-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('randy-form-btn--active', !!active);
+  });
+}
 
 function createWidget() {
   const root = document.getElementById('randy-root');
@@ -2197,7 +2205,6 @@ function createWidget() {
           <img src="assets/randy-avatar.png" alt="" class="randy-window__titlebar-avatar">
           <span class="randy-window__titlebar-name">Randy</span>
           <div class="randy-window__controls">
-            <button class="randy-window__ctrl" id="randy-form-titlebar-btn" title="Quick Add" aria-label="Quick add opportunity, partner, or event">${FORM_SVG_MD}</button>
             <button class="randy-window__ctrl" id="randy-minimize" title="Minimize" aria-label="Minimize">&#8211;</button>
             <button class="randy-window__ctrl" id="randy-fullscreen-btn" title="Fullscreen" aria-label="Fullscreen">&#9633;</button>
             <button class="randy-window__ctrl" id="randy-close-window" title="Close" aria-label="Close">&times;</button>
@@ -2217,6 +2224,10 @@ function createWidget() {
               <button class="randy-ctrl-btn randy-ctrl-btn--mode" id="randy-mode-btn" aria-label="Change assistant mode" aria-haspopup="menu" aria-expanded="false">${MODE_SVG}<span class="randy-mode-btn__caret">${CARET_SVG}</span></button>
               <span class="randy-btn-label randy-btn-label--mode" id="randy-mode-label">Mode</span>
               <div class="randy-mode-menu" id="randy-mode-menu" role="menu" aria-label="Assistant modes" hidden></div>
+            </div>
+            <div class="randy-btn-wrap">
+              <button class="randy-ctrl-btn randy-ctrl-btn--form" id="randy-form-bottom-btn" title="Quick Add" aria-label="Quick add opportunity, partner, or event">${FORM_SVG_LG}</button>
+              <span class="randy-btn-label">Add</span>
             </div>
             <div class="randy-btn-wrap">
               <button class="randy-ctrl-btn" id="randy-voice-btn" aria-label="Voice mode">${MIC_SVG}</button>
@@ -2262,23 +2273,15 @@ function createWidget() {
     e.stopPropagation();
     initQuickForm();
     toggleQuickForm();
-    const btn = document.getElementById('randy-form-btn');
-    const titleBtn = document.getElementById('randy-form-titlebar-btn');
-    const active = document.getElementById('qf-panel')?.classList.contains('qf-panel--visible');
-    if (btn) btn.classList.toggle('randy-form-btn--active', !!active);
-    if (titleBtn) titleBtn.classList.toggle('randy-form-btn--active', !!active);
+    syncFormToggleButtons();
   });
 
-  // Quick form toggle — titlebar button (visible when window is open)
-  document.getElementById('randy-form-titlebar-btn').addEventListener('click', (e) => {
+  // Quick form toggle — bottom-row button (visible when window is open)
+  document.getElementById('randy-form-bottom-btn').addEventListener('click', (e) => {
     e.stopPropagation();
     initQuickForm();
     toggleQuickForm();
-    const btn = document.getElementById('randy-form-btn');
-    const titleBtn = document.getElementById('randy-form-titlebar-btn');
-    const active = document.getElementById('qf-panel')?.classList.contains('qf-panel--visible');
-    if (btn) btn.classList.toggle('randy-form-btn--active', !!active);
-    if (titleBtn) titleBtn.classList.toggle('randy-form-btn--active', !!active);
+    syncFormToggleButtons();
   });
 
   // Window controls

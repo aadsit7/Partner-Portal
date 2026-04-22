@@ -140,8 +140,8 @@
 .randy-window {
   display: none;
   flex-direction: column;
-  width: 380px;
-  height: 520px;
+  width: min(640px, calc(100vw - 40px));
+  height: min(820px, calc(100vh - 40px));
   border-radius: 12px;
   background: #fff;
   border: 1px solid #e5e7eb;
