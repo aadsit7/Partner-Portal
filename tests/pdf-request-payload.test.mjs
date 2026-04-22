@@ -80,7 +80,8 @@ test('builds correct request: headers, container.skills, tools', async () => {
   const body = JSON.parse(messagesCall.opts.body);
   assert.equal(body.model, 'claude-opus-4-7');
   assert.equal(typeof body.max_tokens, 'number');
-  assert.ok(body.max_tokens >= 4096);
+  // Must be generous enough for the skill to both think and execute Python
+  assert.ok(body.max_tokens >= 16000, `max_tokens should be >=16000, got ${body.max_tokens}`);
 
   // container.skills exactly the two we expect
   assert.ok(body.container, 'container should exist');
@@ -154,6 +155,44 @@ test('follows a pause_turn hop, reusing container.id', async () => {
     assert.equal(body.messages.length, 2,
       'second hop must carry the assistant turn from hop 1');
     assert.equal(body.messages[1].role, 'assistant');
+    return makeSuccessfulMessagesResponse();
+  };
+
+  const out = await callClaudePdfGeneration({
+    skillId: 'skill_test_123',
+    opportunityName: 'TestCo',
+    descriptionText: 'content',
+    descriptionDate: '2026-04-20',
+  });
+  assert.ok(out.pdfBlob);
+});
+
+test('continues on max_tokens by appending a user "Continue." turn', async () => {
+  let hop = 0;
+  globalThis.fetch = async (url, opts) => {
+    if (url.includes('/v1/files/')) return makeFileDownloadResponse();
+    hop++;
+    if (hop === 1) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          stop_reason: 'max_tokens',
+          container: { id: 'container_mt' },
+          content: [{ type: 'text', text: 'starting analysis…' }],
+        }),
+      };
+    }
+    // Second hop: must reuse container, must end with a user "continue"
+    // turn so the model knows to keep going.
+    const body = JSON.parse(opts.body);
+    assert.deepEqual(body.container, { id: 'container_mt' });
+    // [initial user, assistant from hop 1, "Continue." user] = 3 turns
+    assert.equal(body.messages.length, 3,
+      'after max_tokens we must append both the assistant turn and a user continue turn');
+    assert.equal(body.messages[1].role, 'assistant');
+    assert.equal(body.messages[2].role, 'user');
+    assert.match(body.messages[2].content, /continue/i);
     return makeSuccessfulMessagesResponse();
   };
 

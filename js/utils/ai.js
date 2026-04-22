@@ -902,6 +902,11 @@ export async function callClaude(messages, sheetData, userMessage, signal, syste
 const MAP_PDF_BETA_HEADER = 'code-execution-2025-08-25,skills-2025-10-02,files-api-2025-04-14';
 const MAP_PDF_MODEL = 'claude-opus-4-7';
 const MAP_PDF_TIMEOUT_MS = 120_000;
+// Opus 4.7 supports up to 32K output tokens. We need runway for both
+// the skill's internal P.C.P. analysis and the Python that writes the
+// PDF. 8K was too tight — the model burned the budget on analysis and
+// never got to executing the script.
+const MAP_PDF_MAX_TOKENS = 32_000;
 const MAP_PDF_MAX_PAUSE_ITERATIONS = 10;
 
 function acronymOf(name) {
@@ -1037,28 +1042,25 @@ function slugifyForFilename(s) {
 }
 
 function buildMapPdfPrompt(opportunityName, descriptionText, descriptionDate, priorEntries) {
+  // Prior entries are appended as a short context block when present
+  // — deliberately NOT called out as "analyze this deeply", since the
+  // previous prompt did that and the model burned all its tokens on
+  // the P.C.P. walkthrough instead of running the Python.
   const priorBlock = (priorEntries && priorEntries.length > 0)
-    ? `
-
-PRIOR DESCRIPTION ENTRIES (for context only — the CURRENT entry above is what this MAP is being generated from; the entries below help the P.C.P. analysis):
-
-${priorEntries.map((e, i) => `--- Prior entry ${i + 1} (${e.date}) ---\n${e.text}`).join('\n\n')}`
+    ? `\n\nPrior context (for reference only):\n${priorEntries.map(e => `• ${e.date}: ${e.text}`).join('\n')}`
     : '';
 
-  return `Generate a Recast-branded Mutual Action Plan PDF for the opportunity below.
+  return `Generate a Recast-branded MAP PDF for this opportunity using the recast-map-pdf skill.
 
 Opportunity: ${opportunityName}
-Current Description Date: ${descriptionDate}
+Description Date: ${descriptionDate}
 
-CURRENT DESCRIPTION (this is the meeting this MAP is generated from):
+Source content:
+---
+${descriptionText}
+---${priorBlock}
 
-${descriptionText}${priorBlock}
-
-Follow the recast-map-pdf skill exactly. Use the reference_map_pdf.py template in the skill folder as your layout source — adapt the CONTENT constants to this opportunity while keeping the layout, colors, fonts, and spacing from the reference script unchanged. The output must be a 2-page PDF matching the visual style of the reference.
-
-Before generating, silently apply the P.C.P. Model to analyze the content. Run the accuracy verification checklist and the client-safe filtering checklist. If any tool names, dates, or owners are ambiguous in the source text, surface them in a plain-text response section before the PDF file, prefixed with "AMBIGUITY FLAGS:" — do NOT put them in the PDF itself.
-
-Produce the PDF and include it as a generated file in your response.`;
+EXECUTE THE PYTHON SCRIPT in reference_map_pdf.py from the skill. Adapt the CONTENT constants at the top to this opportunity, then call build_pdf() to write the file. Return the generated PDF file. Do not narrate the P.C.P. analysis in text — apply it silently and produce the file. Skip explanatory text blocks unless flagging genuine ambiguities.`;
 }
 
 // Walk the Anthropic response and pull out: (a) any PDF file that was
@@ -1206,7 +1208,7 @@ export async function callClaudePdfGeneration({
   for (let hop = 0; hop <= MAP_PDF_MAX_PAUSE_ITERATIONS; hop++) {
     const body = {
       model: MAP_PDF_MODEL,
-      max_tokens: 8192,
+      max_tokens: MAP_PDF_MAX_TOKENS,
       container,
       tools: [{ type: 'code_execution_20250825', name: 'code_execution' }],
       messages: conversation,
@@ -1222,6 +1224,7 @@ export async function callClaudePdfGeneration({
     if (!response.ok) {
       const errBody = await response.json().catch(() => ({}));
       const msg = errBody.error?.message || `API error: ${response.status}`;
+      console.error(`[MAP PDF] hop ${hop} HTTP error`, { status: response.status, body: errBody });
       const err = new Error(msg);
       err.status = response.status;
       if (/skill/i.test(msg)) err.code = 'MAP_SKILL_ERROR';
@@ -1235,12 +1238,46 @@ export async function callClaudePdfGeneration({
       container = { id: lastResponse.container.id };
     }
 
-    if (lastResponse.stop_reason !== 'pause_turn') break;
+    // Per-hop diagnostics. stop_reason and output_tokens are the two
+    // things we need to see when the generation fails to produce a PDF.
+    console.log(`[MAP PDF] hop ${hop}`, {
+      stop_reason: lastResponse.stop_reason,
+      output_tokens: lastResponse.usage?.output_tokens,
+      input_tokens: lastResponse.usage?.input_tokens,
+      cache_read: lastResponse.usage?.cache_read_input_tokens,
+      content_blocks: Array.isArray(lastResponse.content) ? lastResponse.content.length : 0,
+      content_types: Array.isArray(lastResponse.content)
+        ? lastResponse.content.map(b => b?.type).join(',')
+        : '(none)',
+    });
 
-    // pause_turn: append the assistant turn and loop.
-    conversation.push({ role: 'assistant', content: lastResponse.content });
+    // Only end_turn means "Claude is done". Anything else — pause_turn,
+    // max_tokens, tool_use, stop_sequence — we continue the loop with
+    // the assistant's partial turn appended to messages and the same
+    // container reused. That gives the skill room to finish executing
+    // the Python across multiple hops if it hits the per-turn budget.
+    if (lastResponse.stop_reason === 'end_turn') break;
+
     if (hop === MAP_PDF_MAX_PAUSE_ITERATIONS) {
-      throw new Error('MAP PDF generation exceeded the pause-turn loop limit.');
+      console.warn(`[MAP PDF] hit pause-turn hop limit (${MAP_PDF_MAX_PAUSE_ITERATIONS}) — last stop_reason=${lastResponse.stop_reason}`);
+      throw new Error(`MAP PDF generation exceeded the pause-turn loop limit. Last stop_reason=${lastResponse.stop_reason}`);
+    }
+
+    // Append the assistant turn so the next request carries what the
+    // model produced so far.
+    conversation.push({ role: 'assistant', content: lastResponse.content });
+    // pause_turn is a server-side resumption signal — the API expects
+    // the assistant turn echoed back and will continue tool execution
+    // from where it left off. No user turn needed.
+    //
+    // For any other non-end_turn reason (max_tokens, tool_use, etc.)
+    // the model stopped mid-thought, so we nudge it forward with an
+    // explicit continuation prompt.
+    if (lastResponse.stop_reason !== 'pause_turn') {
+      conversation.push({
+        role: 'user',
+        content: 'Continue. Execute the Python script and produce the PDF file.',
+      });
     }
   }
 
