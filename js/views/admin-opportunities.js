@@ -113,6 +113,36 @@ function getPartnerName(partnerId) {
   return p ? p.display_name : partnerId;
 }
 
+// Shared between the details modal (inline edit) and the full edit modal.
+function computeLeadSourceOptions(partnerId) {
+  const options = [{ value: 'salesperson', label: 'Salesperson Created' }];
+  if (!cachedEvents || !partnerId) return options;
+
+  const today = new Date().toISOString().split('T')[0];
+  const relevantEvents = cachedEvents.filter(evt => {
+    if (evt.partner_id && evt.partner_id !== partnerId) return false;
+    if (evt.status === 'Completed') return true;
+    if (evt.status === 'Cancelled') return false;
+    const endDate = evt.end_date || evt.event_date;
+    if (endDate && endDate < today) return true;
+    if (evt.status === 'In Progress') return true;
+    return false;
+  });
+
+  relevantEvents
+    .sort((a, b) => (b.event_date || '').localeCompare(a.event_date || ''))
+    .forEach(evt => {
+      const typeLabel = evt.event_type ? `[${evt.event_type}]` : '';
+      const dateLabel = evt.event_date ? ` - ${formatDate(evt.event_date)}` : '';
+      options.push({
+        value: evt.event_id,
+        label: `${typeLabel} ${evt.title}${dateLabel}`,
+      });
+    });
+
+  return options;
+}
+
 // ============================================
 // Date Range Inputs (From / To)
 // ============================================
@@ -679,6 +709,233 @@ function detailRow(label, value) {
   );
 }
 
+// ---------- Details modal v2: badges, hero, inline edit ----------
+
+function slugifyToken(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function statusBadge(value) {
+  const label = value || 'Unknown';
+  const mod = slugifyToken(label) || 'unknown';
+  return el('span', { class: `status-pill status-pill--${mod}` },
+    el('span', { class: 'status-pill__dot' }),
+    label,
+  );
+}
+
+function stageBadge(value) {
+  const label = value || 'Unknown';
+  const mod = slugifyToken(label) || 'unknown';
+  return el('span', { class: `stage-pill stage-pill--${mod}` }, label);
+}
+
+// Persist the full opportunity row back to Sheets with the current in-memory
+// values. Used by inline edits; mirrors the column order from the edit modal.
+async function saveOppRow(opp) {
+  const values = [
+    opp.opportunity_id,
+    opp.partner_id || '',
+    opp.deal_name || '',
+    opp.customer_name || '',
+    opp.deal_value ?? '',
+    opp.status || 'Registered',
+    opp.stage || '',
+    opp.expected_close || '',
+    opp.description || '',
+    opp.created_at || nowISO(),
+    nowISO(),
+    '',
+    opp.lead_source || 'salesperson',
+  ];
+  opp.updated_at = values[10];
+  if (isConfigured()) {
+    await updateRow(CONFIG.SHEET_OPPORTUNITIES, opp._rowIndex, values);
+  } else {
+    updateDemoRow(CONFIG.SHEET_OPPORTUNITIES, opp._rowIndex, values);
+  }
+}
+
+// Build an inline-editable field card.
+//
+// spec: { key, label, type, getValue, setValue, renderValue, getOptions?, validate? }
+//   - type: 'text' | 'number' | 'date' | 'select'
+//   - getValue(): current raw value on opp
+//   - setValue(v): mutate opp, return normalized value or throw for invalid
+//   - renderValue(v): returns a Node (badge, formatted text, etc.)
+//   - getOptions(): for 'select', returns [{value, label}]
+function editableField(opp, spec, onChange) {
+  const valueHolder = el('div', { class: 'field-card__value' });
+  const pencil = el('span', {
+    class: 'field-card__pencil',
+    html: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M11.5 2.5a1.41 1.41 0 0 1 2 2L5 13l-3 .75L2.75 11l8.75-8.5Z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  });
+  const card = el('div', {
+    class: 'field-card',
+    tabindex: '0',
+    role: 'button',
+    'aria-label': `Edit ${spec.label}`,
+  },
+    el('div', { class: 'field-card__label' },
+      el('span', {}, spec.label),
+      pencil,
+    ),
+    valueHolder,
+  );
+
+  const renderDisplay = () => {
+    const raw = spec.getValue();
+    valueHolder.replaceChildren();
+    const rendered = spec.renderValue ? spec.renderValue(raw) : null;
+    if (rendered instanceof Node) {
+      valueHolder.appendChild(rendered);
+    } else {
+      valueHolder.appendChild(document.createTextNode(
+        rendered != null && rendered !== '' ? String(rendered) : '—',
+      ));
+    }
+    card.classList.remove('field-card--editing');
+  };
+
+  let editing = false;
+  const enterEdit = () => {
+    if (editing) return;
+    editing = true;
+    card.classList.add('field-card--editing');
+
+    const current = spec.getValue();
+    let input;
+    if (spec.type === 'select') {
+      input = document.createElement('select');
+      input.className = 'field-card__input field-card__input--select';
+      const options = spec.getOptions ? spec.getOptions() : [];
+      options.forEach(opt => {
+        const o = document.createElement('option');
+        o.value = opt.value;
+        o.textContent = opt.label;
+        input.appendChild(o);
+      });
+      input.value = current == null ? '' : String(current);
+    } else {
+      input = document.createElement('input');
+      input.className = 'field-card__input';
+      input.type = spec.type === 'number' ? 'number'
+        : spec.type === 'date' ? 'date'
+        : 'text';
+      if (spec.type === 'number') { input.min = '0'; input.step = '0.01'; }
+      input.value = current == null ? '' : String(current);
+    }
+
+    valueHolder.replaceChildren(input);
+    input.focus();
+    if (typeof input.select === 'function' && spec.type !== 'date' && spec.type !== 'select') {
+      input.select();
+    }
+
+    let settled = false;
+    const commit = async () => {
+      if (settled) return;
+      settled = true;
+      const next = input.value;
+      const prev = spec.getValue();
+      if (String(next) === String(prev == null ? '' : prev)) {
+        editing = false;
+        renderDisplay();
+        return;
+      }
+      try {
+        spec.setValue(next);
+      } catch (err) {
+        showToast(err.message || 'Invalid value', 'error');
+        editing = false;
+        renderDisplay();
+        return;
+      }
+      try {
+        await saveOppRow(opp);
+        showToast('Updated', 'success');
+        editing = false;
+        renderDisplay();
+        if (onChange) onChange(spec.key);
+      } catch (err) {
+        // Revert on failure
+        spec.setValue(prev == null ? '' : prev);
+        showToast(err.message || 'Save failed', 'error');
+        editing = false;
+        renderDisplay();
+      }
+    };
+    const cancel = () => {
+      if (settled) return;
+      settled = true;
+      editing = false;
+      renderDisplay();
+    };
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancel(); input.blur(); }
+    });
+    if (spec.type === 'select') {
+      // Commit immediately on change for selects — no need to blur.
+      input.addEventListener('change', () => input.blur());
+    }
+  };
+
+  card.addEventListener('click', enterEdit);
+  card.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); enterEdit(); }
+  });
+
+  renderDisplay();
+  return { element: card, refresh: renderDisplay };
+}
+
+function buildOppDetailsHero(opp, refs) {
+  // refs is a map of { stage, status, deal_value } field handles so inline
+  // edits to those values live-update the hero and the grid at the same time.
+  const valueEl = el('div', { class: 'details-hero__value' },
+    formatCurrency(parseFloat(opp.deal_value) || 0),
+  );
+  const stageHolder = el('span', { class: 'details-hero__badge-slot' }, stageBadge(opp.stage));
+  const statusHolder = el('span', { class: 'details-hero__badge-slot' }, statusBadge(opp.status));
+
+  const customerMeta = el('span', { class: 'details-hero__meta-item' },
+    el('span', { class: 'details-hero__meta-label' }, 'Customer'),
+    el('span', { class: 'details-hero__meta-value' }, opp.customer_name || '—'),
+  );
+  const partnerMeta = el('span', { class: 'details-hero__meta-item' },
+    el('span', { class: 'details-hero__meta-label' }, 'Partner'),
+    el('span', { class: 'details-hero__meta-value' }, getPartnerName(opp.partner_id) || '—'),
+  );
+  const closeMeta = el('span', { class: 'details-hero__meta-item' },
+    el('span', { class: 'details-hero__meta-label' }, 'Expected Close'),
+    el('span', { class: 'details-hero__meta-value' },
+      opp.expected_close ? formatDate(opp.expected_close) : '—'),
+  );
+
+  const hero = el('div', { class: 'details-hero' },
+    el('div', { class: 'details-hero__top' },
+      el('div', { class: 'details-hero__badges' }, stageHolder, statusHolder),
+      valueEl,
+    ),
+    el('div', { class: 'details-hero__meta' }, customerMeta, partnerMeta, closeMeta),
+  );
+
+  return {
+    element: hero,
+    refresh: () => {
+      valueEl.textContent = formatCurrency(parseFloat(opp.deal_value) || 0);
+      stageHolder.replaceChildren(stageBadge(opp.stage));
+      statusHolder.replaceChildren(statusBadge(opp.status));
+      customerMeta.lastChild.textContent = opp.customer_name || '—';
+      partnerMeta.lastChild.textContent = getPartnerName(opp.partner_id) || '—';
+      closeMeta.lastChild.textContent = opp.expected_close ? formatDate(opp.expected_close) : '—';
+    },
+  };
+}
+
 function buildDetailsDescriptionsSection(descriptions, options = {}) {
   const { selectionMode = false, selected = null, onToggle = null } = options;
   const list = el('div', { class: 'details-modal__descriptions' });
@@ -891,6 +1148,22 @@ function setupDescriptionsSelection({ descriptions, copyBtn, generateBtn, toolba
   }
 }
 
+function fileExtensionOf(name) {
+  const m = /\.([a-z0-9]+)$/i.exec(String(name || '').trim());
+  return m ? m[1].toLowerCase() : '';
+}
+
+function fileKindLabel(ext) {
+  const map = {
+    pdf: 'PDF', doc: 'DOC', docx: 'DOC',
+    xls: 'XLS', xlsx: 'XLS', csv: 'CSV',
+    ppt: 'PPT', pptx: 'PPT',
+    png: 'IMG', jpg: 'IMG', jpeg: 'IMG', gif: 'IMG', webp: 'IMG',
+    txt: 'TXT', md: 'MD',
+  };
+  return map[ext] || (ext ? ext.toUpperCase().slice(0, 4) : 'FILE');
+}
+
 function buildDetailsDocumentsSection(files) {
   const list = el('div', { class: 'documents-list' });
 
@@ -900,8 +1173,13 @@ function buildDetailsDocumentsSection(files) {
   }
 
   files.forEach(file => {
+    const ext = fileExtensionOf(file.file_name);
+    const kind = fileKindLabel(ext);
+    const badge = el('span', {
+      class: `document-row__badge document-row__badge--${kind.toLowerCase()}`,
+    }, kind);
     list.appendChild(el('div', { class: 'document-row' },
-      el('span', { class: 'document-row__icon', html: fileIconSvg() }),
+      badge,
       el('a', {
         href: file.drive_url || '#',
         target: '_blank',
@@ -1128,23 +1406,118 @@ export async function openOppDetailsModal(opp) {
 
   const editBtn = el('button', {
     class: 'details-modal__edit-btn',
+    title: 'Open full editor (E)',
     onClick: () => {
       closeModal();
       // Wait for close animation before opening edit modal
       setTimeout(() => openOppModal(opp, document.getElementById('view-container')), 260);
     },
-  }, 'Edit');
+  }, 'Edit all');
 
-  const grid = el('div', { class: 'details-modal__grid' },
-    detailRow('Deal Name', opp.deal_name),
-    detailRow('Customer Name', opp.customer_name),
-    detailRow('Partner', getPartnerName(opp.partner_id)),
-    detailRow('Deal Value', formatCurrency(parseFloat(opp.deal_value) || 0)),
-    detailRow('Expected Close', opp.expected_close ? formatDate(opp.expected_close) : '—'),
-    detailRow('Stage', opp.stage || '—'),
-    detailRow('Status', opp.status || '—'),
-    detailRow('Lead Source', getLeadSourceDisplay(opp)),
-  );
+  const expandIconSvg = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const collapseIconSvg = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13.5 6.5h-4v-4M13.5 2.5 9 7M2.5 9.5h4v4M2.5 13.5 7 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const fullscreenBtn = el('button', {
+    class: 'details-modal__fullscreen-btn',
+    title: 'Toggle full screen (F)',
+    'aria-label': 'Toggle full screen',
+    html: expandIconSvg,
+  });
+
+  // Inline-editable field specs ----------------------------------------
+  const fieldHandles = {};
+  let listDirty = false;
+  const refreshDependentViews = (key) => {
+    listDirty = true;
+    if (heroHandle) heroHandle.refresh();
+    // Keep every field card in sync (partner change affects lead source label, etc.)
+    // Don't re-render the field that just committed — its own code handles it.
+    Object.entries(fieldHandles).forEach(([specKey, h]) => {
+      if (h && specKey !== key) h.refresh();
+    });
+    // Update the modal title when the deal name changes.
+    if (key === 'deal_name' && modalResult) {
+      const titleEl = modalResult.element.querySelector('.modal__title');
+      if (titleEl) titleEl.textContent = opp.deal_name || 'Opportunity Details';
+    }
+  };
+
+  const partnerOptions = () => (cachedPartners || []).map(p => ({
+    value: p.partner_id,
+    label: p.display_name,
+  }));
+
+  const stageOptions = () => OPP_STAGES.map(s => ({ value: s, label: s }));
+  const statusOptions = () => OPP_STATUSES.map(s => ({ value: s, label: s }));
+  const leadSourceOptionsFor = () => computeLeadSourceOptions(opp.partner_id);
+
+  const fieldSpecs = [
+    {
+      key: 'deal_name', label: 'Deal Name', type: 'text',
+      getValue: () => opp.deal_name,
+      setValue: (v) => { const s = String(v).trim(); if (!s) throw new Error('Deal Name is required'); opp.deal_name = s; },
+      renderValue: (v) => v || '—',
+    },
+    {
+      key: 'customer_name', label: 'Customer Name', type: 'text',
+      getValue: () => opp.customer_name,
+      setValue: (v) => { const s = String(v).trim(); if (!s) throw new Error('Customer Name is required'); opp.customer_name = s; },
+      renderValue: (v) => v || '—',
+    },
+    {
+      key: 'partner_id', label: 'Partner', type: 'select',
+      getValue: () => opp.partner_id,
+      setValue: (v) => { if (!v) throw new Error('Partner is required'); opp.partner_id = v;
+        // Reset lead_source if it no longer applies to the new partner.
+        const stillValid = computeLeadSourceOptions(v).some(o => o.value === opp.lead_source);
+        if (!stillValid) opp.lead_source = 'salesperson';
+      },
+      getOptions: partnerOptions,
+      renderValue: () => getPartnerName(opp.partner_id) || '—',
+    },
+    {
+      key: 'deal_value', label: 'Deal Value', type: 'number',
+      getValue: () => opp.deal_value,
+      setValue: (v) => { const n = parseFloat(v); if (!isFinite(n) || n < 0) throw new Error('Deal Value must be a positive number'); opp.deal_value = n; },
+      renderValue: (v) => formatCurrency(parseFloat(v) || 0),
+    },
+    {
+      key: 'expected_close', label: 'Expected Close', type: 'date',
+      getValue: () => opp.expected_close,
+      setValue: (v) => { if (!v) throw new Error('Expected Close is required'); opp.expected_close = v; },
+      renderValue: (v) => v ? formatDate(v) : '—',
+    },
+    {
+      key: 'stage', label: 'Stage', type: 'select',
+      getValue: () => opp.stage,
+      setValue: (v) => { opp.stage = v; },
+      getOptions: stageOptions,
+      renderValue: (v) => stageBadge(v),
+    },
+    {
+      key: 'status', label: 'Status', type: 'select',
+      getValue: () => opp.status,
+      setValue: (v) => { opp.status = v; },
+      getOptions: statusOptions,
+      renderValue: (v) => statusBadge(v),
+    },
+    {
+      key: 'lead_source', label: 'Lead Source', type: 'select',
+      getValue: () => opp.lead_source || 'salesperson',
+      setValue: (v) => { opp.lead_source = v || 'salesperson'; },
+      getOptions: leadSourceOptionsFor,
+      renderValue: () => getLeadSourceDisplay(opp),
+    },
+  ];
+
+  let heroHandle; // forward ref so specs can refresh it
+  heroHandle = buildOppDetailsHero(opp);
+
+  const gridChildren = fieldSpecs.map(spec => {
+    const handle = editableField(opp, spec, (changedKey) => refreshDependentViews(changedKey));
+    fieldHandles[spec.key] = handle;
+    return handle.element;
+  });
+  const grid = el('div', { class: 'details-modal__grid' }, ...gridChildren);
 
   const descriptionsSlot = el('div', { class: 'details-modal__descriptions-slot' },
     buildDetailsLoadingPlaceholder(),
@@ -1169,7 +1542,14 @@ export async function openOppDetailsModal(opp) {
   );
 
   const content = el('div', { class: 'details-modal' },
-    grid,
+    heroHandle.element,
+    el('div', { class: 'details-modal__section details-modal__section--fields' },
+      el('div', { class: 'details-modal__section-header' },
+        el('h3', { class: 'details-modal__section-title' }, 'Details'),
+        el('span', { class: 'details-modal__section-hint' }, 'Click any field to edit'),
+      ),
+      grid,
+    ),
     el('div', { class: 'details-modal__section' },
       el('div', { class: 'details-modal__section-header' },
         el('h3', { class: 'details-modal__section-title' }, 'Descriptions'),
@@ -1193,12 +1573,46 @@ export async function openOppDetailsModal(opp) {
     content,
     className: 'modal--wide modal--details',
     footer: el('button', { class: 'details-modal__close-btn', onClick: closeModal }, 'Close'),
+    onClose: () => { if (listDirty) reRender(); },
   });
 
-  // Inject the edit button into the modal header, before the close X
+  // Inject the edit button + fullscreen toggle into the modal header,
+  // before the close X.
   const headerEl = modalResult.element.querySelector('.modal__header');
   const closeX = headerEl.querySelector('.modal__close');
   headerEl.insertBefore(editBtn, closeX);
+  headerEl.insertBefore(fullscreenBtn, closeX);
+
+  // Fullscreen toggle ------------------------------------------------
+  const modalBox = modalResult.element.querySelector('.modal');
+  let isFullscreen = false;
+  const setFullscreen = (next) => {
+    isFullscreen = next;
+    modalBox.classList.toggle('modal--fullscreen', next);
+    fullscreenBtn.innerHTML = next ? collapseIconSvg : expandIconSvg;
+    fullscreenBtn.title = next ? 'Exit full screen (F)' : 'Toggle full screen (F)';
+  };
+  fullscreenBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setFullscreen(!isFullscreen);
+  });
+  const shortcutHandler = (e) => {
+    // Ignore when typing into an input/textarea/contentEditable
+    const t = e.target;
+    const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable || t.tagName === 'SELECT');
+    if (typing) return;
+    if (e.key === 'f' || e.key === 'F') { e.preventDefault(); setFullscreen(!isFullscreen); }
+    else if (e.key === 'e' || e.key === 'E') { e.preventDefault(); editBtn.click(); }
+  };
+  document.addEventListener('keydown', shortcutHandler);
+  // Detach when the modal backdrop is removed from the DOM.
+  const detachObserver = new MutationObserver(() => {
+    if (!document.body.contains(modalResult.element)) {
+      document.removeEventListener('keydown', shortcutHandler);
+      detachObserver.disconnect();
+    }
+  });
+  detachObserver.observe(document.getElementById('modal-root'), { childList: true });
 
   // The pill stack attaches to the modal backdrop (which is position:
   // fixed; inset: 0) so an `position: absolute; bottom/right` pill
@@ -1338,38 +1752,7 @@ export async function openOppModal(opp, container, onSaved) {
     label: p.display_name,
   }));
 
-  // Build lead source options based on selected partner
-  function getLeadSourceOptions(partnerId) {
-    const options = [{ value: 'salesperson', label: 'Salesperson Created' }];
-    if (!cachedEvents || !partnerId) return options;
-
-    const today = new Date().toISOString().split('T')[0];
-    const relevantEvents = cachedEvents.filter(evt => {
-      // Include events for this partner or shared events (no partner_id)
-      if (evt.partner_id && evt.partner_id !== partnerId) return false;
-      // Only past/completed events: status is Completed, or end_date has passed and not Cancelled
-      if (evt.status === 'Completed') return true;
-      if (evt.status === 'Cancelled') return false;
-      const endDate = evt.end_date || evt.event_date;
-      if (endDate && endDate < today) return true;
-      // Also include In Progress events (campaigns can source leads while running)
-      if (evt.status === 'In Progress') return true;
-      return false;
-    });
-
-    relevantEvents
-      .sort((a, b) => (b.event_date || '').localeCompare(a.event_date || ''))
-      .forEach(evt => {
-        const typeLabel = evt.event_type ? `[${evt.event_type}]` : '';
-        const dateLabel = evt.event_date ? ` - ${formatDate(evt.event_date)}` : '';
-        options.push({
-          value: evt.event_id,
-          label: `${typeLabel} ${evt.title}${dateLabel}`,
-        });
-      });
-
-    return options;
-  }
+  const getLeadSourceOptions = computeLeadSourceOptions;
 
   // Initial lead source options
   const initialPartnerId = isEdit ? opp.partner_id : '';
