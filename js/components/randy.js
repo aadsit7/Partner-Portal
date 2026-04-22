@@ -2063,17 +2063,42 @@ function updateWidgetUI() {
 const PRESET_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#0891b2'];
 
 function renderPresets() {
+  const section = document.getElementById('randy-presets-section');
   const bar = document.getElementById('randy-presets-bar');
   if (!bar) return;
+
+  // Hide the whole section (label + bar) when no presets are configured.
+  if (section) section.hidden = loadedPresets.length === 0;
+
   bar.innerHTML = '';
+
+  // Always render a "Default" pill first so users have an explicit way to
+  // turn the active mode off instead of having to re-click the same pill.
+  const defaultPill = document.createElement('button');
+  defaultPill.type = 'button';
+  defaultPill.className = 'randy-preset-pill randy-preset-pill--default' + (activePresetId === null ? ' randy-preset-pill--active' : '');
+  defaultPill.title = "Use Randy's default behaviour";
+  defaultPill.setAttribute('aria-pressed', activePresetId === null ? 'true' : 'false');
+  defaultPill.textContent = 'Default';
+  defaultPill.addEventListener('click', () => {
+    if (activePresetId === null) return;
+    activePresetId = null;
+    renderPresets();
+  });
+  bar.appendChild(defaultPill);
+
   loadedPresets.forEach((preset, index) => {
     const color = PRESET_COLORS[index] || '#6b7280';
+    const isActive = preset.prompt_id === activePresetId;
     const pill = document.createElement('button');
-    pill.className = 'randy-preset-pill' + (preset.prompt_id === activePresetId ? ' randy-preset-pill--active' : '');
-    pill.title = preset.label;
+    pill.type = 'button';
+    pill.className = 'randy-preset-pill' + (isActive ? ' randy-preset-pill--active' : '');
+    pill.title = isActive ? `${preset.label} — click to turn off` : `Switch Randy to ${preset.label} mode`;
+    pill.setAttribute('aria-pressed', isActive ? 'true' : 'false');
     pill.style.setProperty('--pill-color', color);
     const dot = document.createElement('span');
-    dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;`;
+    dot.className = 'randy-preset-pill__dot';
+    dot.style.background = color;
     pill.appendChild(dot);
     pill.appendChild(document.createTextNode('\u00a0' + preset.label));
     pill.addEventListener('click', () => {
@@ -2082,6 +2107,33 @@ function renderPresets() {
     });
     bar.appendChild(pill);
   });
+
+  updatePresetIndicator();
+}
+
+// Keep the titlebar indicator in sync with the active preset so users always
+// see which mode Randy is in, even after scrolling past the pill row.
+function updatePresetIndicator() {
+  const indicator = document.getElementById('randy-preset-indicator');
+  if (!indicator) return;
+  const activeIdx = loadedPresets.findIndex(p => p.prompt_id === activePresetId);
+  if (activeIdx === -1) {
+    indicator.hidden = true;
+    indicator.textContent = '';
+    return;
+  }
+  const preset = loadedPresets[activeIdx];
+  const color = PRESET_COLORS[activeIdx] || '#6b7280';
+  indicator.hidden = false;
+  indicator.innerHTML = '';
+  const dot = document.createElement('span');
+  dot.className = 'randy-preset-indicator__dot';
+  dot.style.background = color;
+  const label = document.createElement('span');
+  label.className = 'randy-preset-indicator__label';
+  label.textContent = preset.label;
+  indicator.appendChild(dot);
+  indicator.appendChild(label);
 }
 
 // ── Widget DOM ────────────────────────────────────────────────────
@@ -2118,6 +2170,7 @@ function createWidget() {
         <div class="randy-window__titlebar" id="randy-titlebar">
           <img src="assets/randy-avatar.png" alt="" class="randy-window__titlebar-avatar">
           <span class="randy-window__titlebar-name">Randy</span>
+          <span class="randy-preset-indicator" id="randy-preset-indicator" hidden aria-live="polite"></span>
           <div class="randy-window__controls">
             <button class="randy-window__ctrl" id="randy-form-titlebar-btn" title="Quick Add" aria-label="Quick add opportunity, partner, or event">${FORM_SVG_MD}</button>
             <button class="randy-window__ctrl" id="randy-minimize" title="Minimize" aria-label="Minimize">&#8211;</button>
@@ -2128,7 +2181,10 @@ function createWidget() {
 
         <div class="randy-window__chat" id="randy-chat"></div>
 
-        <div class="randy-presets-bar" id="randy-presets-bar"></div>
+        <div class="randy-presets-section" id="randy-presets-section" hidden>
+          <span class="randy-presets-label">Mode</span>
+          <div class="randy-presets-bar" id="randy-presets-bar" role="toolbar" aria-label="Randy assistant modes"></div>
+        </div>
 
         <div class="randy-status-bar" id="randy-status-bar">
           <span class="randy-status-dot randy-status-dot--ready" id="randy-status-dot"></span>
