@@ -1063,46 +1063,76 @@ Produce the PDF and include it as a generated file in your response.`;
 
 // Walk the Anthropic response and pull out: (a) any PDF file that was
 // produced via code_execution, (b) the AMBIGUITY FLAGS operator hint.
-function extractPdfAndFlags(messageContent) {
-  let fileId = null;
-  let filename = null;
+//
+// Skills + code_execution responses have shipped under multiple shapes
+// as the beta evolves — file IDs have appeared inside
+// `code_execution_tool_result.content[]`, `bash_code_execution_tool_result.content[]`,
+// as standalone `container_upload` blocks, and as entries on
+// `response.container.files[]` / `response.generated_files[]`. Rather
+// than enumerate every known shape (which bit-rots the next time the
+// beta ships a tweak), we deep-walk the entire response object and
+// collect anything that looks like `{ file_id, filename? }`, then
+// prefer PDF filenames if present.
+function extractPdfAndFlags(response) {
   const textChunks = [];
+  const candidates = [];
+  const visited = new WeakSet();
 
-  const visit = (block) => {
-    if (!block || typeof block !== 'object') return;
-    if (block.type === 'text' && typeof block.text === 'string') {
-      textChunks.push(block.text);
+  function walk(node) {
+    if (!node || typeof node !== 'object' || visited.has(node)) return;
+    visited.add(node);
+
+    if (typeof node.type === 'string' && node.type === 'text' && typeof node.text === 'string') {
+      textChunks.push(node.text);
     }
-    // Code-execution tool result: contains a `content` array which may hold
-    // file blocks. Shape of code_execution results has evolved across SDK
-    // versions; check several candidate fields.
-    if (block.type === 'code_execution_tool_result' || block.type === 'tool_result') {
-      const inner = block.content || block.output?.content;
-      if (Array.isArray(inner)) inner.forEach(visit);
-      if (Array.isArray(block.output?.files)) block.output.files.forEach(visit);
+
+    // Any object that carries a file_id is a candidate. The filename
+    // hint lives under several keys across schema versions — take
+    // whichever we can find, prefer explicit .pdf matches.
+    const fid =
+      (typeof node.file_id === 'string' && node.file_id) ||
+      (node.file && typeof node.file.file_id === 'string' && node.file.file_id) ||
+      (node.file && typeof node.file.id === 'string' && node.file.id) ||
+      null;
+    if (fid) {
+      const nm =
+        node.filename ||
+        node.file?.filename ||
+        node.file?.name ||
+        node.name ||
+        null;
+      candidates.push({ fileId: fid, filename: nm });
     }
-    // Direct file reference blocks.
-    if (block.type === 'container_upload' || block.type === 'file' || block.type === 'code_execution_output_file') {
-      const id = block.file_id || block.id || block.file?.id;
-      const nm = block.filename || block.file?.filename || block.name || null;
-      if (id && /\.pdf$/i.test(nm || '')) {
-        fileId = id;
-        filename = nm;
-      } else if (id && !fileId) {
-        // Fallback: first file if no explicit .pdf
-        fileId = id;
-        filename = nm;
+
+    // Recurse into arrays and nested objects — but skip primitives.
+    for (const val of Object.values(node)) {
+      if (Array.isArray(val)) {
+        for (const item of val) walk(item);
+      } else if (val && typeof val === 'object') {
+        walk(val);
       }
     }
-  };
+  }
 
-  if (Array.isArray(messageContent)) messageContent.forEach(visit);
+  walk(response);
+
+  // Prefer a candidate whose filename ends in .pdf; otherwise take the
+  // first one we found. This handles the case where the PDF's filename
+  // is embedded alongside, say, an intermediate log file.
+  const pdf = candidates.find(c => /\.pdf$/i.test(c.filename || ''));
+  const pick = pdf || candidates[0] || null;
 
   const joined = textChunks.join('\n');
   const flagMatch = joined.match(/AMBIGUITY FLAGS:\s*([\s\S]+?)(?:\n\n|$)/i);
   const ambiguityFlags = flagMatch ? flagMatch[1].trim() : '';
 
-  return { fileId, filename, ambiguityFlags };
+  return {
+    fileId: pick?.fileId || null,
+    filename: pick?.filename || null,
+    ambiguityFlags,
+    // Surfaced on the error path for console diagnostics.
+    candidateCount: candidates.length,
+  };
 }
 
 /**
@@ -1214,11 +1244,16 @@ export async function callClaudePdfGeneration({
     }
   }
 
-  const { fileId, filename: apiFilename, ambiguityFlags } = extractPdfAndFlags(lastResponse?.content || []);
+  const { fileId, filename: apiFilename, ambiguityFlags, candidateCount } = extractPdfAndFlags(lastResponse);
 
   if (!fileId) {
+    // Dump the full response shape so we can see exactly what Anthropic
+    // returned. Paste this back into the bug report if this ever fires.
+    console.log('[MAP PDF] no file_id extracted — candidates found:', candidateCount);
+    console.log('[MAP PDF] Full PDF generation response:', JSON.stringify(lastResponse, null, 2));
     const err = new Error('Claude did not return a PDF file in its response.');
     err.code = 'MAP_PDF_MISSING';
+    err.rawResponse = lastResponse;
     throw err;
   }
 
@@ -1232,9 +1267,21 @@ export async function callClaudePdfGeneration({
     signal: composedSignal,
   });
   if (!fileResp.ok) {
+    // Capture the response body so we can tell apart 404 (missing file)
+    // from 403 (auth/scope) from 400 (bad beta header) etc. Do NOT blow
+    // up if the body can't be read.
+    let errorBody = '';
+    try { errorBody = await fileResp.text(); } catch { /* ignore */ }
+    console.error('[MAP PDF] File download failed', {
+      fileId,
+      status: fileResp.status,
+      statusText: fileResp.statusText,
+      body: errorBody.slice(0, 2000),
+    });
     const err = new Error(`Failed to download PDF (HTTP ${fileResp.status}).`);
     err.code = 'MAP_PDF_DOWNLOAD_FAILED';
     err.status = fileResp.status;
+    err.responseBody = errorBody;
     throw err;
   }
   const pdfBlob = await fileResp.blob();
