@@ -102,8 +102,13 @@ if (!client?.beta?.skills?.create || !client?.beta?.skills?.versions?.create) {
   );
 }
 
+// The API requires every file to live under a shared top-level
+// directory, with SKILL.md at the root of that directory. Prefix each
+// filename with the skill-folder name so the server sees a coherent
+// structure like "recast-map-pdf/SKILL.md".
+const SKILL_FOLDER_PREFIX = 'recast-map-pdf';
 const files = await Promise.all(
-  fileEntries.map(({ name, buf }) => toFile(buf, name))
+  fileEntries.map(({ name, buf }) => toFile(buf, `${SKILL_FOLDER_PREFIX}/${name}`))
 );
 
 // ── Decide: create new, or publish new version? ─────────────
