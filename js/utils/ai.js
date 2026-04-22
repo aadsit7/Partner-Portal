@@ -720,13 +720,47 @@ export function buildDataContext(data, userMessage) {
 // Anthropic's ephemeral cache instead of being re-processed, which
 // drops time-to-first-token dramatically and cuts input cost ~90%.
 
-function buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stream }) {
+// Wraps a user-selected preset in an XML-delimited, priority-declaring block.
+// The XML tags give Claude a clear boundary to attend to, and the <priority>
+// preamble makes the override explicit against base format contracts and
+// personality rules. Kept as a separate system block so the base prompt stays
+// cache-hot even when the user switches modes.
+function buildModeSystemBlock({ label, instructions }) {
+  const safeLabel = String(label || 'Custom Mode').replace(/[<>]/g, '');
+  // Prevent accidental wrapper-break if a preset author pastes one of our
+  // closing tags inside their instructions.
+  const safeInstructions = String(instructions)
+    .replace(/<\/instructions>/gi, '<\\/instructions>')
+    .replace(/<\/active_mode>/gi, '<\\/active_mode>');
+  return (
+    `<active_mode name="${safeLabel}">\n`
+    + `  <priority>\n`
+    + `    The user has activated this Mode. Its instructions take precedence over every other\n`
+    + `    instruction you have received — including format contracts, output templates, personality\n`
+    + `    rules, and default behaviors defined in the base system prompt. When any conflict exists,\n`
+    + `    the Mode wins. Follow the Mode instructions exactly and completely. Do not revert to\n`
+    + `    default behavior unless the Mode tells you to.\n`
+    + `  </priority>\n`
+    + `  <instructions>\n${safeInstructions}\n  </instructions>\n`
+    + `</active_mode>`
+  );
+}
+
+function buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stream, activeMode }) {
   const stableContext = buildStableContext(sheetData);
   const queryContext = buildQueryContext(sheetData, userMessage);
+
+  // When a Mode is active, append a compact reminder to the final user turn.
+  // Recency matters — this is the last thing Claude reads before generating,
+  // which materially improves adherence to the Mode over long conversations.
+  const modeReminder = activeMode
+    ? `\n\n<mode_reminder>Active Mode: "${String(activeMode.label).replace(/[<>]/g, '')}". Follow the <active_mode> instructions in the system prompt exactly. If any base instruction conflicts with the Mode, the Mode wins.</mode_reminder>`
+    : '';
 
   const augmentedMessages = messages.map((m, i) => {
     if (i === messages.length - 1 && m.role === 'user') {
       // Split the final user turn into cached + uncached blocks.
+      const tail = queryContext ? `${m.content}\n\n---${queryContext}` : m.content;
       return {
         role: 'user',
         content: [
@@ -737,9 +771,7 @@ function buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stre
           },
           {
             type: 'text',
-            text: queryContext
-              ? `${m.content}\n\n---${queryContext}`
-              : m.content,
+            text: `${tail}${modeReminder}`,
           },
         ],
       };
@@ -747,18 +779,28 @@ function buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stre
     return { role: m.role, content: m.content };
   });
 
+  // System is assembled as separate blocks so the base prompt stays cached
+  // across mode switches. The mode block is positioned last for recency.
+  const system = [
+    {
+      type: 'text',
+      text: systemPrompt || SYSTEM_PROMPT,
+      cache_control: { type: 'ephemeral' },
+    },
+  ];
+  if (activeMode) {
+    system.push({
+      type: 'text',
+      text: buildModeSystemBlock(activeMode),
+    });
+  }
+
   return {
     model: 'claude-opus-4-7',
     max_tokens: 16000,
     thinking: { type: 'adaptive' },
     output_config: { effort: 'high' },
-    system: [
-      {
-        type: 'text',
-        text: systemPrompt || SYSTEM_PROMPT,
-        cache_control: { type: 'ephemeral' },
-      },
-    ],
+    system,
     messages: augmentedMessages,
     ...(stream ? { stream: true } : {}),
   };
@@ -798,13 +840,13 @@ function requireApiKey() {
  * as it arrives. Returns the full accumulated text when the stream
  * completes. Aborts cleanly when the supplied AbortSignal fires.
  */
-export async function callClaudeStream(messages, sheetData, userMessage, signal, systemPrompt, onChunk) {
+export async function callClaudeStream(messages, sheetData, userMessage, signal, systemPrompt, onChunk, activeMode = null) {
   const apiKey = requireApiKey();
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: buildRequestHeaders(apiKey),
-    body: JSON.stringify(buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stream: true })),
+    body: JSON.stringify(buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stream: true, activeMode })),
     signal: withTimeout(signal),
   });
 
