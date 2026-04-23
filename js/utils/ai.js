@@ -1045,6 +1045,7 @@ export async function getOpportunityDescription(opportunityHint) {
     .map(d => ({
       date: d.description_date || d.created_at || '',
       text: stripHtml(d.description_text || '').trim(),
+      category: d.category || '',
     }))
     .filter(d => d.text.length > 0)
     .sort((a, b) => {
@@ -1119,13 +1120,60 @@ const MAP_JSON_SCHEMA_EXAMPLE = `{
   ]
 }`;
 
+// Generates the 5 structure-awareness directives from Describe Intelligence V1.
+// Injected into both prompt builders between the opportunity metadata block and
+// the source content. When none of the entries carry a category (legacy free-form
+// notes), the block still includes all directives with a graceful fallback note so
+// the Golden Rule is never weakened.
+function buildCategoryGuidanceBlock(entries) {
+  const list = entries || [];
+  const hasAnyCategory = list.some(
+    e => e.category === 'meeting_recap' || e.category === 'opportunity_note'
+  );
+  const hasUncategorized = list.some(
+    e => !e.category || (e.category !== 'meeting_recap' && e.category !== 'opportunity_note')
+  );
+
+  const uncategorizedNote = hasUncategorized
+    ? '\n- Unclassified descriptions (no category) are legacy free-form notes — extract what you can from them.'
+    : '';
+
+  return `DESCRIPTION STRUCTURE GUIDANCE:
+
+Category awareness:
+- "meeting_recap" entries represent actual customer interactions — treat these as primary source material for anything customer-facing.
+- "opportunity_note" entries represent internal analysis, strategy, and asynchronous updates — treat these as supplementary context.${uncategorizedNote}
+
+Section awareness for standardized entries:
+- meeting_recap sections: Attendees, Discussion Points, Action Items / Next Steps, Notes.
+- opportunity_note sections: header, main content, Facts / Commitments, Notes / Observations.
+- When extracting information, read from the section most likely to contain it rather than scanning the full text as a blob.
+
+Voice separation:
+- The "Notes" section (in meeting_recap) and "Notes / Observations" section (in opportunity_note) contain the user's subjective commentary and strategic interpretation.
+- DO NOT include this content in customer-facing MAP sections (meeting_recap bullets, stakeholders, what_changes).
+- DO use it to inform internal framing and to flag open questions or risks in the mutual_action_plan.
+
+Chronological weighting:
+- When two standardized descriptions contradict each other, the more recent one reflects the current state.
+- Preserve the earlier position as historical context only if it is materially relevant to the deal narrative.
+
+Commitment tracking:
+- "Action Items / Next Steps" from meeting_recaps and "Facts / Commitments" from opportunity_notes are both commitments.
+- Aggregate them chronologically in mutual_action_plan and flag any that appear unaddressed in later descriptions.${hasAnyCategory ? '' : '\n\nNote: none of the source entries carry a standardized category. Treat all content as unclassified free-form notes and apply the Golden Rule as normal.'}`;
+}
+
 function buildMapJsonPrompt(opportunity, descriptionEntries) {
   const latest = descriptionEntries?.[0];
   const primaryDate = latest?.date || new Date().toISOString().slice(0, 10);
   const primaryText = latest?.content || latest?.text || '';
+  const primaryCategory = latest?.category || '';
   const priorEntries = (descriptionEntries || []).slice(1, 5);
   const priorBlock = priorEntries.length > 0
-    ? `\n\nPrior context (earlier meetings, for reference only):\n${priorEntries.map(e => `• ${e.date}: ${e.content || e.text || ''}`).join('\n')}`
+    ? `\n\nPrior context (earlier meetings, for reference only):\n${priorEntries.map(e => {
+        const cat = e.category ? ` [${e.category}]` : '';
+        return `• ${e.date}${cat}: ${e.content || e.text || ''}`;
+      }).join('\n')}`
     : '';
 
   const extras = [];
@@ -1135,6 +1183,11 @@ function buildMapJsonPrompt(opportunity, descriptionEntries) {
   if (opportunity?.expectedClose)  extras.push(`Expected close: ${opportunity.expectedClose}`);
   if (opportunity?.partner)        extras.push(`Partner: ${opportunity.partner}`);
   const extrasBlock = extras.length > 0 ? `\n\n${extras.join('\n')}` : '';
+
+  const categoryHeader = primaryCategory
+    ? `[CATEGORY: ${primaryCategory}] `
+    : '';
+  const guidanceBlock = buildCategoryGuidanceBlock(descriptionEntries || []);
 
   return `Generate a Mutual Action Plan for the opportunity below and return it as a single JSON object.
 
@@ -1160,9 +1213,11 @@ When uncertain: leave it out. If you can't point to a specific phrase in the sou
 Customer: ${opportunity?.name || opportunity?.customerName || ''}
 Current description date: ${primaryDate}${extrasBlock}
 
+${guidanceBlock}
+
 Source content (most recent meeting / description):
 ---
-${primaryText}
+${categoryHeader}${primaryText}
 ---${priorBlock}
 
 Return ONLY a single valid JSON object. No prose. No markdown. No code fences. No explanation. The object must match this exact shape and field names:
@@ -1406,7 +1461,11 @@ function formatDateHeader(dateRaw) {
 
 function buildMapJsonPromptFromMultiple(opportunity, descriptionEntries) {
   const entries = (descriptionEntries || [])
-    .map(e => ({ date: e?.date || '', content: e?.content || e?.text || '' }))
+    .map(e => ({
+      date: e?.date || '',
+      content: e?.content || e?.text || '',
+      category: e?.category || '',
+    }))
     .filter(e => e.content && String(e.content).trim().length > 0);
 
   // Keep the single-source path behaviourally identical to the voice
@@ -1437,8 +1496,14 @@ function buildMapJsonPromptFromMultiple(opportunity, descriptionEntries) {
 
   const sourceBlocks = sorted.map(e => {
     const header = formatDateHeader(e.date);
-    return `--- DATE: ${header} ---\n${e.content.trim()}`;
+    // Only emit the CATEGORY label for standardized entries — legacy entries
+    // (no category) keep the original date-only header format so callers
+    // that test for the bare "--- DATE: X ---" pattern continue to match.
+    const categoryLabel = e.category ? ` | CATEGORY: ${e.category}` : '';
+    return `--- DATE: ${header}${categoryLabel} ---\n${e.content.trim()}`;
   }).join('\n\n');
+
+  const guidanceBlock = buildCategoryGuidanceBlock(entries);
 
   return `You are generating a Mutual Action Plan for ${customer}. The source material below consists of ${n} separate description entries from the opportunity history, each with its own date. Treat all of these entries as equally important source material. Your job is to synthesize and condense across ALL of them into one cohesive MAP — NOT just the most recent. If the entries contain conflicting information (e.g., an action item marked "pending" in an earlier entry that's "complete" in a later one), the more recent entry wins. Preserve the full spectrum of context: early-phase discovery notes, mid-phase decisions, and late-phase status updates all contribute to the final MAP.
 
@@ -1465,7 +1530,9 @@ Customer: ${customer}
 Generation date: ${todayISO}
 Source entry count: ${n}${extrasBlock}
 
-Source content (${n} description entries, newest first — each prefixed with its date):
+${guidanceBlock}
+
+Source content (${n} description entries, newest first — each prefixed with its date and category):
 ${sourceBlocks}
 
 Return ONLY a single valid JSON object. No prose. No markdown. No code fences. No explanation. The object must match this exact shape and field names:
@@ -1541,6 +1608,7 @@ export async function requestMapPdfJsonFromMultiple(opportunity, descriptionEntr
 export const __mapJsonInternals = {
   buildMapJsonPrompt,
   buildMapJsonPromptFromMultiple,
+  buildCategoryGuidanceBlock,
   parseMapJsonResponse,
 };
 

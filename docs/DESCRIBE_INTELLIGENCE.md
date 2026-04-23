@@ -187,6 +187,53 @@ Deploy a new version of the Apps Script web app after making this change.
 
 ---
 
+---
+
+## How MAP PDF generation uses standardized structure (V2)
+
+Once descriptions are standardized, the MAP PDF generator in `js/utils/ai.js` (`buildMapJsonPrompt` and `buildMapJsonPromptFromMultiple`) uses the `category` field and section structure to produce higher-quality output.
+
+### Detection
+
+A description is considered standardized if its `category` column in the `Opportunity_Descriptions` sheet is non-empty (`meeting_recap` or `opportunity_note`). The data loader already reads this field — no additional fetching is required. Descriptions without a `category` are treated as legacy free-form notes and handled by the same fallback path as today.
+
+### What the MAP generator now tells Claude
+
+Five directives are injected between the opportunity metadata block and the source content in every MAP generation prompt:
+
+1. **Category awareness** — `meeting_recap` entries are primary customer-facing source material; `opportunity_note` entries are supplementary internal context; uncategorized entries are legacy notes.
+
+2. **Section awareness** — for standardized entries, Claude reads from the specific section most likely to hold a given piece of information rather than scanning the full text as a blob.
+
+3. **Voice separation** — the `Notes` (meeting_recap) and `Notes / Observations` (opportunity_note) sections hold the user's subjective commentary. These are excluded from customer-facing MAP sections (meeting recap bullets, stakeholders, what_changes) but may inform the mutual_action_plan.
+
+4. **Chronological weighting** — when two standardized descriptions contradict, the more recent one wins. Earlier data is preserved as historical context only when materially relevant.
+
+5. **Commitment tracking** — "Action Items / Next Steps" from meeting_recaps and "Facts / Commitments" from opportunity_notes are aggregated chronologically in the mutual_action_plan, with unaddressed commitments flagged.
+
+### Fallback behavior
+
+When all descriptions for an opportunity are unclassified, the MAP generator still works — the same directives are included but a fallback note tells Claude to treat all content as legacy free-form notes and extract what it can. Output is no worse than the pre-V2 baseline.
+
+### Source block labelling
+
+Each description entry in the prompt now carries a category label in its date header:
+
+```
+--- DATE: 2026-04-15 | CATEGORY: meeting_recap ---
+[Attendees, Discussion Points, …]
+
+--- DATE: 2026-04-10 | CATEGORY: opportunity_note ---
+[Internal note content…]
+
+--- DATE: 2026-03-28 | CATEGORY: unclassified ---
+[Legacy free-form text…]
+```
+
+This makes temporal conflict resolution transparent to Claude and improves synthesis quality when multiple entries exist.
+
+---
+
 ## Future suggestions (not implemented in V1)
 
 - **Bulk standardize:** A "Standardize All" button that processes every unclassified description for an opportunity in sequence.
