@@ -374,13 +374,133 @@
   font-size: 13px;
 }
 
-/* ── Responsive ─────────────────────────────────────────────────── */
+/* ── Backdrop (mobile only) ─────────────────────────────────────── */
+.qf-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 9996; /* just below the panel */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 250ms ease;
+}
+
 @media (max-width: 768px) {
+  .qf-backdrop--visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* ── Responsive: iPhone / mobile Chrome bottom sheet ────────────── */
+@media (max-width: 768px) {
+
+  /* Panel becomes a full-width bottom sheet */
   .qf-panel {
     position: fixed !important;
     inset: auto 0 0 0 !important;
     width: 100% !important;
-    max-height: 82vh;
-    border-radius: 14px 14px 0 0;
+    max-height: 90dvh;            /* dvh shrinks when iOS keyboard appears  */
+    border-radius: 20px 20px 0 0;
+    /* Slide-up animation replaces the desktop scale pop */
+    transform: translateY(100%) !important;
+    transition: opacity 250ms ease, transform 320ms cubic-bezier(0.32, 0.72, 0, 1) !important;
+  }
+
+  .qf-panel--visible {
+    transform: translateY(0) !important;
+  }
+
+  /* Drag handle pill — sits above the header title */
+  .qf-header::before {
+    content: '';
+    display: block;
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.35);
+    pointer-events: none;
+  }
+
+  /* Taller header to make room for the drag pill */
+  .qf-header {
+    position: relative;
+    height: 56px;
+    padding-top: 14px;
+    border-radius: 20px 20px 0 0;
+    flex-shrink: 0;
+  }
+
+  /* Bigger close button — 44px touch target */
+  .qf-close {
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+    border-radius: 8px;
+    margin-right: -8px; /* pull it to the edge so tap area reaches corner */
+  }
+
+  /* Taller tabs (44px Apple HIG) */
+  .qf-type-btn {
+    height: 44px;
+    font-size: 13px;
+  }
+
+  /* Stack 2-col rows into single column */
+  .qf-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  /* Bigger inputs — 44px height + 16px font stops iOS auto-zoom */
+  .qf-input {
+    height: 44px;
+    font-size: 16px;
+    padding: 0 12px;
+  }
+
+  .qf-textarea {
+    height: auto;
+    min-height: 88px;
+    font-size: 16px;
+    padding: 10px 12px;
+  }
+
+  /* Slightly larger labels for easier reading on small screens */
+  .qf-label {
+    font-size: 12px;
+    letter-spacing: 0.3px;
+  }
+
+  /* Touch-friendly mode toggle buttons */
+  .qf-toggle-btn {
+    height: 36px;
+    padding: 0 20px;
+    font-size: 13px;
+  }
+
+  /* Scrollable body — momentum scrolling on iOS */
+  .qf-body {
+    -webkit-overflow-scrolling: touch;
+    padding: 14px 16px;
+    gap: 12px;
+  }
+
+  /* Full-width equal footer buttons, taller tap target */
+  .qf-footer {
+    padding: 12px 16px;
+    padding-bottom: calc(12px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)));
+    gap: 10px;
+  }
+
+  .qf-btn {
+    flex: 1;
+    height: 46px;
+    font-size: 15px;
+    border-radius: 10px;
   }
 }

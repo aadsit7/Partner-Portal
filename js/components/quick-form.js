@@ -29,6 +29,7 @@ const SUBMIT_LABELS = { event: 'Create Event' };
 const modeIsNew = { partner: false, opportunity: false };
 
 let panelEl             = null;
+let backdropEl          = null;
 let isVisible           = false;
 let activeType          = 'opportunity';
 let cachedPartners      = null;
@@ -40,6 +41,11 @@ let activeTransEditor   = null; // Quill instance for transcript
 
 export function initQuickForm() {
   if (panelEl) return;
+  backdropEl = document.createElement('div');
+  backdropEl.className = 'qf-backdrop';
+  backdropEl.addEventListener('click', hidePanel);
+  document.body.appendChild(backdropEl);
+
   panelEl = buildPanel();
   document.body.appendChild(panelEl);
 }
@@ -61,6 +67,8 @@ function showPanel() {
   panelEl.style.display = 'flex';
   positionPanel();
 
+  if (backdropEl) backdropEl.classList.add('qf-backdrop--visible');
+
   if (!panelEl.dataset.bound) {
     panelEl.dataset.bound = '1';
     bindEvents();
@@ -76,7 +84,8 @@ export function hidePanel() {
   if (!panelEl) return;
   panelEl.classList.remove('qf-panel--visible');
   isVisible = false;
-  setTimeout(() => { if (!isVisible && panelEl) panelEl.style.display = 'none'; }, 200);
+  if (backdropEl) backdropEl.classList.remove('qf-backdrop--visible');
+  setTimeout(() => { if (!isVisible && panelEl) panelEl.style.display = 'none'; }, 320);
 
   // Reflect toggle state on both Randy buttons
   updateToggleButtons(false);
@@ -85,6 +94,17 @@ export function hidePanel() {
 // ── Positioning ───────────────────────────────────────────────────
 
 function positionPanel() {
+  // On mobile let CSS own the bottom-sheet layout; clear any inline styles
+  if (window.innerWidth <= 768) {
+    panelEl.style.top       = '';
+    panelEl.style.left      = '';
+    panelEl.style.bottom    = '';
+    panelEl.style.right     = '';
+    panelEl.style.height    = '';
+    panelEl.style.maxHeight = '';
+    return;
+  }
+
   const PANEL_WIDTH = 340;
   const GAP = 12;
 
@@ -497,12 +517,39 @@ function field(name, label, type, required, placeholder = '') {
     input.className = 'qf-input qf-textarea';
     input.placeholder = placeholder;
     input.rows = 3;
+    input.setAttribute('autocorrect', 'on');
+    input.setAttribute('autocapitalize', 'sentences');
   } else {
     input = document.createElement('input');
     input.className = 'qf-input';
     input.type = type;
     input.placeholder = placeholder;
-    if (type === 'number') { input.min = '0'; input.step = 'any'; }
+    if (type === 'number') {
+      input.min = '0';
+      input.step = 'any';
+      input.setAttribute('inputmode', 'decimal');
+    } else if (type === 'email') {
+      input.setAttribute('inputmode', 'email');
+      input.setAttribute('autocapitalize', 'none');
+      input.setAttribute('autocorrect', 'off');
+      input.setAttribute('spellcheck', 'false');
+    } else if (type === 'tel') {
+      input.setAttribute('inputmode', 'tel');
+    } else if (type === 'url') {
+      input.setAttribute('inputmode', 'url');
+      input.setAttribute('autocapitalize', 'none');
+      input.setAttribute('autocorrect', 'off');
+    } else if (type === 'text') {
+      // username: no caps, no autocorrect
+      if (name === 'username') {
+        input.setAttribute('autocapitalize', 'none');
+        input.setAttribute('autocorrect', 'off');
+        input.setAttribute('spellcheck', 'false');
+      } else {
+        // names, titles, locations benefit from word-caps
+        input.setAttribute('autocapitalize', 'words');
+      }
+    }
   }
   input.id   = `qf-${name}`;
   input.name = name;
