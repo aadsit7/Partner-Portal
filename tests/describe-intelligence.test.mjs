@@ -43,19 +43,46 @@ function fileApiResponse() {
   };
 }
 
-const VALID_MEETING_RECAP_RESPONSE = JSON.stringify({
-  category: 'meeting_recap',
-  standardized_text: '**Meeting Recap — March 15, 2026**\n\n**Attendees:** Gerard Smith (Contoso), Aaron\n\n**Discussion Points:**\n- Gerard was really excited about the migration timeline\n- He committed to looping in his VP by Thursday\n- Pricing was discussed: $150k by end of Q2\n- Gerard seemed hesitant but might be open to a pilot\n\n**Action Items / Next Steps:**\n- Gerard to loop in VP by Thursday\n\n**Notes:**\nGerard was really excited overall. Good meeting.',
-  confidence: 'high',
-  preservation_check: 'All input information preserved.',
-});
+const VALID_MEETING_RECAP_RESPONSE = `<result>
+<category>meeting_recap</category>
+<standardized_text>
+**Meeting Recap — March 15, 2026**
 
-const VALID_OPP_NOTE_RESPONSE = JSON.stringify({
-  category: 'opportunity_note',
-  standardized_text: '**April 1, 2026 — Internal Note**\n\nFollowed up on the Q2 pricing proposal. Deal is stalled waiting on legal review.\n\n**Facts / Commitments:**\n- Q2 pricing proposal outstanding\n- Deal stalled: waiting on legal review\n\n**Notes / Observations:**\nThis guy is going to be a pain to work with.',
-  confidence: 'medium',
-  preservation_check: 'All input information preserved.',
-});
+**Attendees:** Gerard Smith (Contoso), Aaron
+
+**Discussion Points:**
+- Gerard was really excited about the migration timeline
+- He committed to looping in his VP by Thursday
+- Pricing was discussed: $150k by end of Q2
+- Gerard seemed hesitant but might be open to a pilot
+
+**Action Items / Next Steps:**
+- Gerard to loop in VP by Thursday
+
+**Notes:**
+Gerard was really excited overall. Good meeting.
+</standardized_text>
+<confidence>high</confidence>
+<preservation_check>All input information preserved.</preservation_check>
+</result>`;
+
+const VALID_OPP_NOTE_RESPONSE = `<result>
+<category>opportunity_note</category>
+<standardized_text>
+**April 1, 2026 — Internal Note**
+
+Followed up on the Q2 pricing proposal. Deal is stalled waiting on legal review.
+
+**Facts / Commitments:**
+- Q2 pricing proposal outstanding
+- Deal stalled: waiting on legal review
+
+**Notes / Observations:**
+This guy is going to be a pain to work with.
+</standardized_text>
+<confidence>medium</confidence>
+<preservation_check>All input information preserved.</preservation_check>
+</result>`;
 
 // ── Test 1: request shape — headers, model, no Skills/code-execution betas ──
 
