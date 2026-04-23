@@ -1010,50 +1010,64 @@ function buildDetailsDescriptionsSection(descriptions, options = {}) {
         if (pill) categoryPillSlot.appendChild(pill);
       }
 
-      const standardizeBtn = el('button', {
-        class: 'btn btn--xs btn--secondary standardize-btn',
-        type: 'button',
-        disabled: isAlreadyDone || !realId,
-        title: isAlreadyDone
-          ? 'Already standardized'
-          : (!realId ? 'Not yet saved — open the Edit modal to save first' : 'Reformat with AI while preserving all content'),
-      }, '✨ Standardize');
+      const makeCheckmark = () => el('span', {
+        class: 'standardize-check',
+        title: 'Standardized',
+        'aria-label': 'Standardized',
+      }, '✓');
 
-      standardizeBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        standardizeBtn.disabled = true;
-        standardizeBtn.textContent = 'Standardizing…';
+      const actionsEl = el('div', { class: 'description-card__actions' }, categoryPillSlot);
 
-        try {
-          const rawText = stripHtml(desc.description_text || '').trim();
-          const result = await standardizeDescription(rawText);
-          await applyStandardizedDescription(opportunityId, realId, result.category, result.standardizedText);
+      if (isAlreadyDone) {
+        actionsEl.appendChild(makeCheckmark());
+      } else {
+        const standardizeBtn = el('button', {
+          class: 'btn btn--xs btn--secondary standardize-btn',
+          type: 'button',
+          disabled: !realId,
+          title: realId
+            ? 'Reformat with AI while preserving all content'
+            : 'Not yet saved — open the Edit modal to save first',
+        }, '✨ Standardize');
 
-          // Update in-memory object so subsequent re-renders reflect the new state.
-          desc.description_text = result.standardizedText;
-          desc.category = result.category;
+        if (realId) {
+          standardizeBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            standardizeBtn.disabled = true;
+            standardizeBtn.textContent = 'Standardizing…';
 
-          // Update the DOM in place — no full re-render needed.
-          bodyTextEl.innerHTML = ensureHtml(result.standardizedText);
-          const pill = makeCategoryPill(result.category);
-          categoryPillSlot.replaceChildren();
-          if (pill) categoryPillSlot.appendChild(pill);
-          standardizeBtn.textContent = 'Standardized';
-          standardizeBtn.title = 'Already standardized';
-        } catch (err) {
-          console.error('[Standardize] failed', err);
-          showToast(err.message || 'Standardize failed', 'error');
-          standardizeBtn.disabled = false;
-          standardizeBtn.textContent = '✨ Standardize';
+            try {
+              const rawText = stripHtml(desc.description_text || '').trim();
+              const result = await standardizeDescription(rawText);
+              await applyStandardizedDescription(opportunityId, realId, result.category, result.standardizedText);
+
+              // Update in-memory object so subsequent re-renders reflect the new state.
+              desc.description_text = result.standardizedText;
+              desc.category = result.category;
+
+              // Update the DOM in place — no full re-render needed.
+              bodyTextEl.innerHTML = ensureHtml(result.standardizedText);
+              const pill = makeCategoryPill(result.category);
+              categoryPillSlot.replaceChildren();
+              if (pill) categoryPillSlot.appendChild(pill);
+
+              // Swap button out for the checkmark — no disabled button left behind.
+              standardizeBtn.replaceWith(makeCheckmark());
+            } catch (err) {
+              console.error('[Standardize] failed', err);
+              showToast(err.message || 'Standardize failed', 'error');
+              standardizeBtn.disabled = false;
+              standardizeBtn.textContent = '✨ Standardize';
+            }
+          });
         }
-      });
+
+        actionsEl.appendChild(standardizeBtn);
+      }
 
       const cardRow = el('div', { class: 'description-card__row' },
         card,
-        el('div', { class: 'description-card__actions' },
-          categoryPillSlot,
-          standardizeBtn,
-        ),
+        actionsEl,
       );
       list.appendChild(cardRow);
     }

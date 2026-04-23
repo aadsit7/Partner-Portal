@@ -88,6 +88,15 @@
   width: 100%;
 }
 
+/* Inline checkmark shown after a description is standardized — not a button */
+.standardize-check {
+  font-size: var(--text-sm);
+  color: var(--color-success);
+  cursor: default;
+  user-select: none;
+  margin-left: var(--space-2);
+}
+
 .btn--icon {
   width: 36px;
   padding: 0;

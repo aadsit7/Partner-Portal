@@ -12,7 +12,7 @@ When clicked, the button:
 4. The description card updates in place — no page reload needed.
 5. A colored category pill appears next to the description: **🔵 Meeting Recap** or **🟢 Opportunity Note**.
 
-Once a description has been standardized, the button shows "Already standardized" and is disabled. The `category` column in the sheet stores this state.
+Once a description has been standardized, the **✨ Standardize** button is replaced by a small green **✓** checkmark (tooltip: "Standardized") sitting inline with the category pill. The `category` column in the sheet stores this state.
 
 **This is restructuring, not summarization.** See the Preservation Rule section below.
 
