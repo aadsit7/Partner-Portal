@@ -998,7 +998,12 @@ function buildDetailsDescriptionsSection(descriptions, options = {}) {
         onChange: (e) => { if (onToggle) onToggle(idx, e.target.checked); },
         onClick: (e) => e.stopPropagation(),
       });
-      list.appendChild(el('div', { class: 'description-select__row' }, checkbox, card));
+      const row = el('div', { class: 'description-select__row' }, checkbox, card);
+      if (desc.category) {
+        const pill = makeCategoryPill(desc.category);
+        if (pill) row.appendChild(pill);
+      }
+      list.appendChild(row);
     } else {
       // Standardize button — shown only in non-selection mode.
       const realId = desc.description_id && !desc._tempId ? desc.description_id : null;
