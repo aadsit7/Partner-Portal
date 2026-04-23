@@ -1863,7 +1863,7 @@ function sanitizeHTML(html) {
     .replace(/<img\b[^>]*\/?>/gi, '')
     .replace(/<form\b[\s\S]*?<\/form>/gi, '')
     .replace(/<input\b[^>]*\/?>/gi, '')
-    .replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '')
+    .replace(/[\s/]+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '')
     .replace(/javascript\s*:/gi, '');
 }
 
