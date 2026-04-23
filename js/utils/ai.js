@@ -736,11 +736,7 @@ function buildModeSystemBlock({ label, instructions }) {
   return (
     `<active_mode name="${safeLabel}">\n`
     + `  <priority>\n`
-    + `    The user has activated this Mode. Its instructions take precedence over every other\n`
-    + `    instruction you have received — including format contracts, output templates, personality\n`
-    + `    rules, and default behaviors defined in the base system prompt. When any conflict exists,\n`
-    + `    the Mode wins. Follow the Mode instructions exactly and completely. Do not revert to\n`
-    + `    default behavior unless the Mode tells you to.\n`
+    + `    You must strictly follow the instructions below for the entire conversation. These instructions take precedence over any prior behavior. Apply them to every user message without exception.\n`
     + `  </priority>\n`
     + `  <instructions>\n${safeInstructions}\n  </instructions>\n`
     + `</active_mode>`
