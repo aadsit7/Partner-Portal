@@ -954,7 +954,7 @@ function makeCategoryPill(category) {
 }
 
 function buildDetailsDescriptionsSection(descriptions, options = {}) {
-  const { selectionMode = false, selected = null, onToggle = null, opportunityId = null } = options;
+  const { selectionMode = false, selected = null, onToggle = null, opportunityId = null, opp = null, onDescriptionDeleted = null } = options;
   const list = el('div', { class: 'details-modal__descriptions' });
 
   if (!descriptions || descriptions.length === 0) {
@@ -1074,6 +1074,62 @@ function buildDetailsDescriptionsSection(descriptions, options = {}) {
         }
 
         actionsEl.appendChild(standardizeBtn);
+      }
+
+      // Inline Edit/Delete — only for sheet-backed descriptions with a row index.
+      // Hidden in selection mode (not rendered at all).
+      if (!selectionMode && desc._rowIndex) {
+        const editBtn = el('button', {
+          class: 'row-action-btn',
+          type: 'button',
+          title: 'Edit description',
+          html: pencilIconSvg(),
+          onClick: (e) => {
+            e.stopPropagation();
+            openDescriptionEditorDialog(desc, opp || {}, {
+              onSaved: () => {
+                const dateEl = header.querySelector('.transcript-card__date');
+                if (dateEl) dateEl.textContent = desc.description_date ? formatDate(desc.description_date) : '—';
+                const previewEl = header.querySelector('.transcript-card__preview');
+                if (previewEl) {
+                  const plain = stripHtml(desc.description_text || '');
+                  previewEl.textContent = plain ? plain.slice(0, 120) + (plain.length > 120 ? '...' : '') : 'Empty';
+                }
+                bodyTextEl.innerHTML = ensureHtml(desc.description_text || '');
+              },
+            });
+          },
+        });
+
+        const deleteBtn = el('button', {
+          class: 'row-action-btn row-action-btn--danger',
+          type: 'button',
+          title: 'Delete description',
+          html: trashIconSvg(),
+          onClick: async (e) => {
+            e.stopPropagation();
+            const confirmed = await confirmDialog(
+              'Delete Description',
+              'Are you sure you want to remove this description? This cannot be undone.',
+            );
+            if (!confirmed) return;
+            try {
+              if (isConfigured()) {
+                await deleteRow(CONFIG.SHEET_OPP_DESCRIPTIONS, desc._rowIndex);
+              } else {
+                deleteDemoRow(CONFIG.SHEET_OPP_DESCRIPTIONS, desc._rowIndex);
+              }
+              cardRow.remove();
+              if (onDescriptionDeleted) onDescriptionDeleted(idx);
+              showToast('Description removed', 'success');
+            } catch (err) {
+              showToast(err.message || 'Failed to remove description', 'error');
+            }
+          },
+        });
+
+        const inlineActions = el('div', { class: 'description-card__inline-actions' }, editBtn, deleteBtn);
+        actionsEl.appendChild(inlineActions);
       }
 
       const cardRow = el('div', { class: 'description-card__row' },
@@ -1270,7 +1326,7 @@ function buildDetailsDocumentsSection(files) {
     const badge = el('span', {
       class: `document-row__badge document-row__badge--${kind.toLowerCase()}`,
     }, kind);
-    list.appendChild(el('div', { class: 'document-row' },
+    const row = el('div', { class: 'document-row' },
       badge,
       el('a', {
         href: file.drive_url || '#',
@@ -1279,7 +1335,31 @@ function buildDetailsDocumentsSection(files) {
         class: 'document-row__name',
       }, file.file_name || 'Untitled'),
       el('span', { class: 'document-row__date' }, file.date_added ? formatDate(file.date_added) : ''),
-    ));
+      el('button', {
+        class: 'row-action-btn row-action-btn--danger',
+        type: 'button',
+        title: 'Remove document',
+        html: trashIconSvg(),
+        onClick: async (e) => {
+          e.stopPropagation();
+          const confirmed = await confirmDialog(
+            'Remove Document',
+            `Are you sure you want to remove "${file.file_name || 'this file'}"? This cannot be undone.`,
+          );
+          if (!confirmed) return;
+          try {
+            await fileApiRequest({ action: 'deleteFile', docId: file.doc_id });
+            const idx = files.findIndex(f => f.doc_id === file.doc_id);
+            if (idx >= 0) files.splice(idx, 1);
+            row.remove();
+            showToast('File removed', 'success');
+          } catch (err) {
+            showToast(err.message || 'Failed to remove file', 'error');
+          }
+        },
+      }),
+    );
+    list.appendChild(row);
   });
 
   return list;
@@ -1795,6 +1875,8 @@ export async function openOppDetailsModal(opp) {
     }
     descriptionsSlot.replaceChildren(buildDetailsDescriptionsSection(descriptions, {
       opportunityId: opp.opportunity_id,
+      opp,
+      onDescriptionDeleted: (idx) => { descriptions.splice(idx, 1); },
     }));
     setupDescriptionsSelection({
       descriptions,
@@ -2234,6 +2316,185 @@ function buildDescriptionsPanel(workingDescriptions) {
 }
 
 /**
+ * Builds the date + Quill editor + Save/Cancel form body for a description.
+ * Shared between descriptionCard (deferred save via onListChanged) and
+ * openDescriptionEditorDialog (immediate persistence).
+ *
+ * @param {Object} desc       - Description object. Mutated in-place on save, reverted on cancel.
+ * @param {Object} opts
+ * @param {string} opts.key   - Unique key for the date <input> id.
+ * @param {Function} [opts.onTextChange] - Quill text-change callback (omit for dialog context).
+ * @param {Function} opts.onSave   - async; called after desc is updated; handles persistence/UI.
+ * @param {Function} opts.onCancel - called with { snapshot } after desc is reverted.
+ * @returns {HTMLElement}
+ */
+function buildDescriptionEditorForm(desc, { key, onTextChange, onSave, onCancel }) {
+  const snapshot = {
+    description_date: desc.description_date,
+    description_text: desc.description_text,
+    _modified: !!desc._modified,
+  };
+
+  const dateInput = el('input', {
+    class: 'form-input',
+    type: 'date',
+    id: `desc-date-${key}`,
+  });
+  dateInput.value = desc.description_date || todayISO();
+
+  dateInput.addEventListener('change', () => {
+    const v = dateInput.value || todayISO();
+    if (v !== desc.description_date) {
+      desc.description_date = v;
+      if (!desc._isNew) desc._modified = true;
+    }
+  });
+
+  const editor = initQuillEditor({
+    placeholder: 'Write the description for this opportunity...',
+    initialHtml: desc.description_text || '',
+    title: 'Edit Description',
+    onTextChange,
+  });
+
+  let saving = false;
+  const saveBtn = el('button', {
+    class: 'btn btn--primary btn--sm',
+    onClick: async (e) => {
+      e.stopPropagation();
+      if (saving) return;
+      const newDate = dateInput.value || todayISO();
+      const newText = editor.getHtml();
+      if (editor.isEmpty()) {
+        showToast('Please enter description text', 'error');
+        return;
+      }
+      const dateChanged = newDate !== desc.description_date;
+      const textChanged = newText !== desc.description_text;
+      desc.description_date = newDate;
+      desc.description_text = newText;
+      if (!desc._isNew && (dateChanged || textChanged)) {
+        desc._modified = true;
+      }
+      saving = true;
+      saveBtn.disabled = true;
+      try {
+        await onSave({ snapshot });
+      } finally {
+        saving = false;
+        saveBtn.disabled = false;
+      }
+    },
+  }, 'Save');
+
+  const cancelBtn = el('button', {
+    class: 'btn btn--ghost btn--sm',
+    onClick: (e) => {
+      e.stopPropagation();
+      desc.description_date = snapshot.description_date;
+      desc.description_text = snapshot.description_text;
+      desc._modified = snapshot._modified;
+      onCancel({ snapshot });
+    },
+  }, 'Cancel');
+
+  const body = el('div', { class: 'transcript-card__body transcript-card__body--open' },
+    el('div', { class: 'form-group', style: { marginBottom: 'var(--space-3)' } },
+      el('label', { class: 'form-label', for: `desc-date-${key}` }, 'Date'),
+      dateInput,
+    ),
+    el('div', { class: 'form-group', style: { marginBottom: 'var(--space-3)' } },
+      el('label', { class: 'form-label' }, 'Description'),
+      editor.wrapper,
+    ),
+    el('div', { class: 'transcript-card__actions' },
+      saveBtn,
+      cancelBtn,
+    ),
+  );
+
+  requestAnimationFrame(() => editor.mount());
+  return body;
+}
+
+/**
+ * Opens a focused editor dialog for a single existing description in the
+ * details modal. Persists immediately on save (no deferred modal submit).
+ * Uses the same date+Quill form as the edit modal.
+ */
+function openDescriptionEditorDialog(desc, opp, { onSaved } = {}) {
+  const snapshot = {
+    description_date: desc.description_date,
+    description_text: desc.description_text,
+  };
+  let settled = false;
+  let didSave = false;
+
+  function dismiss() {
+    if (settled) return;
+    settled = true;
+    if (!didSave) {
+      desc.description_date = snapshot.description_date;
+      desc.description_text = snapshot.description_text;
+    }
+    backdrop.classList.remove('modal-backdrop--visible');
+    document.removeEventListener('keydown', escHandler, { capture: true });
+    setTimeout(() => backdrop.remove(), 250);
+  }
+
+  const closeSvg = '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4.5 4.5l9 9M13.5 4.5l-9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+
+  const form = buildDescriptionEditorForm(desc, {
+    key: getDescriptionKey(desc) || `dlg-${Date.now()}`,
+    onSave: async () => {
+      const values = [
+        desc.description_id,
+        desc.opportunity_id || opp.opportunity_id,
+        desc.deal_name || opp.deal_name,
+        desc.description_date,
+        desc.description_text,
+        desc.created_at,
+      ];
+      if (isConfigured()) {
+        await updateRow(CONFIG.SHEET_OPP_DESCRIPTIONS, desc._rowIndex, values);
+      } else {
+        updateDemoRow(CONFIG.SHEET_OPP_DESCRIPTIONS, desc._rowIndex, values);
+      }
+      didSave = true;
+      dismiss();
+      if (onSaved) onSaved();
+    },
+    onCancel: () => dismiss(),
+  });
+
+  const backdrop = el('div', {
+    class: 'modal-backdrop',
+    style: { zIndex: '10001' },
+    onClick: (e) => { if (e.target === backdrop) dismiss(); },
+  },
+    el('div', { class: 'modal' },
+      el('div', { class: 'modal__header' },
+        el('h2', { class: 'modal__title' }, 'Edit Description'),
+        el('button', { class: 'modal__close', html: closeSvg, onClick: () => dismiss() }),
+      ),
+      el('div', { class: 'modal__body' }, form),
+    ),
+  );
+
+  const escHandler = (e) => {
+    if (e.key === 'Escape') {
+      e.stopImmediatePropagation();
+      dismiss();
+    }
+  };
+  document.addEventListener('keydown', escHandler, { capture: true });
+
+  const root = $('#modal-root') || document.body;
+  root.appendChild(backdrop);
+  requestAnimationFrame(() => backdrop.classList.add('modal-backdrop--visible'));
+}
+
+/**
  * A single description card. Supports three UI states:
  *   - collapsed (date + preview)
  *   - expanded view (full HTML + Edit/Delete)
@@ -2331,41 +2592,12 @@ function descriptionCard(desc, onListChanged) {
   }
 
   function renderEditBody() {
-    // Snapshot the pre-edit values so Cancel can revert. onTextChange below
-    // streams changes straight into `desc` so the main modal Save button
-    // always sees the latest typed content, which means we need a separate
-    // snapshot to roll back to.
-    const snapshot = {
-      description_date: desc.description_date,
-      description_text: desc.description_text,
-      _modified: !!desc._modified,
-    };
-
-    const dateInput = el('input', {
-      class: 'form-input',
-      type: 'date',
-      id: `desc-date-${key}`,
-    });
-    dateInput.value = desc.description_date || todayISO();
-
-    // Keep desc.description_date in sync so the main modal's "Save Changes"
-    // button can persist the in-progress edit even if the user never clicks
-    // the card-local Save button.
-    dateInput.addEventListener('change', () => {
-      const v = dateInput.value || todayISO();
-      if (v !== desc.description_date) {
-        desc.description_date = v;
-        if (!desc._isNew) desc._modified = true;
-      }
-    });
-
-    const editor = initQuillEditor({
-      placeholder: 'Write the description for this opportunity...',
-      initialHtml: desc.description_text || '',
-      title: 'Edit Description',
-      // Mirror Quill content to the working description on every keystroke
-      // so clicking the main modal's Save button (without first clicking the
-      // card-local Save) still persists the text the user typed.
+    // Delegates to the shared buildDescriptionEditorForm helper.
+    // onTextChange mirrors Quill content to `desc` on every keystroke so
+    // the main modal's "Save Changes" button persists even if the card-local
+    // Save is never clicked.
+    return buildDescriptionEditorForm(desc, {
+      key,
       onTextChange: (quill) => {
         const html = quill.root.innerHTML.trim();
         if (html !== desc.description_text) {
@@ -2373,75 +2605,24 @@ function descriptionCard(desc, onListChanged) {
           if (!desc._isNew) desc._modified = true;
         }
       },
-    });
-
-    const saveBtn = el('button', {
-      class: 'btn btn--primary btn--sm',
-      onClick: (e) => {
-        e.stopPropagation();
-        const newDate = dateInput.value || todayISO();
-        const newText = editor.getHtml();
-        if (editor.isEmpty()) {
-          showToast('Please enter description text', 'error');
-          return;
-        }
-
-        // Apply edits in place.
-        const dateChanged = newDate !== desc.description_date;
-        const textChanged = newText !== desc.description_text;
-        desc.description_date = newDate;
-        desc.description_text = newText;
-        if (!desc._isNew && (dateChanged || textChanged)) {
-          desc._modified = true;
-        }
-
+      onSave: async () => {
         isEditing = false;
         isOpen = true;
         syncState();
         onListChanged();
       },
-    }, 'Save');
-
-    const cancelBtn = el('button', {
-      class: 'btn btn--ghost btn--sm',
-      onClick: (e) => {
-        e.stopPropagation();
+      onCancel: ({ snapshot }) => {
         if (desc._isNew && !snapshot.description_text) {
           // Brand-new card that was never populated → drop it entirely.
           desc._deleted = true;
           syncState();
           onListChanged();
         } else {
-          // Revert to the pre-edit snapshot. onTextChange streamed the
-          // user's edits into `desc`, so we roll those back here.
-          desc.description_date = snapshot.description_date;
-          desc.description_text = snapshot.description_text;
-          desc._modified = snapshot._modified;
           isEditing = false;
           rebuild();
         }
       },
-    }, 'Cancel');
-
-    const body = el('div', { class: 'transcript-card__body transcript-card__body--open' },
-      el('div', { class: 'form-group', style: { marginBottom: 'var(--space-3)' } },
-        el('label', { class: 'form-label', for: `desc-date-${key}` }, 'Date'),
-        dateInput,
-      ),
-      el('div', { class: 'form-group', style: { marginBottom: 'var(--space-3)' } },
-        el('label', { class: 'form-label' }, 'Description'),
-        editor.wrapper,
-      ),
-      el('div', { class: 'transcript-card__actions' },
-        saveBtn,
-        cancelBtn,
-      )
-    );
-
-    // Mount Quill after the body is in the DOM.
-    requestAnimationFrame(() => editor.mount());
-
-    return body;
+    });
   }
 
   rebuild();
@@ -2490,6 +2671,60 @@ const ALLOWED_FILE_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt
  */
 export const fileApiRequest = fileApiRequestImpl;
 
+/**
+ * Test-only: exposes the pure logic used by inline row action buttons so
+ * tests can verify behaviour without a full DOM environment.
+ * Not used by any production code path.
+ */
+export const __inlineRowActionsInternals = {
+  // Returns true when the inline Edit/Delete buttons should be rendered on a description row.
+  shouldShowDescriptionActions: (desc, selectionMode) =>
+    !selectionMode && !!desc._rowIndex,
+
+  // Column values array sent to updateRow for an immediate description save.
+  buildDescriptionUpdateValues: (desc, opp) => [
+    desc.description_id,
+    desc.opportunity_id || opp.opportunity_id,
+    desc.deal_name || opp.deal_name,
+    desc.description_date,
+    desc.description_text,
+    desc.created_at,
+  ],
+
+  // Handler factory: mirrors the description delete button's onClick logic with injected deps.
+  makeDescriptionDeleteHandler: (desc, idx, cardRow, onDescriptionDeleted, deps) =>
+    async () => {
+      const confirmed = await deps.confirmDialog(
+        'Delete Description',
+        'Are you sure you want to remove this description? This cannot be undone.',
+      );
+      if (!confirmed) return;
+      if (deps.isConfigured()) {
+        await deps.deleteRow(deps.SHEET_OPP_DESCRIPTIONS, desc._rowIndex);
+      } else {
+        deps.deleteDemoRow(deps.SHEET_OPP_DESCRIPTIONS, desc._rowIndex);
+      }
+      cardRow.remove();
+      if (onDescriptionDeleted) onDescriptionDeleted(idx);
+      deps.showToast('Description removed', 'success');
+    },
+
+  // Handler factory: mirrors the document delete button's onClick logic in the details modal.
+  makeDocumentDeleteHandler: (file, files, row, deps) =>
+    async () => {
+      const confirmed = await deps.confirmDialog(
+        'Remove Document',
+        `Are you sure you want to remove "${file.file_name || 'this file'}"? This cannot be undone.`,
+      );
+      if (!confirmed) return;
+      await deps.fileApiRequest({ action: 'deleteFile', docId: file.doc_id });
+      const idx = files.findIndex(f => f.doc_id === file.doc_id);
+      if (idx >= 0) files.splice(idx, 1);
+      row.remove();
+      deps.showToast('File removed', 'success');
+    },
+};
+
 async function listOpportunityDocuments(opportunityId) {
   if (!opportunityId) return [];
   const data = await fileApiRequest({ action: 'listFiles', opportunityId });
@@ -2519,6 +2754,14 @@ function isAllowedFile(file) {
 
 function fileIconSvg() {
   return '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 1.5H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5.5L9 1.5z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M9 1.5V5.5H13" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/></svg>';
+}
+
+function pencilIconSvg() {
+  return '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M11.5 2.5a1.41 1.41 0 0 1 2 2L5 13l-3 .75L2.75 11l8.75-8.5Z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+}
+
+function trashIconSvg() {
+  return '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 4h10M5 4V2.5h4V4M5.5 6v4M8.5 6v4M3 4l.5 8h7l.5-8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 }
 
 function escapeHtml(str) {
@@ -2563,6 +2806,11 @@ function buildDocumentsPanel({ opportunityId, getCustomerName, getDealName, init
       onClick: async (e) => {
         e.preventDefault();
         e.stopPropagation();
+        const confirmed = await confirmDialog(
+          'Remove Document',
+          `Are you sure you want to remove "${file.file_name || 'this file'}"? This cannot be undone.`,
+        );
+        if (!confirmed) return;
         try {
           await fileApiRequest({ action: 'deleteFile', docId: file.doc_id });
           const idx = files.findIndex(f => f.doc_id === file.doc_id);
