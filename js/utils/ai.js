@@ -1674,7 +1674,7 @@ export const __mapJsonInternals = {
 // a consistent structure while preserving 100% of the original content.
 
 const STANDARDIZE_MODEL = 'claude-opus-4-7';
-const STANDARDIZE_MAX_TOKENS = 4096;
+const STANDARDIZE_MAX_TOKENS = 16000; // high enough for any realistic CRM description
 const STANDARDIZE_TIMEOUT_MS = 300_000; // 5 min — streaming keeps connection alive for long inputs
 
 function buildStandardizePrompt(rawText) {
@@ -1752,15 +1752,18 @@ STANDARDIZED FORMAT FOR opportunity_note:
 
 ═══════════════════════════════════════════════════════════════════
 
-Return JSON in this exact shape — no preamble, no markdown fences:
-{
-  "category": "meeting_recap" | "opportunity_note",
-  "standardized_text": "<the reformatted text with all original information preserved>",
-  "confidence": "high" | "medium" | "low",
-  "preservation_check": "<a 1-sentence self-assessment: did you preserve all information from the input? If any was removed, explain what and why.>"
-}
+Return your response using EXACTLY these XML tags — no preamble, no markdown, no text outside the tags:
 
-The preservation_check field is for auditing. If you removed ANY information from the input, explain what was removed in this field. If you preserved everything, write "All input information preserved."
+<result>
+<category>meeting_recap or opportunity_note</category>
+<standardized_text>
+[the reformatted text with all original information preserved]
+</standardized_text>
+<confidence>high or medium or low</confidence>
+<preservation_check>[1-sentence self-assessment: did you preserve all information from the input? If you preserved everything, write "All input information preserved." If any was removed, explain what and why.]</preservation_check>
+</result>
+
+The preservation_check field is for auditing. Write "All input information preserved." if nothing was omitted.
 
 Now process the input below. Remember: preservation > tidiness. When in doubt, keep more content rather than less.
 
@@ -1816,6 +1819,7 @@ export async function standardizeDescription(rawText, signal, onProgress) {
   const decoder = new TextDecoder();
   let sseBuffer = '';
   let fullText = '';
+  let stopReason = null;
 
   try {
     while (true) {
@@ -1837,6 +1841,9 @@ export async function standardizeDescription(rawText, signal, onProgress) {
           fullText += event.delta.text;
           onProgress?.(fullText.length);
         }
+        if (event.type === 'message_delta' && event.delta?.stop_reason) {
+          stopReason = event.delta.stop_reason;
+        }
         if (event.type === 'error') {
           const streamErr = new Error(event.error?.message || 'Stream error from Claude');
           streamErr.code = 'STANDARDIZE_API_ERROR';
@@ -1854,46 +1861,49 @@ export async function standardizeDescription(rawText, signal, onProgress) {
     throw err;
   }
 
-  // Fence-strip + JSON extract (same tolerance as parseMapJsonResponse).
-  let body2 = fullText.trim();
-  const fenceMatch = body2.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  if (fenceMatch) body2 = fenceMatch[1].trim();
-  const first = body2.indexOf('{');
-  const last = body2.lastIndexOf('}');
-  if (first > 0 || last < body2.length - 1) {
-    if (first >= 0 && last > first) body2 = body2.slice(first, last + 1);
-  }
-
-  let parsed;
-  try {
-    parsed = JSON.parse(body2);
-  } catch (e) {
-    const err = new Error(`Claude returned invalid JSON: ${e.message}`);
-    err.code = 'STANDARDIZE_INVALID';
+  // If Claude hit the output token limit the XML will be truncated — surface a
+  // clear, actionable error instead of a cryptic parse failure.
+  if (stopReason === 'max_tokens') {
+    const err = new Error('This description is too long to standardize in one pass. Please split it into smaller sections and standardize each part separately.');
+    err.code = 'STANDARDIZE_TOO_LONG';
     err.rawText = fullText;
     throw err;
   }
 
+  // Parse XML tag output — more robust than JSON for long content because the
+  // text inside <standardized_text> needs no escaping and won't cause parse
+  // failures if Claude adds extra whitespace or minor formatting variations.
+  const extractXml = (tag) => {
+    const re = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i');
+    const m = fullText.match(re);
+    return m ? m[1].trim() : null;
+  };
+
+  const category = extractXml('category');
+  const standardizedText = extractXml('standardized_text');
+  const confidence = extractXml('confidence');
+  const preservationCheck = extractXml('preservation_check');
+
   const validCategories = ['meeting_recap', 'opportunity_note'];
-  if (!parsed.category || !validCategories.includes(parsed.category)) {
-    const err = new Error(`Claude returned an unrecognized category: ${parsed.category}`);
+  if (!category || !validCategories.includes(category)) {
+    const err = new Error(`Claude returned an unrecognized category: ${category}`);
     err.code = 'STANDARDIZE_SCHEMA';
     err.rawText = fullText;
     throw err;
   }
-  if (!parsed.standardized_text || typeof parsed.standardized_text !== 'string' || !parsed.standardized_text.trim()) {
+  if (!standardizedText) {
     const err = new Error('Claude returned an empty standardized_text field.');
     err.code = 'STANDARDIZE_SCHEMA';
     err.rawText = fullText;
     throw err;
   }
 
-  console.log(`[Standardize preservation check] ${parsed.preservation_check || '(no check provided)'}`);
+  console.log(`[Standardize preservation check] ${preservationCheck || '(no check provided)'}`);
 
   return {
-    category: parsed.category,
-    standardizedText: parsed.standardized_text,
-    confidence: parsed.confidence || 'medium',
+    category,
+    standardizedText,
+    confidence: confidence || 'medium',
   };
 }
 
