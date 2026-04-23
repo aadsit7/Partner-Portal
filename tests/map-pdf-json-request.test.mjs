@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 
 globalThis.localStorage.setItem('pp_runtime_config', JSON.stringify({ ANTHROPIC_API_KEY: 'sk-ant-test-key' }));
 
-const { requestMapPdfJson, __mapJsonInternals } = await import('../js/utils/ai.js');
-const { buildMapJsonPrompt, parseMapJsonResponse } = __mapJsonInternals;
+const { requestMapPdfJson, requestMapPdfJsonFromMultiple, __mapJsonInternals } = await import('../js/utils/ai.js');
+const { buildMapJsonPrompt, buildMapJsonPromptFromMultiple, buildCategoryGuidanceBlock, parseMapJsonResponse } = __mapJsonInternals;
 
 const VALID_JSON_OBJ = {
   customer_name: 'Example Customer',
@@ -347,4 +347,82 @@ test('buildMapJsonPrompt includes the Golden Rule grounding language', () => {
   // The new shape rules are also spelled out.
   assert.match(prompt, /\{label, detail\}/);
   assert.match(prompt, /\{name, subline\}/);
+});
+
+// ── Describe Intelligence V2 — structure-aware MAP prompt tests ────────
+
+test('V2 buildMapJsonPrompt includes category-awareness instructions when entry is categorized', () => {
+  const prompt = buildMapJsonPrompt(
+    { name: 'Contoso', customerName: 'Contoso' },
+    [{ date: '2026-04-15', content: 'Meeting with Sarah.', category: 'meeting_recap' }],
+  );
+  assert.match(prompt, /DESCRIPTION STRUCTURE GUIDANCE/i);
+  assert.match(prompt, /meeting_recap.*primary source material/i);
+  assert.match(prompt, /opportunity_note.*supplementary context/i);
+  // Category label should appear in the source block header.
+  assert.match(prompt, /\[CATEGORY: meeting_recap\]/);
+});
+
+test('V2 buildMapJsonPrompt includes section-awareness and voice-separation instructions', () => {
+  const prompt = buildMapJsonPrompt(
+    { name: 'Fabrikam' },
+    [{ date: '2026-04-10', content: 'Discovery notes.', category: 'opportunity_note' }],
+  );
+  // Section awareness for both categories.
+  assert.match(prompt, /meeting_recap sections.*Attendees.*Discussion Points/i);
+  assert.match(prompt, /opportunity_note sections.*Facts \/ Commitments/i);
+  // Voice separation — Notes sections must not go into customer-facing output.
+  assert.match(prompt, /DO NOT include this content in customer-facing MAP sections/i);
+  assert.match(prompt, /Notes \/ Observations.*subjective commentary/i);
+  // Commitment tracking.
+  assert.match(prompt, /Action Items.*meeting_recaps.*Facts \/ Commitments.*opportunity_notes.*both commitments/i);
+});
+
+test('V2 buildMapJsonPrompt degrades gracefully when all descriptions are unstandardized (no category)', () => {
+  const prompt = buildMapJsonPrompt(
+    { name: 'LegacyCo' },
+    [
+      { date: '2026-03-01', content: 'Old free-form note without structure.' },
+      { date: '2026-02-15', content: 'Another legacy note.' },
+    ],
+  );
+  // Guidance block is still present — all 5 directives fire.
+  assert.match(prompt, /DESCRIPTION STRUCTURE GUIDANCE/i);
+  // Fallback note for unclassified content is shown.
+  assert.match(prompt, /legacy free-form notes/i);
+  // The prompt still works end-to-end — Golden Rule is untouched.
+  assert.match(prompt, /GOLDEN RULE/);
+  // No [CATEGORY:] label appears (no categories to label).
+  assert.doesNotMatch(prompt, /\[CATEGORY: meeting_recap\]/);
+  assert.doesNotMatch(prompt, /\[CATEGORY: opportunity_note\]/);
+});
+
+test('V2 buildMapJsonPromptFromMultiple labels each source block with its category', () => {
+  const prompt = buildMapJsonPromptFromMultiple(
+    { name: 'Northwind', customerName: 'Northwind' },
+    [
+      { date: '2026-04-20', content: 'Latest meeting recap.', category: 'meeting_recap' },
+      { date: '2026-04-10', content: 'Internal opportunity note.', category: 'opportunity_note' },
+      { date: '2026-03-28', content: 'Old free-form note with no category.' },
+    ],
+  );
+  // Both standardized categories are labelled in source block headers.
+  assert.match(prompt, /CATEGORY: meeting_recap/);
+  assert.match(prompt, /CATEGORY: opportunity_note/);
+  // Uncategorized entries keep the original plain date-only header (no CATEGORY label emitted).
+  assert.match(prompt, /--- DATE: 2026-03-28 ---/);
+  // Guidance block is present.
+  assert.match(prompt, /DESCRIPTION STRUCTURE GUIDANCE/i);
+  // The unclassified fallback note appears in the guidance block because at least one entry is uncategorized.
+  assert.match(prompt, /Unclassified descriptions.*legacy free-form notes/i);
+});
+
+test('V2 buildCategoryGuidanceBlock includes chronological weighting directive', () => {
+  const block = buildCategoryGuidanceBlock([
+    { category: 'meeting_recap' },
+    { category: 'opportunity_note' },
+  ]);
+  assert.match(block, /Chronological weighting/i);
+  assert.match(block, /more recent one reflects the current state/i);
+  assert.match(block, /Commitment tracking/i);
 });

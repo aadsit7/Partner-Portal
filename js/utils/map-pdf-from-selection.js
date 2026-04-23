@@ -79,7 +79,8 @@ function normalizeSelectedDescriptions(selectedDescriptions) {
     .map(d => {
       const date = d?.date || d?.description_date || d?.created_at || '';
       const content = d?.content || d?.text || d?.description_text || '';
-      return { date: String(date || ''), content: String(content || '').trim() };
+      const category = d?.category || '';
+      return { date: String(date || ''), content: String(content || '').trim(), category: String(category) };
     })
     .filter(d => d.content.length > 0);
   if (normalized.length === 0) {
