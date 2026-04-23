@@ -6,6 +6,7 @@
 import { CONFIG, getRuntimeConfig } from '../config.js';
 import { readSheetAsObjects } from '../sheets.js';
 import { stripHtml } from '../components/quill-editor.js';
+import { fileApiRequest } from './file-api.js';
 
 // ── Cache State ────────────────────────────────────────────────────
 let cachedSheetData = null;
@@ -1541,4 +1542,230 @@ export const __mapJsonInternals = {
   buildMapJsonPrompt,
   buildMapJsonPromptFromMultiple,
   parseMapJsonResponse,
+};
+
+// ── Describe Intelligence V1 ───────────────────────────────────────
+//
+// Standardize button feature: classifies a free-form description as
+// either "meeting_recap" or "opportunity_note" and reformats it into
+// a consistent structure while preserving 100% of the original content.
+
+const STANDARDIZE_MODEL = 'claude-opus-4-7';
+const STANDARDIZE_MAX_TOKENS = 4096;
+const STANDARDIZE_TIMEOUT_MS = 120_000;
+
+function buildStandardizePrompt(rawText) {
+  return `You are a careful editor for a CRM system. Your ONLY job is to take messy free-form sales opportunity descriptions and restructure them into a consistent format WHILE PRESERVING 100% OF THE ORIGINAL INFORMATION.
+
+YOU ARE NOT A SUMMARIZER. YOU ARE NOT AN ABSTRACTER. YOU ARE A FORMATTER.
+
+CLASSIFICATION RULES:
+- Classify as "meeting_recap" ONLY if the description documents an actual meeting, call, or live conversation with the customer. Signals: attendee names, meeting date, discussion topics, decisions made during a real-time interaction.
+- Classify as "opportunity_note" for EVERYTHING ELSE: quick updates, internal thoughts, status changes, email summaries, reminders, context, follow-up notes, research findings, next steps captured asynchronously.
+- When in doubt, classify as "opportunity_note". Misclassifying a note as a meeting recap is worse than leaving a note unstructured.
+
+═══════════════════════════════════════════════════════════════════
+THE PRESERVATION RULE (THIS IS THE MOST IMPORTANT INSTRUCTION)
+═══════════════════════════════════════════════════════════════════
+
+Every fact, name, number, date, quote, commitment, concern, decision, question, action item, and subjective comment from the INPUT must appear in the OUTPUT.
+
+Specific rules:
+1. NO SUMMARIZATION. If the input has three facts, the output must have all three facts.
+2. NO CONSOLIDATION. Do not merge similar points. Repetition is signal.
+3. NO SHORTENING. If the output is materially shorter than the input, you have failed. The output should be approximately the same length or longer.
+4. PRESERVE SPECIFIC WORDING for quotes, commitments, objections, pricing, dates, and names. Do not paraphrase "committed to $150k by end of Q2" into "agreed to a deal this quarter."
+5. PRESERVE AMBIGUITY AND QUALIFIERS. If someone "seemed hesitant but might be open," preserve both the hesitation and the openness. Do not resolve.
+6. PRESERVE THE USER'S VOICE in subjective commentary. Notes like "this guy is going to be a pain to work with" or "great vibes" are signals — keep them intact in a Notes section.
+7. NEVER INVENT. If something is not in the input, do not add it. Leave fields blank or write "Not specified."
+
+The only acceptable edits are:
+- Fixing obvious typos
+- Fixing obvious capitalization
+- Expanding unambiguous abbreviations
+- Adding structural headers and bullets AROUND the existing content
+- Reordering content to fit the template structure
+
+The following are NEVER acceptable:
+- Paraphrasing
+- Summarizing
+- Removing content (even "off-topic" or "informal" content)
+- Consolidating multiple bullets into one
+- Inferring beyond what's stated
+- Adding content to fill out structure
+- Changing numbers, dates, or proper nouns
+
+═══════════════════════════════════════════════════════════════════
+STANDARDIZED FORMAT FOR meeting_recap:
+═══════════════════════════════════════════════════════════════════
+
+**Meeting Recap — [Date if mentioned, else "Date not specified"]**
+
+**Attendees:** [exact names and organizations as mentioned, comma-separated. If not mentioned, write "Not specified"]
+
+**Discussion Points:**
+- [Every topic, decision, question, or statement from the input — preserve specific wording where it matters]
+- [Include subjective observations the user noted]
+- [Include customer quotes preserved verbatim where present]
+
+**Action Items / Next Steps:**
+- [Every action item mentioned, with owner if specified. Preserve deadlines exactly as stated.]
+- [If no action items mentioned, write "None specified"]
+
+**Notes:**
+[Any subjective observations, personal reactions, or context the user included. Preserve their voice exactly.]
+
+═══════════════════════════════════════════════════════════════════
+STANDARDIZED FORMAT FOR opportunity_note:
+═══════════════════════════════════════════════════════════════════
+
+**[Date if mentioned, else today's date] — [Type: Internal Note, Email Follow-up, Status Update, Research, etc.]**
+
+[The original content, reorganized into clear paragraphs or bullet points as appropriate. Fix typos and capitalization. Preserve all facts, names, numbers, dates, commitments, concerns, and subjective language. Do not summarize. Do not abstract.]
+
+**Facts / Commitments:** [If the note contains specific facts, commitments, or data points, list them here as bullets with exact wording preserved.]
+
+**Notes / Observations:** [If the user included subjective commentary, preserve it here in their voice.]
+
+═══════════════════════════════════════════════════════════════════
+
+Return JSON in this exact shape — no preamble, no markdown fences:
+{
+  "category": "meeting_recap" | "opportunity_note",
+  "standardized_text": "<the reformatted text with all original information preserved>",
+  "confidence": "high" | "medium" | "low",
+  "preservation_check": "<a 1-sentence self-assessment: did you preserve all information from the input? If any was removed, explain what and why.>"
+}
+
+The preservation_check field is for auditing. If you removed ANY information from the input, explain what was removed in this field. If you preserved everything, write "All input information preserved."
+
+Now process the input below. Remember: preservation > tidiness. When in doubt, keep more content rather than less.
+
+INPUT:
+${rawText}`;
+}
+
+/**
+ * Ask Claude to classify and reformat a free-form description entry.
+ * Preserves 100% of original content — see Preservation Rule in the prompt.
+ *
+ * @param {string} rawText  Plain text of the description (HTML stripped by caller)
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<{category: string, standardizedText: string, confidence: string}>}
+ */
+export async function standardizeDescription(rawText, signal) {
+  if (!rawText || !rawText.trim()) {
+    const err = new Error('Cannot standardize an empty description.');
+    err.code = 'STANDARDIZE_EMPTY';
+    throw err;
+  }
+
+  const apiKey = requireApiKey();
+  const prompt = buildStandardizePrompt(rawText);
+
+  const body = {
+    model: STANDARDIZE_MODEL,
+    max_tokens: STANDARDIZE_MAX_TOKENS,
+    messages: [{ role: 'user', content: prompt }],
+  };
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: buildRequestHeaders(apiKey),
+    body: JSON.stringify(body),
+    signal: withTimeout(signal, STANDARDIZE_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    let errBody = {};
+    try { errBody = await response.json(); } catch { /* ignore */ }
+    const msg = errBody.error?.message || `API error: ${response.status}`;
+    console.error('[Standardize] API error', { status: response.status, body: errBody });
+    const err = new Error(msg);
+    err.status = response.status;
+    err.code = 'STANDARDIZE_API_ERROR';
+    throw err;
+  }
+
+  const data = await response.json();
+  const text = (data.content || [])
+    .filter(b => b?.type === 'text' && typeof b.text === 'string')
+    .map(b => b.text)
+    .join('\n');
+
+  if (!text.trim()) {
+    const err = new Error('Claude returned an empty response.');
+    err.code = 'STANDARDIZE_EMPTY';
+    throw err;
+  }
+
+  // Fence-strip + JSON extract (same tolerance as parseMapJsonResponse).
+  let body2 = text.trim();
+  const fenceMatch = body2.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenceMatch) body2 = fenceMatch[1].trim();
+  const first = body2.indexOf('{');
+  const last = body2.lastIndexOf('}');
+  if (first > 0 || last < body2.length - 1) {
+    if (first >= 0 && last > first) body2 = body2.slice(first, last + 1);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(body2);
+  } catch (e) {
+    const err = new Error(`Claude returned invalid JSON: ${e.message}`);
+    err.code = 'STANDARDIZE_INVALID';
+    err.rawText = text;
+    throw err;
+  }
+
+  const validCategories = ['meeting_recap', 'opportunity_note'];
+  if (!parsed.category || !validCategories.includes(parsed.category)) {
+    const err = new Error(`Claude returned an unrecognized category: ${parsed.category}`);
+    err.code = 'STANDARDIZE_SCHEMA';
+    err.rawText = text;
+    throw err;
+  }
+  if (!parsed.standardized_text || typeof parsed.standardized_text !== 'string' || !parsed.standardized_text.trim()) {
+    const err = new Error('Claude returned an empty standardized_text field.');
+    err.code = 'STANDARDIZE_SCHEMA';
+    err.rawText = text;
+    throw err;
+  }
+
+  // Log preservation check for auditability — Aaron can inspect the console
+  // to verify that the AI reported preserving all content.
+  console.log(`[Standardize preservation check] ${parsed.preservation_check || '(no check provided)'}`);
+
+  return {
+    category: parsed.category,
+    standardizedText: parsed.standardized_text,
+    confidence: parsed.confidence || 'medium',
+  };
+}
+
+/**
+ * Write a standardized description back to the Opportunity_Descriptions sheet
+ * via the Apps Script endpoint. Delegates entirely to fileApiRequest() so the
+ * no-Content-Type CORS path is preserved.
+ *
+ * @param {string} opportunityId
+ * @param {string} descriptionId
+ * @param {string} category        "meeting_recap" | "opportunity_note"
+ * @param {string} standardizedText
+ * @returns {Promise<object>}
+ */
+export async function applyStandardizedDescription(opportunityId, descriptionId, category, standardizedText) {
+  return fileApiRequest({
+    action: 'updateDescription',
+    opportunityId,
+    descriptionId,
+    category,
+    standardizedText,
+  });
+}
+
+// Exported for unit testing — pure helpers don't need the real API.
+export const __standardizeInternals = {
+  buildStandardizePrompt,
 };
