@@ -523,8 +523,14 @@ function initRecognition() {
       if (autoSendTimer) { clearTimeout(autoSendTimer); autoSendTimer = null; }
 
       const classification = classifyTranscript(accumulatedTranscript);
-      if (classification === 'action') {
-        // Auto-send after 0.5s of silence
+      // Auto-send for actions (500ms) and questions (1500ms).
+      // Also auto-send with a 1500ms delay when any preset is active — short
+      // opportunity names like "Insight MSP licensing Deal" classify as
+      // 'unknown' but must still fire when the Timeline PDF preset is selected.
+      const _activeLbl = loadedPresets.find(p => p.prompt_id === activePresetId)?.label;
+      const _isPresetActive = !!_activeLbl;
+      const autoSendDelay = classification === 'action' ? 500 : 1500;
+      if (classification === 'action' || classification === 'question' || _isPresetActive) {
         autoSendTimer = setTimeout(() => {
           autoSendTimer = null;
           removeInterimBubble();
@@ -533,7 +539,7 @@ function initRecognition() {
             accumulatedTranscript = '';
             processUserInput(text);
           }
-        }, 500);
+        }, autoSendDelay);
       }
       // Status bar always shows "Listening..." during ACTIVE_LISTENING (set by updateStatusBar)
       return;
