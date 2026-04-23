@@ -4371,6 +4371,49 @@
   100% { background: transparent; border-color: transparent; }
 }
 
+/* ---- Inline row actions (description cards + document rows) ---- */
+.description-card__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 var(--space-1);
+}
+
+.description-card__inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.row-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.row-action-btn:hover {
+  background: var(--color-bg);
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.row-action-btn--danger:hover {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: rgba(204, 34, 34, 0.05);
+}
+
 @media (max-width: 900px) {
   .details-modal__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
