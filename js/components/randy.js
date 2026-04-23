@@ -8,6 +8,8 @@ import { SYSTEM_PROMPT, loadSheetData, callClaudeStream, warmSheetData, getOppor
 import { parseActions, executeAction } from '../utils/ai-actions.js';
 import { detectMapPdfIntent } from '../utils/map-pdf-intent.js';
 import { buildMapPdf, mapFilename, blobToBase64 } from '../utils/map-pdf-builder.js';
+import { requestTimelineJsonPdf } from '../utils/timeline-pdf-client.js';
+import { buildTimelinePdf, timelineFilename } from '../utils/timeline-pdf-builder.js';
 import { createPill, updatePillStage, markPillSuccess, markPillFailure } from './map-pdf-pill.js';
 import { CONFIG } from '../config.js';
 import { getCurrentUser } from '../auth.js';
@@ -252,6 +254,9 @@ let activePresetId = null;
 // from a disambiguation list (awaiting: 'opportunity', matches: [...]).
 // null whenever no MAP flow is pending.
 let pendingMapIntent = null;
+
+// Timeline PDF follow-up state — same shape as pendingMapIntent.
+let pendingTimelineIntent = null;
 
 // Listening recovery
 let restartCount = 0;
@@ -815,15 +820,28 @@ async function processUserInput(text) {
     }
     return;
   }
-  const _activePresetLabel = loadedPresets.find(p => p.prompt_id === activePresetId)?.label;
-  const _normalizedLabel = _activePresetLabel ? _activePresetLabel.trim().replace(/\s+/g, ' ').toLowerCase() : '';
-  if (_normalizedLabel === 'timeline pdf') {
-    console.log(`[Timeline PDF preset] routing message into MAP PDF flow, hint="${text}"`);
+  if (pendingTimelineIntent) {
+    const _pending = pendingTimelineIntent;
+    pendingTimelineIntent = null;
     isProcessing = true;
     transition(STATES.PROCESSING, isTypeModeActive);
     renderMessage('user', text);
     try {
-      await runMapPdfFlow({ hint: text });
+      await runTimelinePdfFlow({ hint: text, followUp: _pending });
+    } finally {
+      isProcessing = false;
+    }
+    return;
+  }
+  const _activePresetLabel = loadedPresets.find(p => p.prompt_id === activePresetId)?.label;
+  const _normalizedLabel = _activePresetLabel ? _activePresetLabel.trim().replace(/\s+/g, ' ').toLowerCase() : '';
+  if (_normalizedLabel === 'timeline pdf') {
+    console.log(`[Timeline PDF preset] routing message into Timeline PDF flow, hint="${text}"`);
+    isProcessing = true;
+    transition(STATES.PROCESSING, isTypeModeActive);
+    renderMessage('user', text);
+    try {
+      await runTimelinePdfFlow({ hint: text });
     } finally {
       isProcessing = false;
     }
@@ -1214,6 +1232,277 @@ function startBackgroundPdfGeneration(result) {
 
 function randyIsIdle() {
   return currentState === STATES.ACTIVE_LISTENING || currentState === STATES.PASSIVE;
+}
+
+// ── Timeline PDF flow ──────────────────────────────────────────
+// Mirrors runMapPdfFlow / startBackgroundPdfGeneration exactly,
+// swapping in requestTimelineJsonPdf and buildTimelinePdf.
+
+async function runTimelinePdfFlow({ hint }) {
+  if (!hint || !hint.trim()) {
+    const msg = "Which opportunity should I build the Timeline PDF for, boss?";
+    pendingTimelineIntent = { awaiting: 'opportunity' };
+    if (isTypeModeActive) {
+      renderMessage('assistant', msg);
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText(msg, () => transition(STATES.ACTIVE_LISTENING));
+      renderMessage('assistant', msg);
+    }
+    return;
+  }
+
+  let result;
+  try {
+    result = await getOpportunityDescription(hint);
+  } catch (err) {
+    console.error('Randy Timeline: opportunity lookup failed', err);
+    const msg = "I couldn't pull the opportunities from the sheet, boss. Try again in a sec.";
+    if (isTypeModeActive) {
+      renderMessage('assistant', msg);
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText(msg, () => transition(STATES.ACTIVE_LISTENING));
+      renderMessage('assistant', msg);
+    }
+    return;
+  }
+
+  if (result.matchCount === 0) {
+    const msg = "I couldn't find that opportunity in the sheet, boss. Can you give me the exact name?";
+    pendingTimelineIntent = { awaiting: 'opportunity' };
+    if (isTypeModeActive) {
+      renderMessage('assistant', msg);
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText(msg, () => transition(STATES.ACTIVE_LISTENING));
+      renderMessage('assistant', msg);
+    }
+    return;
+  }
+
+  if (result.matchCount > 1) {
+    const names = result.matches.map(m => m.opportunityName);
+    const spokenList = names.length === 2
+      ? `${names[0]}, or ${names[1]}`
+      : `${names.slice(0, -1).join(', ')}, or ${names[names.length - 1]}`;
+    const display = `I found a few, boss — which one: ${names.join(', ')}?`;
+    const spoken  = `I found a few, boss. Is it ${spokenList}?`;
+    pendingTimelineIntent = { awaiting: 'opportunity', matches: names };
+    if (isTypeModeActive) {
+      renderMessage('assistant', display);
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText(spoken, () => transition(STATES.ACTIVE_LISTENING));
+      renderMessage('assistant', display);
+    }
+    return;
+  }
+
+  if (!result.allDescriptions || result.allDescriptions.length === 0) {
+    const msg = `No description history found for ${result.opportunityName} yet, boss. I need at least one description entry before I can generate a Timeline PDF.`;
+    if (isTypeModeActive) {
+      renderMessage('assistant', msg);
+      transition(STATES.PASSIVE, true);
+    } else {
+      speakText(msg, () => transition(STATES.ACTIVE_LISTENING));
+      renderMessage('assistant', msg);
+    }
+    return;
+  }
+
+  const kickoff = `On it, boss. Building the Timeline PDF for ${result.opportunityName} — give me a few seconds.`;
+  if (isTypeModeActive) {
+    renderMessage('assistant', kickoff);
+    transition(STATES.PASSIVE, true);
+  } else {
+    speakText(kickoff, () => transition(STATES.ACTIVE_LISTENING));
+    renderMessage('assistant', kickoff);
+  }
+  startBackgroundTimelinePdfGeneration(result);
+}
+
+function startBackgroundTimelinePdfGeneration(result) {
+  const entries = (result.allDescriptions || []).map(e => ({
+    date: e.date, content: e.text,
+  }));
+  const opportunity = {
+    name:          result.opportunityName,
+    customerName:  result.customerName,
+    dealName:      result.dealName,
+    opportunityId: result.opportunityId,
+  };
+
+  const pill = createPill('Reading descriptions…');
+
+  (async () => {
+    try {
+      updatePillStage(pill, 'Reading descriptions…');
+      const json = await requestTimelineJsonPdf(opportunity, entries);
+
+      updatePillStage(pill, 'Building PDF…');
+      const pdfBlob = await buildTimelinePdf(json, opportunity);
+      const filename = timelineFilename(json.customer_name || opportunity.customerName || opportunity.name);
+
+      updatePillStage(pill, 'Saving to Drive…');
+      const base64 = await blobToBase64(pdfBlob);
+      const uploadResp = await fileApiRequest({
+        action: 'uploadFile',
+        opportunityId: opportunity.opportunityId,
+        customerName: opportunity.customerName || opportunity.name,
+        fileName: filename,
+        mimeType: 'application/pdf',
+        fileData: base64,
+      });
+
+      console.log('[Timeline PDF] Apps Script upload response:', JSON.stringify(uploadResp, null, 2));
+
+      const driveUrl =
+        uploadResp?.file?.drive_url  || uploadResp?.drive_url  ||
+        uploadResp?.file?.driveUrl   || uploadResp?.driveUrl   ||
+        uploadResp?.file?.webViewLink || uploadResp?.webViewLink ||
+        uploadResp?.file?.url        || uploadResp?.url        || '';
+
+      if (!driveUrl) {
+        console.warn('[Timeline PDF] No Drive URL in upload response. Response keys:',
+          Object.keys(uploadResp || {}), 'file keys:', Object.keys(uploadResp?.file || {}));
+      }
+
+      const uploaded = {
+        doc_id:     uploadResp?.file?.doc_id     || uploadResp?.doc_id,
+        file_name:  uploadResp?.file?.file_name  || uploadResp?.file_name  || filename,
+        drive_url:  driveUrl,
+        date_added: uploadResp?.file?.date_added || uploadResp?.date_added || new Date().toISOString(),
+      };
+
+      addFileToActiveDocsPanel(opportunity.opportunityId, uploaded);
+      markPillSuccess(pill, `Saved to ${opportunity.name}`);
+      announceTimelinePdfReady({
+        opportunityName: opportunity.name,
+        opportunityId:   opportunity.opportunityId,
+        driveUrl,
+        filename:        uploaded.file_name,
+      });
+    } catch (err) {
+      markPillFailure(pill, 'Failed — see card');
+      announceTimelinePdfError(err, opportunity);
+    }
+  })();
+}
+
+function announceTimelinePdfReady({ opportunityName, opportunityId, driveUrl, filename }) {
+  const cardHtml = buildTimelineSuccessCardHtml({ opportunityName, opportunityId, driveUrl, filename });
+  if (!isTypeModeActive && randyIsIdle()) {
+    speakText(`Timeline PDF saved for ${opportunityName}, boss. Link's in the chat.`);
+  }
+  const msgEl = renderMessage('assistant', cardHtml);
+  if (msgEl && opportunityId) {
+    const selectors = ['.randy-timeline-card__btn--in-portal', '.randy-timeline-card__secondary-link'];
+    for (const sel of selectors) {
+      const link = msgEl.querySelector(sel);
+      if (link) link.addEventListener('click', (e) => { e.preventDefault(); openOppForRandy(opportunityId); });
+    }
+  }
+}
+
+function announceTimelinePdfError(err, opportunity) {
+  console.error('Randy Timeline PDF error:', err);
+  const msg = err?.message || '';
+  let spoken, userSummary;
+  if (err?.code === 'TIMELINE_JSON_API_ERROR' && err?.status === 401) {
+    userSummary = 'The Anthropic API key is invalid or expired. Check it on the Setup page.';
+    spoken = 'API key looks invalid, boss. Check the Setup page.';
+  } else if (/TIMELINE_JSON_INVALID|TIMELINE_JSON_SCHEMA|TIMELINE_JSON_EMPTY/.test(err?.code || '')) {
+    userSummary = "Claude's response didn't parse as expected. Try again, or simplify the source description.";
+    spoken = "Claude sent me bad data, boss. Try again.";
+  } else if (err?.name === 'TimeoutError' || /timeout|timed out/i.test(msg)) {
+    userSummary = 'The request took longer than 2 minutes. Usually transient — try again.';
+    spoken = "That took too long, boss. Want me to try again?";
+  } else if (/Failed to fetch|network|NetworkError/i.test(msg)) {
+    userSummary = 'Network request failed. Check your connection.';
+    spoken = 'I lost the connection, boss. Check the network.';
+  } else {
+    userSummary = 'Something went wrong while generating the Timeline PDF. See the details below.';
+    spoken = `I couldn't generate the Timeline PDF for ${opportunity?.name || 'that opportunity'}, boss. Details are in the chat.`;
+  }
+  const cardHtml = buildTimelineFailureCardHtml({
+    opportunityName:  opportunity?.name || '',
+    opportunityId:    opportunity?.opportunityId || '',
+    userSummary,
+    technicalDetail: msg || String(err || 'Unknown error'),
+  });
+  if (!isTypeModeActive && randyIsIdle()) speakText(spoken);
+  const msgEl = renderMessage('assistant', cardHtml);
+  if (msgEl && opportunity?.opportunityId) {
+    const retry = msgEl.querySelector('.randy-timeline-card__retry');
+    if (retry) retry.addEventListener('click', async (e) => {
+      e.preventDefault();
+      retry.disabled = true;
+      retry.textContent = 'Retrying…';
+      try {
+        const fresh = await getOpportunityDescription(opportunity.name || opportunity.customerName);
+        if (fresh?.matchCount === 1 && fresh.allDescriptions?.length > 0) {
+          startBackgroundTimelinePdfGeneration(fresh);
+        } else {
+          retry.disabled = false;
+          retry.textContent = 'Try again';
+          renderMessage('assistant', "Couldn't re-resolve that opportunity, boss. Try the voice command again.");
+        }
+      } catch (rerunErr) {
+        retry.disabled = false;
+        retry.textContent = 'Try again';
+        console.error('Timeline PDF retry failed', rerunErr);
+      }
+    });
+  }
+}
+
+function buildTimelineSuccessCardHtml({ opportunityName, opportunityId, driveUrl, filename }) {
+  const safeName = escapeMapHtml(opportunityName);
+  const safeFile = escapeMapHtml(filename);
+  let primaryBtn;
+  if (driveUrl) {
+    const safeUrl = escapeMapHtml(driveUrl);
+    primaryBtn = `<a class="randy-map-card__btn" href="${safeUrl}" target="_blank" rel="noopener">View in Drive</a>`;
+  } else if (opportunityId) {
+    primaryBtn = `<a class="randy-map-card__btn randy-timeline-card__btn--in-portal" href="#" data-opportunity-id="${escapeMapHtml(opportunityId)}">Open in Opportunity</a>`;
+  } else {
+    primaryBtn = `<span class="randy-map-card__btn" aria-disabled="true" style="opacity:0.6;cursor:not-allowed">Saved (no link)</span>`;
+  }
+  const secondary = opportunityId && driveUrl
+    ? `<a class="randy-timeline-card__secondary-link" href="#" data-opportunity-id="${escapeMapHtml(opportunityId)}">Open the opportunity to see all its documents →</a>`
+    : '';
+  return `<div class="response-container randy-map-card randy-map-card--success">
+<div class="randy-map-card__title-row">
+<span class="randy-map-card__title-icon"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10l4 4 8-8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+<div class="randy-map-card__header">Timeline PDF Saved</div>
+</div>
+<div class="randy-map-card__subline">${safeName}</div>
+<div class="randy-map-card__filename">${safeFile}</div>
+${primaryBtn}
+${secondary}
+</div>`;
+}
+
+function buildTimelineFailureCardHtml({ opportunityName, opportunityId, userSummary, technicalDetail }) {
+  const safeName    = escapeMapHtml(opportunityName);
+  const safeSummary = escapeMapHtml(userSummary);
+  const safeDetail  = escapeMapHtml(technicalDetail);
+  const retry = opportunityId
+    ? `<button class="randy-timeline-card__retry" type="button">Try again</button>`
+    : '';
+  return `<div class="response-container randy-map-card randy-map-card--warning">
+<div class="randy-map-card__title-row">
+<span class="randy-map-card__title-icon"><svg viewBox="0 0 20 20" fill="none"><path d="M10 3l8 14H2z" fill="currentColor" opacity="0.2"/><path d="M10 3l8 14H2z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/><path d="M10 8v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="14.5" r="1" fill="currentColor"/></svg></span>
+<div class="randy-map-card__header">Couldn't generate Timeline PDF${safeName ? ' — ' + safeName : ''}</div>
+</div>
+<div class="randy-map-card__subline">${safeSummary}</div>
+<details class="randy-map-card__details">
+<summary>Show technical details</summary>
+<pre>${safeDetail}</pre>
+</details>
+${retry}
+</div>`;
 }
 
 function announceMapPdfReady({ opportunityName, opportunityId, driveUrl, filename }) {
@@ -2342,6 +2631,7 @@ function createWidget() {
     convStartedAt = null;
     voiceEnabled = false;
     pendingMapIntent = null;
+    pendingTimelineIntent = null;
     const chat = document.getElementById('randy-chat');
     if (chat) chat.innerHTML = '';
     setWindowState('collapsed');
