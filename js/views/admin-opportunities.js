@@ -39,6 +39,11 @@ let activeDocsPanel = null;
 // or auto-open the modal when generation finishes.
 let activeModalOppId = null;
 
+// Tracks in-flight and recently-completed Standardize jobs keyed by description_id.
+// Entries survive modal close/reopen so the user can navigate away mid-job.
+// Shape: { pill, desc, status: 'running'|'done'|'failed', result?, error? }
+const standardizeJobs = new Map();
+
 /**
  * Inject a just-uploaded file into the currently-open Opportunity
  * modal's Documents panel. Returns true if the modal was open for
@@ -1017,8 +1022,8 @@ function buildDetailsDescriptionsSection(descriptions, options = {}) {
 
       const categoryPillSlot = el('span', { class: 'description-card__pill-slot' });
       if (desc.category) {
-        const pill = makeCategoryPill(desc.category);
-        if (pill) categoryPillSlot.appendChild(pill);
+        const catPillEl = makeCategoryPill(desc.category);
+        if (catPillEl) categoryPillSlot.appendChild(catPillEl);
       }
 
       const makeCheckmark = () => el('span', {
@@ -1032,44 +1037,84 @@ function buildDetailsDescriptionsSection(descriptions, options = {}) {
       if (isAlreadyDone) {
         actionsEl.appendChild(makeCheckmark());
       } else {
+        // If a background job is already running for this description (user navigated away
+        // and came back), render the button in a disabled "in-progress" state so they know.
+        const runningJob = realId ? standardizeJobs.get(realId) : null;
+        const isJobRunning = runningJob?.status === 'running';
+
         const standardizeBtn = el('button', {
           class: 'btn btn--xs btn--secondary standardize-btn',
           type: 'button',
-          disabled: !realId,
-          title: realId
-            ? 'Reformat with AI while preserving all content'
-            : 'Not yet saved — open the Edit modal to save first',
-        }, '✨ Standardize');
+          disabled: !realId || isJobRunning,
+          title: !realId
+            ? 'Not yet saved — open the Edit modal to save first'
+            : isJobRunning
+              ? 'Standardization in progress — check the progress ticker'
+              : 'Reformat with AI while preserving all content',
+        }, isJobRunning ? 'Standardizing…' : '✨ Standardize');
 
-        if (realId) {
-          standardizeBtn.addEventListener('click', async (e) => {
+        if (realId && !isJobRunning) {
+          standardizeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             standardizeBtn.disabled = true;
             standardizeBtn.textContent = 'Standardizing…';
 
-            try {
-              const rawText = stripHtml(desc.description_text || '').trim();
-              const result = await standardizeDescription(rawText);
-              await applyStandardizedDescription(opportunityId, realId, result.category, result.standardizedText);
+            // Body-fixed progress pill — stays visible even after the modal is closed.
+            const descLabel = desc.description_date
+              ? `Standardizing — ${formatDate(desc.description_date)}`
+              : 'Standardizing description…';
+            const progressPill = createPill('Calling Claude…', { label: descLabel, global: true });
 
-              // Update in-memory object so subsequent re-renders reflect the new state.
-              desc.description_text = result.standardizedText;
-              desc.category = result.category;
+            standardizeJobs.set(realId, { pill: progressPill, desc, status: 'running' });
 
-              // Update the DOM in place — no full re-render needed.
-              bodyTextEl.innerHTML = ensureHtml(result.standardizedText);
-              const pill = makeCategoryPill(result.category);
-              categoryPillSlot.replaceChildren();
-              if (pill) categoryPillSlot.appendChild(pill);
+            // Fire-and-forget: the async work continues even if the user closes the modal.
+            (async () => {
+              try {
+                const rawText = stripHtml(desc.description_text || '').trim();
 
-              // Swap button out for the checkmark — no disabled button left behind.
-              standardizeBtn.replaceWith(makeCheckmark());
-            } catch (err) {
-              console.error('[Standardize] failed', err);
-              showToast(err.message || 'Standardize failed', 'error');
-              standardizeBtn.disabled = false;
-              standardizeBtn.textContent = '✨ Standardize';
-            }
+                let lastReported = 0;
+                const result = await standardizeDescription(rawText, null, (chars) => {
+                  if (chars - lastReported >= 150) {
+                    lastReported = chars;
+                    updatePillStage(progressPill, `Receiving… (${chars} chars)`);
+                  }
+                });
+
+                updatePillStage(progressPill, 'Saving…');
+                await applyStandardizedDescription(opportunityId, realId, result.category, result.standardizedText);
+
+                // Update in-memory desc — persists across modal close/reopen.
+                desc.description_text = result.standardizedText;
+                desc.category = result.category;
+
+                standardizeJobs.set(realId, { pill: progressPill, desc, status: 'done', result });
+                markPillSuccess(progressPill, 'Standardized!');
+
+                // Update the DOM in place if the card is still mounted.
+                try {
+                  bodyTextEl.innerHTML = ensureHtml(result.standardizedText);
+                  const newCatPill = makeCategoryPill(result.category);
+                  categoryPillSlot.replaceChildren();
+                  if (newCatPill) categoryPillSlot.appendChild(newCatPill);
+                  standardizeBtn.replaceWith(makeCheckmark());
+                } catch { /* card may have been unmounted; in-memory update above is enough */ }
+
+              } catch (err) {
+                console.error('[Standardize] failed', err);
+                standardizeJobs.set(realId, { pill: progressPill, desc, status: 'failed', error: err });
+                markPillFailure(progressPill, err.message || 'Standardize failed');
+
+                // Re-enable button if still mounted.
+                try {
+                  standardizeBtn.disabled = false;
+                  standardizeBtn.textContent = '✨ Standardize';
+                } catch { /* card may be gone */ }
+                showToast(err.message || 'Standardize failed', 'error');
+              } finally {
+                // Remove the job entry after a grace period so a re-render shows a clean button.
+                setTimeout(() => standardizeJobs.delete(realId), 30_000);
+              }
+            })();
           });
         }
 

@@ -1661,7 +1661,7 @@ export const __mapJsonInternals = {
 
 const STANDARDIZE_MODEL = 'claude-opus-4-7';
 const STANDARDIZE_MAX_TOKENS = 4096;
-const STANDARDIZE_TIMEOUT_MS = 120_000;
+const STANDARDIZE_TIMEOUT_MS = 300_000; // 5 min — streaming keeps connection alive for long inputs
 
 function buildStandardizePrompt(rawText) {
   return `You are a careful editor for a CRM system. Your ONLY job is to take messy free-form sales opportunity descriptions and restructure them into a consistent format WHILE PRESERVING 100% OF THE ORIGINAL INFORMATION.
@@ -1762,7 +1762,7 @@ ${rawText}`;
  * @param {AbortSignal} [signal]
  * @returns {Promise<{category: string, standardizedText: string, confidence: string}>}
  */
-export async function standardizeDescription(rawText, signal) {
+export async function standardizeDescription(rawText, signal, onProgress) {
   if (!rawText || !rawText.trim()) {
     const err = new Error('Cannot standardize an empty description.');
     err.code = 'STANDARDIZE_EMPTY';
@@ -1776,6 +1776,7 @@ export async function standardizeDescription(rawText, signal) {
     model: STANDARDIZE_MODEL,
     max_tokens: STANDARDIZE_MAX_TOKENS,
     messages: [{ role: 'user', content: prompt }],
+    stream: true,
   };
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1796,20 +1797,51 @@ export async function standardizeDescription(rawText, signal) {
     throw err;
   }
 
-  const data = await response.json();
-  const text = (data.content || [])
-    .filter(b => b?.type === 'text' && typeof b.text === 'string')
-    .map(b => b.text)
-    .join('\n');
+  // Stream SSE so long inputs never hit an idle timeout — bytes flow continuously.
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let sseBuffer = '';
+  let fullText = '';
 
-  if (!text.trim()) {
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      sseBuffer += decoder.decode(value, { stream: true });
+
+      const lines = sseBuffer.split('\n');
+      sseBuffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const raw = line.slice(6).trim();
+        if (raw === '[DONE]') continue;
+        let event;
+        try { event = JSON.parse(raw); } catch { continue; }
+
+        if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+          fullText += event.delta.text;
+          onProgress?.(fullText.length);
+        }
+        if (event.type === 'error') {
+          const streamErr = new Error(event.error?.message || 'Stream error from Claude');
+          streamErr.code = 'STANDARDIZE_API_ERROR';
+          throw streamErr;
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!fullText.trim()) {
     const err = new Error('Claude returned an empty response.');
     err.code = 'STANDARDIZE_EMPTY';
     throw err;
   }
 
   // Fence-strip + JSON extract (same tolerance as parseMapJsonResponse).
-  let body2 = text.trim();
+  let body2 = fullText.trim();
   const fenceMatch = body2.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   if (fenceMatch) body2 = fenceMatch[1].trim();
   const first = body2.indexOf('{');
@@ -1824,7 +1856,7 @@ export async function standardizeDescription(rawText, signal) {
   } catch (e) {
     const err = new Error(`Claude returned invalid JSON: ${e.message}`);
     err.code = 'STANDARDIZE_INVALID';
-    err.rawText = text;
+    err.rawText = fullText;
     throw err;
   }
 
@@ -1832,18 +1864,16 @@ export async function standardizeDescription(rawText, signal) {
   if (!parsed.category || !validCategories.includes(parsed.category)) {
     const err = new Error(`Claude returned an unrecognized category: ${parsed.category}`);
     err.code = 'STANDARDIZE_SCHEMA';
-    err.rawText = text;
+    err.rawText = fullText;
     throw err;
   }
   if (!parsed.standardized_text || typeof parsed.standardized_text !== 'string' || !parsed.standardized_text.trim()) {
     const err = new Error('Claude returned an empty standardized_text field.');
     err.code = 'STANDARDIZE_SCHEMA';
-    err.rawText = text;
+    err.rawText = fullText;
     throw err;
   }
 
-  // Log preservation check for auditability — Aaron can inspect the console
-  // to verify that the AI reported preserving all content.
   console.log(`[Standardize preservation check] ${parsed.preservation_check || '(no check provided)'}`);
 
   return {
