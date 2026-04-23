@@ -586,3 +586,66 @@ test('V1.6 personas row: hardcoded generic personas are gone; grounded personas 
   assert.ok(!hasText(calls2, /^End Users$/),
     'End Users heading must be skipped when personas is empty');
 });
+
+// ─────────────────────────────────────────────────────────────
+// V1.7a — Greenshield-style header
+// ─────────────────────────────────────────────────────────────
+
+const THIN_JSON = {
+  customer_name: 'Greenshield',
+  document_date: 'March 16, 2026',
+  meeting_recap: [],
+  current_environment: { infrastructure: [], current_state_pain: [], stakeholders_and_decision_process: [] },
+  end_users_personas: [],
+  what_changes: '',
+  mutual_action_plan: [],
+};
+
+test('V1.7a header band height is within 70-90pt (no oversized banner)', async () => {
+  installJsPdfShim();
+  const blob = await buildMapPdf(THIN_JSON, {});
+  const calls = blob.__calls;
+  const bandRect = calls.find(c => c.op === 'rect' && c.a[0] === 0 && c.a[1] === 0 && c.a[2] === 612);
+  assert.ok(bandRect, 'header band rect must exist at (0,0) spanning full page width');
+  const h = bandRect.a[3];
+  assert.ok(h >= 70 && h <= 90, `header band height must be 70-90pt, got ${h}`);
+});
+
+test('V1.7a header: customer name renders as small metadata (≤12pt), not a large standalone element', async () => {
+  installJsPdfShim();
+  const blob = await buildMapPdf(THIN_JSON, {});
+  const calls = blob.__calls;
+  let currentFontSize = 12;
+  const fontSizesAtCustomerName = [];
+  for (const c of calls) {
+    if (c.op === 'setFontSize') currentFontSize = c.a[0];
+    if (c.op === 'text' && /Greenshield/.test(String(c.a?.[0] || ''))) {
+      fontSizesAtCustomerName.push(currentFontSize);
+    }
+  }
+  assert.ok(fontSizesAtCustomerName.length > 0, 'customer name must appear in the header');
+  assert.ok(
+    fontSizesAtCustomerName.every(sz => sz <= 12),
+    `customer name must only appear at ≤12pt (metadata treatment), found sizes: ${fontSizesAtCustomerName}`,
+  );
+});
+
+test('V1.7a header: coral divider bar (#E07050) renders immediately below the header band', async () => {
+  installJsPdfShim();
+  const blob = await buildMapPdf(THIN_JSON, {});
+  const calls = blob.__calls;
+  const bandRect = calls.find(c => c.op === 'rect' && c.a[0] === 0 && c.a[1] === 0 && c.a[2] === 612);
+  assert.ok(bandRect, 'header band must exist');
+  const bandBottom = bandRect.a[1] + bandRect.a[3];
+  let lastFillColor = null;
+  let dividerFound = false;
+  for (const c of calls) {
+    if (c.op === 'setFillColor') lastFillColor = c.a;
+    if (c.op === 'rect' && c.a[0] === 0 && c.a[1] === bandBottom && c.a[3] <= 5) {
+      if (lastFillColor && lastFillColor[0] === 224 && lastFillColor[1] === 112 && lastFillColor[2] === 80) {
+        dividerFound = true;
+      }
+    }
+  }
+  assert.ok(dividerFound, `coral divider bar (#E07050) must render at y=${bandBottom} below the header band`);
+});
