@@ -21,6 +21,7 @@ import * as adminSetup from './views/admin-setup.js';
 import { renderAdminAIAssistant, cleanupAdminAIAssistant } from './views/admin-ai-assistant.js';
 import { mountVoiceWidget } from './components/voice-widget.js';
 import { initRandy } from './components/randy.js';
+import { initHotkeys, registerHotkey } from './utils/hotkeys.js';
 
 // ---- Register Routes ----
 
@@ -155,6 +156,7 @@ addRoute('/admin/setup', {
 
 let voiceWidgetMounted = false;
 let randyMounted = false;
+let hotkeysInitialized = false;
 
 function setupAppShell() {
   const app = document.getElementById('app');
@@ -175,6 +177,37 @@ function setupAppShell() {
     initRandy();
     randyMounted = true;
   }
+
+  // Register global keyboard shortcuts (admin only, one-time)
+  if (user && user.is_admin && !hotkeysInitialized) {
+    initHotkeys();
+    registerAdminShortcuts();
+    hotkeysInitialized = true;
+  }
+}
+
+function registerAdminShortcuts() {
+  // Randy voice activation
+  registerHotkey('Alt+R', 'Activate Randy voice', () => {
+    if (typeof window.activateRandy === 'function') window.activateRandy();
+  }, 'Randy');
+
+  // Opportunity shortcuts
+  registerHotkey('Alt+O', 'New Opportunity', () => {
+    if (location.hash.startsWith('#/admin/opportunities')) {
+      window.dispatchEvent(new CustomEvent('shortcut:new-opportunity'));
+    } else {
+      window._pendingNewOpp = true;
+      navigate('/admin/opportunities');
+    }
+  }, 'Opportunities');
+
+  // Navigation shortcuts
+  registerHotkey('Alt+D', 'Dashboard', () => navigate('/admin/dashboard'), 'Navigation');
+  registerHotkey('Alt+A', 'AI Assistant (Randy)', () => navigate('/admin/ai-assistant'), 'Navigation');
+  registerHotkey('Alt+P', 'Partners', () => navigate('/admin/partners'), 'Navigation');
+  registerHotkey('Alt+E', 'Events', () => navigate('/admin/events'), 'Navigation');
+  registerHotkey('Alt+L', 'LeadCheck', () => navigate('/admin/leadcheck'), 'Navigation');
 }
 
 // ---- Initialize ----
