@@ -793,10 +793,12 @@ async function processUserInput(text) {
   if (isProcessing) return;
 
   // ── MAP PDF intent routing ────────────────────────────────────────
-  // Intercept before the regular Claude flow. Two paths:
+  // Intercept before the regular Claude flow. Three paths:
   //   (a) A prior MAP turn asked "which opportunity?" / "which one of
   //       these?" — this message answers the follow-up.
-  //   (b) The user just gave a MAP trigger phrase ("create a MAP for
+  //   (b) The "Timeline PDF" preset is active — every message is treated
+  //       as an opportunity hint, bypassing regex detection entirely.
+  //   (c) The user just gave a MAP trigger phrase ("create a MAP for
   //       ANICO"). detectMapPdfIntent() does pure regex matching on
   //       the text; when `triggered` is false we fall through and the
   //       existing chat flow runs byte-identical to before.
@@ -808,6 +810,20 @@ async function processUserInput(text) {
     renderMessage('user', text);
     try {
       await runMapPdfFlow({ hint: text, followUp: _pending });
+    } finally {
+      isProcessing = false;
+    }
+    return;
+  }
+  const _activePresetLabel = loadedPresets.find(p => p.prompt_id === activePresetId)?.label;
+  const _normalizedLabel = _activePresetLabel ? _activePresetLabel.trim().replace(/\s+/g, ' ').toLowerCase() : '';
+  if (_normalizedLabel === 'timeline pdf') {
+    console.log(`[Timeline PDF preset] routing message into MAP PDF flow, hint="${text}"`);
+    isProcessing = true;
+    transition(STATES.PROCESSING, isTypeModeActive);
+    renderMessage('user', text);
+    try {
+      await runMapPdfFlow({ hint: text });
     } finally {
       isProcessing = false;
     }
