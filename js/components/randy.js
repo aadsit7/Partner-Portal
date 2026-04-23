@@ -3137,5 +3137,16 @@ export function initRandy() {
     }
   };
 
+  // Public API for keyboard shortcut: open Randy window and start voice.
+  window.activateRandy = () => {
+    if (!mounted) return;
+    if (windowState === 'collapsed') {
+      setWindowState('open');
+      if (conversationHistory.length === 0) showWelcome();
+      updateVoiceButton();
+    }
+    handleVoiceBtnClick();
+  };
+
   mounted = true;
 }

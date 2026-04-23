@@ -26,6 +26,9 @@ let cachedPartners = null;
 let cachedOpps = null;
 let cachedEvents = null;
 
+// Keyboard shortcut handler — registered during render, removed on cleanup.
+let newOppShortcutHandler = null;
+
 // Tracks the Documents panel inside the currently-open Opportunity
 // modal so external code (Randy's MAP PDF flow) can inject a freshly
 // uploaded file into the visible list without reopening the modal.
@@ -85,6 +88,17 @@ export async function render(container) {
     cachedPartners = allBasePartners;
     cachedEvents = events;
     renderWithTypeFilter(container);
+
+    // Register global shortcut handler for Alt+O (new opportunity)
+    if (newOppShortcutHandler) window.removeEventListener('shortcut:new-opportunity', newOppShortcutHandler);
+    newOppShortcutHandler = () => openOppModal(null, container);
+    window.addEventListener('shortcut:new-opportunity', newOppShortcutHandler);
+
+    // If navigated here via Alt+O from another page, open the modal immediately
+    if (window._pendingNewOpp) {
+      delete window._pendingNewOpp;
+      requestAnimationFrame(() => openOppModal(null, container));
+    }
   } catch (err) {
     mount(container, el('div', { class: 'empty-state' },
       el('div', { class: 'empty-state__title' }, 'Error loading opportunities'),
@@ -2698,6 +2712,10 @@ export function cleanup() {
   cachedPartners = null;
   cachedOpps = null;
   cachedEvents = null;
+  if (newOppShortcutHandler) {
+    window.removeEventListener('shortcut:new-opportunity', newOppShortcutHandler);
+    newOppShortcutHandler = null;
+  }
 }
 
 // ============================================
