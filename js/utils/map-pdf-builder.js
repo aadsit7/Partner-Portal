@@ -180,40 +180,37 @@ function drawPlusMarks(doc) {
 }
 
 function drawHeaderBand(doc, customerName, documentDate) {
-  // Background
-  setFill(doc, RECAST_BLUE);
+  // Dark navy background band (Greenshield-style)
+  setFill(doc, NAVY);
   doc.rect(0, 0, PAGE_W, HEADER_BAND_H, 'F');
 
-  // Decorative plus-mark scatter in the upper part of the band.
+  // Very subtle "+" brand markers in the centre zone of the band
   drawPlusMarks(doc);
 
-  // Recast wordmark, left-aligned. "Recast" bold, "Software" lighter,
-  // stacked in two lines to mirror the brand lockup.
+  // Recast wordmark — bold "Recast" large, lighter "Software" below
   setText(doc, WHITE);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(22);
-  doc.text('Recast', MARGIN, 40);
+  doc.setFontSize(26);
+  doc.text('Recast', MARGIN, 42);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(13);
   doc.text('Software', MARGIN, 58);
 
-  // Right-side title block: "Meeting Recap & Mutual Action Plan"
-  // on top, "Recast + [Customer] | [Date]" underneath, both white.
+  // Right side: prominent document title on top, tight customer|date
+  // metadata below. Customer name is secondary metadata — not a banner.
   const rightX = PAGE_W - MARGIN;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
+  doc.setFontSize(19);
   doc.text('Meeting Recap & Mutual Action Plan', rightX, 36, { align: 'right' });
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
-  const subtitleCustomer = String(customerName || 'Opportunity').trim();
-  const subtitleDate = String(documentDate || '').trim();
-  const subtitle = subtitleDate
-    ? `Recast + ${subtitleCustomer}  |  ${subtitleDate}`
-    : `Recast + ${subtitleCustomer}`;
-  doc.text(subtitle, rightX, 54, { align: 'right' });
+  const customerStr = String(customerName || 'Opportunity').trim();
+  const dateStr = String(documentDate || '').trim();
+  const metaLine = dateStr ? `${customerStr}  |  ${dateStr}` : customerStr;
+  doc.text(metaLine, rightX, 54, { align: 'right' });
 
-  // Coral divider bar under the header.
+  // Coral divider bar (#E07050) separating header from body
   setFill(doc, CORAL);
   doc.rect(0, HEADER_BAND_H, PAGE_W, HEADER_DIVIDER_H, 'F');
 }
