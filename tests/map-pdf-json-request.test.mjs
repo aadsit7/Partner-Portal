@@ -318,6 +318,7 @@ test('V1.6 parseMapJsonResponse computes meta.sections_rendered for full source'
     },
     end_users_personas: [{ label: 'A', subline: '' }],
     what_changes: 'Outcome summary.',
+    proposed_delivery_targets: [{ name: 'AVD / Nerdio', subline: 'Non-persistent VDI' }],
     mutual_action_plan: [{ phase: 'Discovery', action: 'x', owner: 'Recast', due_date: '2026-05-01', status: 'Complete' }],
   };
   const parsed = parseMapJsonResponse(JSON.stringify(full));
@@ -425,4 +426,99 @@ test('V2 buildCategoryGuidanceBlock includes chronological weighting directive',
   assert.match(block, /Chronological weighting/i);
   assert.match(block, /more recent one reflects the current state/i);
   assert.match(block, /Commitment tracking/i);
+});
+
+// ── V1.8 — proposed_delivery_targets normalization + meta gate (T7–T10) ──
+
+test('T7 parseMapJsonResponse normalizes proposed_delivery_targets {name, subline} objects', () => {
+  const raw = {
+    customer_name: 'X',
+    meeting_recap: [{ label: 'a', detail: 'b' }],
+    proposed_delivery_targets: [
+      { name: 'AVD / Nerdio', subline: 'Non-persistent VDI' },
+      { name: 'Intune',       subline: '' },
+    ],
+  };
+  const parsed = parseMapJsonResponse(JSON.stringify(raw));
+  assert.equal(parsed.proposed_delivery_targets.length, 2);
+  assert.equal(parsed.proposed_delivery_targets[0].name, 'AVD / Nerdio');
+  assert.equal(parsed.proposed_delivery_targets[0].subline, 'Non-persistent VDI');
+  assert.equal(parsed.proposed_delivery_targets[1].name, 'Intune');
+  assert.equal(parsed.proposed_delivery_targets[1].subline, '');
+});
+
+test('T8 parseMapJsonResponse converts flat-string proposed_delivery_targets to {name, subline}', () => {
+  const raw = {
+    customer_name: 'X',
+    meeting_recap: [{ label: 'a', detail: 'b' }],
+    proposed_delivery_targets: ['AVD / Nerdio', 'Intune'],
+  };
+  const parsed = parseMapJsonResponse(JSON.stringify(raw));
+  assert.equal(parsed.proposed_delivery_targets.length, 2);
+  assert.equal(parsed.proposed_delivery_targets[0].name, 'AVD / Nerdio');
+  assert.equal(parsed.proposed_delivery_targets[0].subline, '');
+  assert.equal(parsed.proposed_delivery_targets[1].name, 'Intune');
+  assert.equal(parsed.proposed_delivery_targets[1].subline, '');
+});
+
+test('T9 parseMapJsonResponse defaults proposed_delivery_targets to [] when absent, null, or malformed', () => {
+  const cases = [
+    {},                                       // field absent
+    { proposed_delivery_targets: null },      // null
+    { proposed_delivery_targets: 'bad' },     // string (not an array)
+    { proposed_delivery_targets: 42 },        // number
+  ];
+  for (const extra of cases) {
+    const raw = {
+      customer_name: 'X',
+      meeting_recap: [{ label: 'a', detail: 'b' }],
+      ...extra,
+    };
+    const parsed = parseMapJsonResponse(JSON.stringify(raw));
+    assert.deepEqual(
+      parsed.proposed_delivery_targets, [],
+      `proposed_delivery_targets should default to [] for input: ${JSON.stringify(extra)}`,
+    );
+  }
+});
+
+test('T10 meta.sections_rendered.architecture_page requires both anchor data AND proposed_delivery_targets', () => {
+  // Anchor (infra + pain) but no proposed targets → architecture_page false
+  const noTargets = {
+    customer_name: 'X',
+    meeting_recap: [{ label: 'a', detail: 'b' }],
+    current_environment: {
+      infrastructure: [{ name: 'Citrix', subline: '' }],
+      current_state_pain: ['Slow'],
+      stakeholders_and_decision_process: [],
+    },
+    proposed_delivery_targets: [],
+  };
+  const p1 = parseMapJsonResponse(JSON.stringify(noTargets));
+  assert.equal(p1.meta.sections_rendered.architecture_page, false,
+    'architecture_page must be false when proposed_delivery_targets is empty');
+
+  // Anchor + proposed targets → architecture_page true
+  const withTargets = {
+    ...noTargets,
+    proposed_delivery_targets: [{ name: 'AVD / Nerdio', subline: 'Non-persistent VDI' }],
+  };
+  const p2 = parseMapJsonResponse(JSON.stringify(withTargets));
+  assert.equal(p2.meta.sections_rendered.architecture_page, true,
+    'architecture_page must be true when both anchor data and proposed_delivery_targets are present');
+
+  // Proposed targets present but no infra or pain → architecture_page still false
+  const noAnchor = {
+    customer_name: 'X',
+    meeting_recap: [{ label: 'a', detail: 'b' }],
+    current_environment: {
+      infrastructure: [],
+      current_state_pain: [],
+      stakeholders_and_decision_process: [],
+    },
+    proposed_delivery_targets: [{ name: 'AVD', subline: '' }],
+  };
+  const p3 = parseMapJsonResponse(JSON.stringify(noAnchor));
+  assert.equal(p3.meta.sections_rendered.architecture_page, false,
+    'architecture_page must be false when infra and pain are both empty even with proposed targets');
 });
