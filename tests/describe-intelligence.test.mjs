@@ -15,17 +15,24 @@ const { buildStandardizePrompt } = __standardizeInternals;
 // ── Helpers ────────────────────────────────────────────────────────
 
 function messagesResponse(text) {
-  return {
-    ok: true,
-    status: 200,
-    json: async () => ({
-      id: 'msg_test',
-      type: 'message',
-      role: 'assistant',
-      stop_reason: 'end_turn',
-      content: [{ type: 'text', text }],
-    }),
-  };
+  // standardizeDescription() uses SSE streaming (response.body.getReader()),
+  // so the mock must provide a ReadableStream that emits the text as a
+  // content_block_delta event.
+  const encoder = new TextEncoder();
+  const sseChunk = `data: ${JSON.stringify({
+    type: 'content_block_delta',
+    index: 0,
+    delta: { type: 'text_delta', text },
+  })}\n\n`;
+
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(sseChunk));
+      controller.close();
+    },
+  });
+
+  return { ok: true, status: 200, body };
 }
 
 function fileApiResponse() {
