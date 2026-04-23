@@ -7,7 +7,7 @@ import { buildTimelinePrompt } from './timeline-pdf-prompts.js';
 import { parseTimelineJsonResponse } from './timeline-pdf-schema.js';
 
 const TIMELINE_MODEL      = 'claude-opus-4-7';
-const TIMELINE_MAX_TOKENS = 4096;
+const TIMELINE_MAX_TOKENS = 16000;
 const TIMELINE_TIMEOUT_MS = 120_000;
 
 function requireApiKey() {
