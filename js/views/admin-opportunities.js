@@ -18,6 +18,7 @@ import { loadTypeFilter, computeTypeData, buildTypeFilterBar, applyTypeFilter } 
 import { generateMapPdfFromSelection } from '../utils/map-pdf-from-selection.js';
 import { createPill, updatePillStage, markPillSuccess, markPillFailure } from '../components/map-pdf-pill.js';
 import { fileApiRequest as fileApiRequestImpl } from '../utils/file-api.js';
+import { standardizeDescription, applyStandardizedDescription } from '../utils/ai.js';
 
 export const title = 'Opportunities';
 
@@ -936,8 +937,18 @@ function buildOppDetailsHero(opp, refs) {
   };
 }
 
+function makeCategoryPill(category) {
+  if (category === 'meeting_recap') {
+    return el('span', { class: 'category-pill category-pill--meeting-recap' }, '🔵 Meeting Recap');
+  }
+  if (category === 'opportunity_note') {
+    return el('span', { class: 'category-pill category-pill--opportunity-note' }, '🟢 Opportunity Note');
+  }
+  return null;
+}
+
 function buildDetailsDescriptionsSection(descriptions, options = {}) {
-  const { selectionMode = false, selected = null, onToggle = null } = options;
+  const { selectionMode = false, selected = null, onToggle = null, opportunityId = null } = options;
   const list = el('div', { class: 'details-modal__descriptions' });
 
   if (!descriptions || descriptions.length === 0) {
@@ -958,9 +969,9 @@ function buildDetailsDescriptionsSection(descriptions, options = {}) {
       html: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     });
 
-    const body = el('div', { class: 'transcript-card__body' },
-      el('div', { class: 'transcript-card__text', html: ensureHtml(desc.description_text || '') }),
-    );
+    // Mutable ref so the standardize handler can update the displayed text.
+    const bodyTextEl = el('div', { class: 'transcript-card__text', html: ensureHtml(desc.description_text || '') });
+    const body = el('div', { class: 'transcript-card__body' }, bodyTextEl);
     body.style.display = 'none';
 
     const header = el('div', {
@@ -989,7 +1000,62 @@ function buildDetailsDescriptionsSection(descriptions, options = {}) {
       });
       list.appendChild(el('div', { class: 'description-select__row' }, checkbox, card));
     } else {
-      list.appendChild(card);
+      // Standardize button — shown only in non-selection mode.
+      const realId = desc.description_id && !desc._tempId ? desc.description_id : null;
+      const isAlreadyDone = !!desc.category;
+
+      const categoryPillSlot = el('span', { class: 'description-card__pill-slot' });
+      if (desc.category) {
+        const pill = makeCategoryPill(desc.category);
+        if (pill) categoryPillSlot.appendChild(pill);
+      }
+
+      const standardizeBtn = el('button', {
+        class: 'btn btn--xs btn--secondary standardize-btn',
+        type: 'button',
+        disabled: isAlreadyDone || !realId,
+        title: isAlreadyDone
+          ? 'Already standardized'
+          : (!realId ? 'Not yet saved — open the Edit modal to save first' : 'Reformat with AI while preserving all content'),
+      }, '✨ Standardize');
+
+      standardizeBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        standardizeBtn.disabled = true;
+        standardizeBtn.textContent = 'Standardizing…';
+
+        try {
+          const rawText = stripHtml(desc.description_text || '').trim();
+          const result = await standardizeDescription(rawText);
+          await applyStandardizedDescription(opportunityId, realId, result.category, result.standardizedText);
+
+          // Update in-memory object so subsequent re-renders reflect the new state.
+          desc.description_text = result.standardizedText;
+          desc.category = result.category;
+
+          // Update the DOM in place — no full re-render needed.
+          bodyTextEl.innerHTML = ensureHtml(result.standardizedText);
+          const pill = makeCategoryPill(result.category);
+          categoryPillSlot.replaceChildren();
+          if (pill) categoryPillSlot.appendChild(pill);
+          standardizeBtn.textContent = 'Standardized';
+          standardizeBtn.title = 'Already standardized';
+        } catch (err) {
+          console.error('[Standardize] failed', err);
+          showToast(err.message || 'Standardize failed', 'error');
+          standardizeBtn.disabled = false;
+          standardizeBtn.textContent = '✨ Standardize';
+        }
+      });
+
+      const cardRow = el('div', { class: 'description-card__row' },
+        card,
+        el('div', { class: 'description-card__actions' },
+          categoryPillSlot,
+          standardizeBtn,
+        ),
+      );
+      list.appendChild(cardRow);
     }
   });
 
@@ -1060,7 +1126,7 @@ async function copyTextToClipboard(text) {
   }
 }
 
-function setupDescriptionsSelection({ descriptions, copyBtn, generateBtn, toolbarSlot, listSlot, onGenerate }) {
+function setupDescriptionsSelection({ descriptions, copyBtn, generateBtn, toolbarSlot, listSlot, onGenerate, opportunityId = null }) {
   if (!descriptions || descriptions.length === 0) {
     copyBtn.hidden = true;
     if (generateBtn) generateBtn.hidden = true;
@@ -1102,6 +1168,7 @@ function setupDescriptionsSelection({ descriptions, copyBtn, generateBtn, toolba
         else state.selected.delete(idx);
         render();
       },
+      opportunityId,
     }));
   };
 
@@ -1668,7 +1735,9 @@ export async function openOppDetailsModal(opp) {
         description_text: opp.description,
       }];
     }
-    descriptionsSlot.replaceChildren(buildDetailsDescriptionsSection(descriptions));
+    descriptionsSlot.replaceChildren(buildDetailsDescriptionsSection(descriptions, {
+      opportunityId: opp.opportunity_id,
+    }));
     setupDescriptionsSelection({
       descriptions,
       copyBtn: descriptionsCopyBtn,
@@ -1676,6 +1745,7 @@ export async function openOppDetailsModal(opp) {
       toolbarSlot: descriptionsToolbarSlot,
       listSlot: descriptionsSlot,
       onGenerate: handleGenerateFromSelection,
+      opportunityId: opp.opportunity_id,
     });
 
     currentFiles = docsResult.status === 'fulfilled' ? [...docsResult.value] : [];
