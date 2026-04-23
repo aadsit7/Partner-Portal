@@ -1114,6 +1114,10 @@ const MAP_JSON_SCHEMA_EXAMPLE = `{
     { "label": "Remote / Hybrid", "subline": "Home + travel" }
   ],
   "what_changes": "RES eliminated. Per-platform packaging eliminated. Citrix-to-AVD migration absorbed without user disruption.",
+  "proposed_delivery_targets": [
+    { "name": "AVD / Nerdio", "subline": "Non-persistent VDI" },
+    { "name": "Intune",       "subline": "Physical endpoints" }
+  ],
   "mutual_action_plan": [
     { "phase": "Discovery",    "action": "Joint discovery session",       "owner": "Recast",   "due_date": "2026-04-29", "status": "Complete" },
     { "phase": "POC Setup",    "action": "Provision POC environment",     "owner": "Customer", "due_date": "2026-05-13", "status": "In Progress" }
@@ -1233,7 +1237,21 @@ Field-level guidance (every one of these is subordinate to the Golden Rule above
 - "current_environment.current_state_pain": return 0 entries if the source doesn't discuss pain. Return 2-5 plain-string bullets when grounded. Do NOT infer pain from neutral language.
 - "current_environment.stakeholders_and_decision_process": return 0 entries if the source doesn't name anyone. Return 3-6 plain-string bullets when grounded. Real names and roles only — no generic "VP-level leadership" placeholders.
 - "end_users_personas": return an empty array unless the source explicitly describes end-user segments. When grounded, return {label, subline} objects naming those segments.
-- "what_changes": return an empty string unless the source explicitly describes transformation outcomes. When grounded, return a single sentence summarizing what changes for the customer.
+- "what_changes": return an empty string unless the source explicitly describes transformation outcomes for THIS customer. When grounded, return a single sentence that names the specific platforms, tools, or workflows being replaced — not a generic product pitch (e.g., "Citrix eliminated; AVD/Nerdio adoption without repackaging" not "Application Workspace streamlines delivery"). If the source doesn't describe specific outcomes, return an empty string.
+- "proposed_delivery_targets": return [] if the source does not clearly name delivery platforms the customer is moving TOWARD. When grounded, return 1–4 {name, subline} entries representing the delivery platforms the customer is adopting.
+
+  CONSTRAINED VOCABULARY — the "name" field MUST be one of these exact strings only:
+  "AVD" | "AVD / Nerdio" | "Nerdio" | "Windows 365" | "Intune" | "SCCM / Intune" | "SCCM" | "Citrix" | "Jamf" | "Non-persistent VDI" | "Persistent VDI"
+
+  GUARDRAILS (non-negotiable, subordinate to the Golden Rule above):
+  (a) Only include a target if the source explicitly names it as a future direction or states intent to adopt it.
+  (b) If a platform is being PHASED OUT (e.g., "exiting Citrix", "Citrix contract not renewing"), include it in current_environment.infrastructure but DO NOT include it in proposed_delivery_targets.
+  (c) Do NOT include "Windows 365" unless the source explicitly says "Windows 365", "W365", or "Cloud PCs" as a target direction.
+  (d) Do NOT infer a replacement: if the source says "exiting Citrix" without naming a replacement, return [].
+  (e) Contradictory signals across entries: the more recent entry's signal wins — per the chronological weighting rule above.
+  (f) When in doubt, return []. An empty array is correct and safe; the section will be skipped rather than fabricated.
+  "subline" is a 2–5 word delivery-model descriptor (e.g., "Non-persistent VDI", "Cloud-managed endpoints", "macOS management") — empty string if the source doesn't provide it.
+  For Windows 365: use name "Windows 365", subline "Cloud PCs".
 - "mutual_action_plan": always populated (at least 3 entries) if the source contains ANY action items, dates, or next steps. If the source contains none, return an empty array. When populated, cover the natural lifecycle: Discovery → POC Setup → Validation → Business Case → Decision → Rollout. Each row's "status" must be one of: "Complete", "In Progress", "Pending", "Blocked", "Not Started". Dates in ISO format YYYY-MM-DD.
 
 Return the JSON object and nothing else.`;
@@ -1366,6 +1384,18 @@ function parseMapJsonResponse(rawText) {
     ? parsed.what_changes.trim()
     : '';
 
+  parsed.proposed_delivery_targets = Array.isArray(parsed.proposed_delivery_targets)
+    ? parsed.proposed_delivery_targets.map(entry => {
+        if (typeof entry === 'string') return { name: entry, subline: '' };
+        if (entry && typeof entry === 'object') {
+          const name = typeof entry.name === 'string' ? entry.name : '';
+          const subline = typeof entry.subline === 'string' ? entry.subline : '';
+          return { name, subline };
+        }
+        return { name: '', subline: '' };
+      }).filter(e => e.name)
+    : [];
+
   parsed.mutual_action_plan = parsed.mutual_action_plan
     .filter(r => r && typeof r === 'object');
 
@@ -1378,6 +1408,7 @@ function parseMapJsonResponse(rawText) {
   const hasMapRows = parsed.mutual_action_plan.length > 0;
   const hasPersonas = parsed.end_users_personas.length > 0;
   const hasWhatChanges = parsed.what_changes.length > 0;
+  const hasProposedTargets = parsed.proposed_delivery_targets.length > 0;
   parsed.meta = {
     ...(parsed.meta && typeof parsed.meta === 'object' ? parsed.meta : {}),
     sections_rendered: {
@@ -1387,7 +1418,7 @@ function parseMapJsonResponse(rawText) {
       stakeholders: hasStakeholders,
       environment: hasInfra || hasPain || hasStakeholders,
       map_table: hasMapRows,
-      architecture_page: hasInfra || hasPain,
+      architecture_page: (hasInfra || hasPain) && hasProposedTargets,
       personas: hasPersonas,
       what_changes: hasWhatChanges,
     },
@@ -1548,7 +1579,21 @@ Field-level guidance (every one of these is subordinate to the Golden Rule above
 - "current_environment.current_state_pain": return 0 entries if none of the entries discuss pain. Return 2-5 plain-string bullets when grounded. Do NOT infer pain from neutral language.
 - "current_environment.stakeholders_and_decision_process": return 0 entries if no entry names anyone. Return 3-6 plain-string bullets when grounded. Real names and roles only — no generic placeholders.
 - "end_users_personas": return an empty array unless an entry explicitly describes end-user segments. When grounded, return {label, subline} objects.
-- "what_changes": return an empty string unless an entry explicitly describes transformation outcomes. When grounded, return a single sentence.
+- "what_changes": return an empty string unless an entry explicitly describes transformation outcomes for THIS customer. When grounded, return a single sentence that names the specific platforms, tools, or workflows being replaced — not a generic product pitch (e.g., "Citrix eliminated; AVD/Nerdio adoption without repackaging" not "Application Workspace streamlines delivery"). If no entry describes specific outcomes, return an empty string.
+- "proposed_delivery_targets": return [] if none of the entries clearly name delivery platforms the customer is moving TOWARD. When grounded, return 1–4 {name, subline} entries representing the delivery platforms the customer is adopting.
+
+  CONSTRAINED VOCABULARY — the "name" field MUST be one of these exact strings only:
+  "AVD" | "AVD / Nerdio" | "Nerdio" | "Windows 365" | "Intune" | "SCCM / Intune" | "SCCM" | "Citrix" | "Jamf" | "Non-persistent VDI" | "Persistent VDI"
+
+  GUARDRAILS (non-negotiable, subordinate to the Golden Rule above):
+  (a) Only include a target if an entry explicitly names it as a future direction or states intent to adopt it.
+  (b) If a platform is being PHASED OUT (e.g., "exiting Citrix", "Citrix contract not renewing"), include it in current_environment.infrastructure but DO NOT include it in proposed_delivery_targets.
+  (c) Do NOT include "Windows 365" unless an entry explicitly says "Windows 365", "W365", or "Cloud PCs" as a target direction.
+  (d) Do NOT infer a replacement: if entries say "exiting Citrix" without naming a replacement, return [].
+  (e) Contradictory signals across entries: the more recent entry's signal wins — per the chronological weighting rule above.
+  (f) When in doubt, return []. An empty array is correct and safe; the section will be skipped rather than fabricated.
+  "subline" is a 2–5 word delivery-model descriptor (e.g., "Non-persistent VDI", "Cloud-managed endpoints", "macOS management") — empty string if no entry provides it.
+  For Windows 365: use name "Windows 365", subline "Cloud PCs".
 - "mutual_action_plan": always populated (at least 3 entries) if any entry contains action items, dates, or next steps. If no entry contains any of those, return an empty array. When populated, cover the natural lifecycle: Discovery → POC Setup → Validation → Business Case → Decision → Rollout. Each row's "status" must be one of: "Complete", "In Progress", "Pending", "Blocked", "Not Started". Dates in ISO format YYYY-MM-DD. When entries disagree on a row's status or date, the most recent DATE-marked entry wins.
 
 Return the JSON object and nothing else.`;

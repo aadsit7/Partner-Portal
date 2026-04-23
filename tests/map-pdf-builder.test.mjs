@@ -189,6 +189,7 @@ test('buildMapPdf returns a blob and hits autoTable once', async () => {
       current_state_pain: ['y'],
       stakeholders_and_decision_process: ['z'],
     },
+    proposed_delivery_targets: [{ name: 'AVD / Nerdio', subline: 'Non-persistent VDI' }],
     mutual_action_plan: [
       { phase: 'Discovery', action: 'do stuff', owner: 'Recast', due_date: '2026-05-01', status: 'Complete' },
       { phase: 'Discovery', action: 'more stuff', owner: 'Customer', due_date: '2026-05-08', status: 'In Progress' },
@@ -231,6 +232,7 @@ test('buildMapPdf renders the new {label, detail} + {name, subline} shapes witho
     // V1.6: Page 3 personas + What Changes callout are now grounded in
     // JSON. Populate both so this test exercises the full architecture
     // page — the conditional-rendering tests below cover the empty paths.
+    proposed_delivery_targets: [{ name: 'AVD / Nerdio', subline: 'Non-persistent VDI' }],
     end_users_personas: [
       { label: 'Packaging Engineers', subline: 'Own application delivery workflow' },
     ],
@@ -377,6 +379,7 @@ test('V1.6 full MAP renders all three pages like today', async () => {
       current_state_pain: ['Packaging overhead'],
       stakeholders_and_decision_process: ['Sponsor: VP EUC'],
     },
+    proposed_delivery_targets: [{ name: 'AVD / Nerdio', subline: 'Non-persistent VDI' }],
     end_users_personas: [
       { label: 'Packaging Engineers', subline: '' },
     ],
@@ -409,6 +412,7 @@ test('V1.6 infra-only MAP: Page 3 current-state boxes render but Key Friction ca
       current_state_pain: [],
       stakeholders_and_decision_process: [],
     },
+    proposed_delivery_targets: [{ name: 'AVD / Nerdio', subline: '' }],
     end_users_personas: [],
     what_changes: '',
     mutual_action_plan: [],
@@ -438,6 +442,7 @@ test('V1.6 pain-only MAP: Page 3 Key Friction callout renders but current-state 
       current_state_pain: ['Packaging consumes 40+ hours per week'],
       stakeholders_and_decision_process: [],
     },
+    proposed_delivery_targets: [{ name: 'Intune', subline: 'Physical endpoints' }],
     end_users_personas: [],
     what_changes: '',
     mutual_action_plan: [],
@@ -497,6 +502,7 @@ test('V1.6 Page 3 without what_changes renders the diagram as the visual conclus
       current_state_pain: ['Packaging is slow'],
       stakeholders_and_decision_process: [],
     },
+    proposed_delivery_targets: [{ name: 'AVD / Nerdio', subline: '' }],
     end_users_personas: [],
     what_changes: '',
     mutual_action_plan: [],
@@ -560,6 +566,7 @@ test('V1.6 personas row: hardcoded generic personas are gone; grounded personas 
       current_state_pain: ['slow'],
       stakeholders_and_decision_process: [],
     },
+    proposed_delivery_targets: [{ name: 'AVD / Nerdio', subline: '' }],
     end_users_personas: [
       { label: 'Packaging Engineers', subline: 'Own application delivery workflow' },
       { label: 'Helpdesk',            subline: '' },
@@ -648,4 +655,183 @@ test('V1.7a header: coral divider bar (#E07050) renders immediately below the he
     }
   }
   assert.ok(dividerFound, `coral divider bar (#E07050) must render at y=${bandBottom} below the header band`);
+});
+
+// ─────────────────────────────────────────────────────────────
+// V1.8 — Dynamic proposed_delivery_targets (T1–T6)
+// ─────────────────────────────────────────────────────────────
+
+test('T1 dynamic targets: Greenshield scenario — AVD/Nerdio, SCCM, Intune, Jamf present; Windows 365 absent', async () => {
+  installJsPdfShim();
+  const json = {
+    customer_name: 'Greenshield',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'Direction', detail: 'Citrix exit; moving to AVD/Nerdio and Jamf' }],
+    current_environment: {
+      infrastructure: [{ name: 'Citrix', subline: 'Exiting EOY 2026' }],
+      current_state_pain: ['Citrix licensing costs rising'],
+      stakeholders_and_decision_process: [],
+    },
+    proposed_delivery_targets: [
+      { name: 'AVD / Nerdio', subline: 'Non-persistent VDI' },
+      { name: 'SCCM',         subline: '' },
+      { name: 'Intune',       subline: 'Physical endpoints' },
+      { name: 'Jamf',         subline: 'macOS management' },
+    ],
+    end_users_personas: [],
+    what_changes: 'Citrix eliminated; AVD/Nerdio adoption managed without repackaging.',
+    mutual_action_plan: [],
+  };
+  const blob = await buildMapPdf(json, { name: 'Greenshield' });
+  const calls = blob.__calls;
+
+  assert.ok(calls.some(c => c.op === 'addPage'),
+    'Page 3 must render when proposed_delivery_targets is populated');
+  assert.ok(hasText(calls, /AVD \/ Nerdio/), 'AVD / Nerdio must render');
+  assert.ok(hasText(calls, /^SCCM$/),        'SCCM must render');
+  assert.ok(hasText(calls, /^Intune$/),       'Intune must render');
+  assert.ok(hasText(calls, /^Jamf$/),         'Jamf must render');
+  assert.ok(!hasText(calls, /Windows 365/),
+    'Windows 365 must NOT render — not in Greenshield proposed targets');
+  assert.ok(hasText(calls, /What Changes:/),
+    'What Changes callout must render when what_changes is populated');
+  assert.ok(hasText(calls, /Citrix eliminated/),
+    'What Changes must contain customer-specific Citrix language');
+});
+
+test('T2 dynamic targets: Windows 365-heavy customer — W365 renders, AVD absent', async () => {
+  installJsPdfShim();
+  const json = {
+    customer_name: 'CloudFirst Corp',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'Direction', detail: 'Moving entirely to Windows 365 Cloud PCs' }],
+    current_environment: {
+      infrastructure: [{ name: 'SCCM', subline: 'On-prem managed' }],
+      current_state_pain: ['On-prem complexity'],
+      stakeholders_and_decision_process: [],
+    },
+    proposed_delivery_targets: [
+      { name: 'Windows 365', subline: 'Cloud PCs' },
+    ],
+    end_users_personas: [],
+    what_changes: '',
+    mutual_action_plan: [],
+  };
+  const blob = await buildMapPdf(json, { name: 'CloudFirst Corp' });
+  const calls = blob.__calls;
+
+  assert.ok(calls.some(c => c.op === 'addPage'), 'Page 3 must render');
+  assert.ok(hasText(calls, /Windows 365/), 'Windows 365 must render');
+  assert.ok(!hasText(calls, /AVD/),        'AVD must not render — not in this customer\'s proposed targets');
+  assert.ok(!hasText(calls, /Nerdio/),     'Nerdio must not render');
+});
+
+test('T3 dynamic targets: Mac-heavy customer — single Jamf box, no Windows targets', async () => {
+  installJsPdfShim();
+  const json = {
+    customer_name: 'MacFirst Inc',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'Fleet', detail: 'Entirely macOS managed via Jamf' }],
+    current_environment: {
+      infrastructure: [{ name: 'Jamf', subline: 'Current macOS management' }],
+      current_state_pain: ['App delivery fragmented across Mac fleet'],
+      stakeholders_and_decision_process: [],
+    },
+    proposed_delivery_targets: [
+      { name: 'Jamf', subline: 'macOS management' },
+    ],
+    end_users_personas: [],
+    what_changes: '',
+    mutual_action_plan: [],
+  };
+  const blob = await buildMapPdf(json, { name: 'MacFirst Inc' });
+  const calls = blob.__calls;
+
+  assert.ok(calls.some(c => c.op === 'addPage'), 'Page 3 must render');
+  assert.ok(hasText(calls, /^Jamf$/),    'Single Jamf box must render in proposed targets');
+  assert.ok(!hasText(calls, /^Intune$/), 'Intune must not render for a Mac-only customer');
+  assert.ok(!hasText(calls, /AVD/),      'AVD must not render for a Mac-only customer');
+});
+
+test('T4 dynamic targets: empty proposed_delivery_targets skips Page 3 even when infra + pain are present', async () => {
+  installJsPdfShim();
+  const json = {
+    customer_name: 'Sparse Data Co',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'Intro', detail: 'First call — no architecture detail yet' }],
+    current_environment: {
+      infrastructure: [{ name: 'Citrix', subline: 'Some details' }],
+      current_state_pain: ['Licensing pain'],
+      stakeholders_and_decision_process: [],
+    },
+    proposed_delivery_targets: [],
+    end_users_personas: [],
+    what_changes: '',
+    mutual_action_plan: [],
+  };
+  const blob = await buildMapPdf(json, { name: 'Sparse Data Co' });
+  const calls = blob.__calls;
+
+  assert.ok(!calls.some(c => c.op === 'addPage'),
+    'Architecture page must be skipped when proposed_delivery_targets is empty — a missing section is better than a fabricated one');
+  assert.ok(!hasText(calls, /APPLICATION WORKSPACE/),
+    'APPLICATION WORKSPACE must not render when architecture page is skipped');
+  assert.ok(!hasText(calls, /HOW APPLICATION WORKSPACE FITS/),
+    'Page 3 heading must not render when architecture page is skipped');
+});
+
+test('T5 dynamic targets: what_changes renders customer-specific narrative (not generic pitch)', async () => {
+  installJsPdfShim();
+  const json = {
+    customer_name: 'Transition Corp',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'Exit', detail: 'Citrix exit confirmed for Q3' }],
+    current_environment: {
+      infrastructure: [{ name: 'Citrix', subline: 'Exiting Q3 2026' }],
+      current_state_pain: ['Licensing cost spike'],
+      stakeholders_and_decision_process: [],
+    },
+    proposed_delivery_targets: [{ name: 'AVD / Nerdio', subline: 'Non-persistent VDI' }],
+    end_users_personas: [],
+    what_changes: 'Citrix eliminated; AVD/Nerdio adoption without repackaging.',
+    mutual_action_plan: [],
+  };
+  const blob = await buildMapPdf(json, { name: 'Transition Corp' });
+  const calls = blob.__calls;
+
+  assert.ok(hasText(calls, /What Changes:/),
+    'What Changes callout must render');
+  assert.ok(hasText(calls, /Citrix eliminated/),
+    'What Changes must contain the customer-specific transition language');
+});
+
+test('T6 dynamic targets: four proposed targets all render without crashing (variable-height boxes)', async () => {
+  installJsPdfShim();
+  const json = {
+    customer_name: 'Multi Target Corp',
+    document_date: 'April 22, 2026',
+    meeting_recap: [{ label: 'Mix', detail: 'Multi-platform environment' }],
+    current_environment: {
+      infrastructure: [{ name: 'Citrix', subline: '' }],
+      current_state_pain: ['Complexity'],
+      stakeholders_and_decision_process: [],
+    },
+    proposed_delivery_targets: [
+      { name: 'AVD / Nerdio', subline: 'Non-persistent VDI' },
+      { name: 'Intune',       subline: 'Physical endpoints' },
+      { name: 'Jamf',         subline: 'macOS management' },
+      { name: 'Windows 365',  subline: 'Cloud PCs' },
+    ],
+    end_users_personas: [],
+    what_changes: '',
+    mutual_action_plan: [],
+  };
+  const blob = await buildMapPdf(json, { name: 'Multi Target Corp' });
+  const calls = blob.__calls;
+
+  assert.ok(calls.some(c => c.op === 'addPage'), 'Page 3 must render');
+  assert.ok(hasText(calls, /AVD \/ Nerdio/), 'AVD / Nerdio must render');
+  assert.ok(hasText(calls, /^Intune$/),       'Intune must render');
+  assert.ok(hasText(calls, /^Jamf$/),         'Jamf must render');
+  assert.ok(hasText(calls, /Windows 365/),    'Windows 365 must render');
 });

@@ -721,16 +721,18 @@ function drawArchitecturePage(doc, json) {
     'F',
   );
 
-  // Delivery targets column (right) — 3 stacked small boxes
+  // Delivery targets column (right) — 1–4 stacked boxes driven by proposed_delivery_targets
   const rightX = centerX + centerW + gap6;
-  const targets = [
-    ['AVD / Nerdio', 'Non-persistent VDI'],
-    ['Intune / SCCM', 'Physical endpoints'],
-    ['Windows 365', 'Cloud PCs'],
-  ];
-  const targetH = (diagramH - 2 * 6) / 3;
-  for (let i = 0; i < targets.length; i++) {
-    const ty = diagramY + i * (targetH + 3);
+  const proposedTargets = (Array.isArray(json?.proposed_delivery_targets)
+    ? json.proposed_delivery_targets : [])
+    .map(e => (typeof e === 'string' ? { name: e, subline: '' } : (e || {})))
+    .filter(e => e && String(e.name || '').trim())
+    .slice(0, 4);
+  const tCount = proposedTargets.length;
+  const tGap = 3;
+  const targetH = tCount > 0 ? (diagramH - tGap * (tCount - 1)) / tCount : diagramH;
+  for (let i = 0; i < proposedTargets.length; i++) {
+    const ty = diagramY + i * (targetH + tGap);
     setFill(doc, GRAY_TINT);
     setStroke(doc, BORDER_GRAY);
     doc.setLineWidth(0.5);
@@ -738,11 +740,13 @@ function drawArchitecturePage(doc, json) {
     setText(doc, INK);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
-    doc.text(targets[i][0], rightX + rightW / 2, ty + 12, { align: 'center' });
-    setText(doc, MUTED);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.text(targets[i][1], rightX + rightW / 2, ty + 22, { align: 'center' });
+    doc.text(proposedTargets[i].name, rightX + rightW / 2, ty + 12, { align: 'center' });
+    if (proposedTargets[i].subline) {
+      setText(doc, MUTED);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text(proposedTargets[i].subline, rightX + rightW / 2, ty + 22, { align: 'center' });
+    }
   }
 
   y = diagramY + diagramH + 14;
@@ -847,17 +851,23 @@ export async function buildMapPdf(json, opportunity, options) {
   y = drawCurrentEnvironment(doc, json.current_environment, y + 4);
   drawMapTable(doc, json.mutual_action_plan, y + 6);
 
-  // Architecture page — conditional under the Golden Rule. If the
-  // source doesn't support a current state (infrastructure) OR a
-  // friction narrative (pain points), there's nothing factual to
-  // anchor a transformation story, so the page is skipped entirely:
-  // no doc.addPage(), no visible "skipped" marker, no fabricated
-  // placeholders. prefer a clean 2-page MAP to a padded 3-page one.
+  // Architecture page — conditional under the Golden Rule. Requires BOTH
+  // an anchor (current infrastructure or pain) AND proposed delivery
+  // targets. Without proposed targets the three-column diagram is
+  // incomplete (arrows pointing into nothing) and the page heading
+  // "HOW APPLICATION WORKSPACE FITS" would be misleading. Customers with
+  // rich Current State data but no confirmed future direction receive a
+  // clean 2-page MAP — their current environment remains visible on Page 1.
+  // This is intentional: the page only renders when it can tell a complete
+  // transformation story.
   const env = json.current_environment || {};
   const archPageHasAnchor =
     (Array.isArray(env.infrastructure) && env.infrastructure.length > 0) ||
     (Array.isArray(env.current_state_pain) && env.current_state_pain.length > 0);
-  if (archPageHasAnchor) {
+  const hasProposedTargets =
+    Array.isArray(json.proposed_delivery_targets) &&
+    json.proposed_delivery_targets.length > 0;
+  if (archPageHasAnchor && hasProposedTargets) {
     doc.addPage();
     drawArchitecturePage(doc, json);
   }
