@@ -1,13 +1,15 @@
 // ============================================================
 // MAP PDF Progress Pill
 // ============================================================
-// A small overlay inside the Randy window that shows "what's
-// happening right now" during the MAP PDF flow without blocking
-// the chat. Multiple pills stack if the user kicks off two
-// generations in a row. All DOM lives under #randy-root.
+// A small overlay that shows "what's happening right now" during
+// the MAP PDF flow. Multiple pills stack if the user kicks off two
+// generations at once.
 //
 // Public API (pure functions — no module-level singleton):
-//   createPill()                  → { el, id }
+//   createPill(stage, options)    → { el, id }
+//     options.label               — opportunity name shown above the stage line
+//     options.global              — use the body-fixed global stack (default)
+//     options.scopeContainer      — legacy: anchor inside a specific element
 //   updatePillStage(pill, text)   — swap the stage text
 //   markPillSuccess(pill, text)   — green tick, hold 3s, fade out
 //   markPillFailure(pill, text)   — amber warning, hold 5s, fade out
@@ -20,23 +22,35 @@
 const WARN_THRESHOLD_MS = 150_000;  // 2:30 — switch to amber "taking longer…"
 const HARD_TIMEOUT_MS   = 240_000;  // 4:00 — hard fail state
 
-// Stack container — created lazily, sits under #randy-root. Each pill
-// appends itself here; new pills push existing pills upward.
-//
-// V1.5 adds an optional `scopeContainer` so the click-driven MAP flow
-// inside the Opportunity dialog can anchor its pill to the modal's
-// body instead of the global Randy root. Pass the modal element and
-// a stack is created (or reused) inside it.
-function getStackHost(scopeContainer = null) {
+// Body-fixed global stack — created lazily, sits at viewport bottom-right.
+// All background MAP PDF jobs (both click-flow and Randy voice flow) use
+// this so pills are visible regardless of which panel or modal is open.
+function getGlobalPillHost() {
   if (typeof document === 'undefined') return null;
-  if (scopeContainer && typeof scopeContainer === 'object') {
-    let scoped = scopeContainer.querySelector('.randy-map-pill-stack--scoped');
-    if (scoped) return scoped;
-    scoped = document.createElement('div');
-    scoped.className = 'randy-map-pill-stack randy-map-pill-stack--scoped';
-    scopeContainer.appendChild(scoped);
-    return scoped;
-  }
+  let host = document.getElementById('map-pdf-global-pill-stack');
+  if (host) return host;
+  host = document.createElement('div');
+  host.id = 'map-pdf-global-pill-stack';
+  document.body.appendChild(host);
+  return host;
+}
+
+// Legacy scoped stack — kept for backwards compatibility. Pass a container
+// element and a stack is created (or reused) inside it.
+function getScopedPillHost(scopeContainer) {
+  if (typeof document === 'undefined') return null;
+  let scoped = scopeContainer.querySelector('.randy-map-pill-stack--scoped');
+  if (scoped) return scoped;
+  scoped = document.createElement('div');
+  scoped.className = 'randy-map-pill-stack randy-map-pill-stack--scoped';
+  scopeContainer.appendChild(scoped);
+  return scoped;
+}
+
+// Randy's existing in-panel stack — kept so Randy's own pill (when not
+// using the global option) continues to work unchanged.
+function getRandyPillHost() {
+  if (typeof document === 'undefined') return null;
   let host = document.getElementById('randy-map-pill-stack');
   if (host) return host;
   host = document.createElement('div');
@@ -45,6 +59,16 @@ function getStackHost(scopeContainer = null) {
   const parent = document.getElementById('randy-root') || document.body;
   parent.appendChild(host);
   return host;
+}
+
+function getStackHost(options = {}) {
+  if (options.scopeContainer && typeof options.scopeContainer === 'object') {
+    return getScopedPillHost(options.scopeContainer);
+  }
+  if (options.global !== false) {
+    return getGlobalPillHost();
+  }
+  return getRandyPillHost();
 }
 
 export function formatElapsed(ms) {
@@ -72,7 +96,7 @@ function warnSvg() {
 }
 
 export function createPill(initialStage = 'Starting…', options = {}) {
-  const host = getStackHost(options.scopeContainer || null);
+  const host = getStackHost(options);
   if (!host) return { el: null, id: null };
 
   const id = `map-pill-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
@@ -81,11 +105,16 @@ export function createPill(initialStage = 'Starting…', options = {}) {
   el.id = id;
   el.setAttribute('role', 'status');
   el.setAttribute('aria-live', 'polite');
+
+  const labelHtml = options.label
+    ? `<span class="randy-map-pill__label">${escapeHtml(options.label)}</span>`
+    : '';
+
+  // When a label is present, it sits on a line of its own (flex full-width)
+  // above the spinner row. flex-wrap: wrap on the pill handles the break.
   el.innerHTML = `
-    <span class="randy-map-pill__icon randy-map-pill__spinner">${spinnerSvg()}</span>
-    <span class="randy-map-pill__stage">${escapeHtml(initialStage)}</span>
-    <span class="randy-map-pill__elapsed">0:00</span>
-  `;
+    ${labelHtml}<span class="randy-map-pill__icon randy-map-pill__spinner">${spinnerSvg()}</span><span class="randy-map-pill__stage">${escapeHtml(initialStage)}</span><span class="randy-map-pill__elapsed">0:00</span>
+  `.trim();
 
   // Newest pill on top (so older ones settle below if the user kicks
   // off two generations). Gap comes from CSS.
