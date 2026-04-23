@@ -128,6 +128,9 @@ export async function render(container) {
       el('p', { class: 'setup-card__description' },
         'Create up to 5 custom instruction sets for Randy. Activate one from the pill menu above Randy\'s chat input to change how he responds for that conversation.'
       ),
+      el('p', { class: 'setup-card__description', style: { marginTop: '6px', fontStyle: 'italic' } },
+        'Tip: naming a preset “Timeline PDF” activates automatic PDF generation mode — any message you send becomes the opportunity name.'
+      ),
       el('div', { id: 'presets-container', style: { display: 'flex', flexDirection: 'column', gap: '12px' } }),
       el('div', { style: { marginTop: '8px' } },
         el('button', {
