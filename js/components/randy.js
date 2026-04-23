@@ -2080,8 +2080,23 @@ function togglePresetMenu() {
 }
 
 function selectPreset(promptId) {
+  if (promptId === activePresetId) {
+    setPresetMenuOpen(false);
+    return;
+  }
   activePresetId = promptId;
   setPresetMenuOpen(false);
+
+  // Clear conversation so the new preset starts with a clean slate.
+  conversationHistory = [];
+  const chat = document.getElementById('randy-chat');
+  if (chat) {
+    const presetName = promptId
+      ? (loadedPresets.find(p => p.prompt_id === promptId)?.label || 'this mode')
+      : 'Default';
+    chat.innerHTML = `<div class="randy-welcome"><p>Switched to <strong>${presetName}</strong>. How can I help?</p></div>`;
+  }
+
   renderPresets();
 }
 
