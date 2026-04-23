@@ -33,6 +33,12 @@ let cachedEvents = null;
 // for the handle shape; cleared in the openModal onClose callback.
 let activeDocsPanel = null;
 
+// opportunity_id of whichever opportunity's details modal is currently open.
+// Set by openOppDetailsModal, cleared in its onClose callback. Used by
+// background MAP PDF jobs to decide whether to inject into the open modal
+// or auto-open the modal when generation finishes.
+let activeModalOppId = null;
+
 /**
  * Inject a just-uploaded file into the currently-open Opportunity
  * modal's Documents panel. Returns true if the modal was open for
@@ -1287,7 +1293,7 @@ function buildDetailsDocumentsSection(files) {
 // Opportunity Details modal. The voice path in randy.js is unchanged;
 // this is a parallel thin wrapper over generateMapPdfFromSelection().
 
-function runOppMapPdfFromSelection({ opp, entries, modalEl, cardSlot, onFileSaved }) {
+function runOppMapPdfFromSelection({ opp, entries, cardSlot, onFileSaved }) {
   if (!entries || entries.length === 0) return;
   const count = entries.length;
   const opportunity = {
@@ -1301,12 +1307,12 @@ function runOppMapPdfFromSelection({ opp, entries, modalEl, cardSlot, onFileSave
     expectedClose: opp.expected_close || '',
   };
 
-  // Pill anchored inside the modal so it stays visible even if the
-  // user scrolls the body. options.scopeContainer was added on the
-  // pill component for this V1.5 flow.
+  // Pill lives in the global body-fixed stack — persists regardless of whether
+  // the opportunity modal stays open. Label shows the customer name so the user
+  // knows which generation is which when multiple are running concurrently.
   const pill = createPill(
     count > 1 ? `Synthesizing ${count} descriptions…` : 'Reading description…',
-    { scopeContainer: modalEl },
+    { label: opp.customer_name || opp.deal_name || '' },
   );
 
   const onStage = (stage) => {
@@ -1324,30 +1330,69 @@ function runOppMapPdfFromSelection({ opp, entries, modalEl, cardSlot, onFileSave
   generateMapPdfFromSelection(opportunity, normalizedEntries, { onStage })
     .then((result) => {
       markPillSuccess(pill, 'Saved!');
-      if (typeof onFileSaved === 'function') onFileSaved(result.file);
-      renderOppMapPdfSuccessCard(cardSlot, {
-        opportunity,
-        driveUrl: result.driveUrl,
-        filename: result.filename,
-        onTryAgainReset: () => cardSlot.replaceChildren(),
-      });
+      if (activeModalOppId === opp.opportunity_id) {
+        // Modal for this opportunity is still open — inject file and show success card.
+        if (typeof onFileSaved === 'function') onFileSaved(result.file);
+        if (cardSlot) {
+          renderOppMapPdfSuccessCard(cardSlot, {
+            opportunity,
+            driveUrl: result.driveUrl,
+            filename: result.filename,
+            onTryAgainReset: () => cardSlot.replaceChildren(),
+          });
+        }
+      } else {
+        // Modal was closed or the user is elsewhere — auto-open the opportunity
+        // so they can see the new PDF in the Documents section.
+        scheduleAutoOpen(opp);
+      }
     })
     .catch((err) => {
       console.error('[MAP PDF from selection] failure', err);
       markPillFailure(pill, 'Failed — see card');
-      renderOppMapPdfErrorCard(cardSlot, {
-        opportunity,
-        error: err,
-        onRetry: () => {
-          // Retry re-runs the entire pipeline with the SAME selection;
-          // user doesn't need to re-check boxes. The retry CTA replaces
-          // itself with a fresh card rendered by the resolved/rejected
-          // branch above.
-          cardSlot.replaceChildren();
-          runOppMapPdfFromSelection({ opp, entries, modalEl, cardSlot, onFileSaved });
-        },
-      });
+      if (activeModalOppId === opp.opportunity_id) {
+        // Modal is still open — show the error card with retry inside it.
+        if (cardSlot) {
+          renderOppMapPdfErrorCard(cardSlot, {
+            opportunity,
+            error: err,
+            onRetry: () => {
+              // Retry re-runs the entire pipeline with the SAME selection;
+              // user doesn't need to re-check boxes.
+              if (cardSlot) cardSlot.replaceChildren();
+              runOppMapPdfFromSelection({ opp, entries, cardSlot, onFileSaved });
+            },
+          });
+        }
+      } else {
+        // Modal is closed — make the (settled) error pill clickable so the
+        // user can navigate back to the opportunity to see the error.
+        if (pill.el) {
+          pill.el.style.cursor = 'pointer';
+          pill.el.title = `Click to open ${opp.customer_name || opp.deal_name || 'opportunity'}`;
+          pill.el.addEventListener('click', () => openOppDetailsModal(opp), { once: true });
+        }
+      }
     });
+}
+
+// Open opp's details modal immediately if no modal is currently open,
+// or queue the open until the current modal closes.
+function scheduleAutoOpen(opp) {
+  if (typeof document === 'undefined') return;
+  const modalRoot = document.getElementById('modal-root');
+  if (!modalRoot || !modalRoot.children.length) {
+    openOppDetailsModal(opp);
+    return;
+  }
+  // A modal is open — wait for it to close, then open this opportunity's modal.
+  const obs = new MutationObserver(() => {
+    if (!modalRoot.children.length) {
+      obs.disconnect();
+      openOppDetailsModal(opp);
+    }
+  });
+  obs.observe(modalRoot, { childList: true });
 }
 
 function buildOppMapSuccessCard({ customerName, filename, driveUrl, onViewInDocuments, onDismiss }) {
@@ -1654,12 +1699,14 @@ export async function openOppDetailsModal(opp) {
     ),
   );
 
+  activeModalOppId = opp.opportunity_id;
+
   const modalResult = openModal({
     title: opp.deal_name || 'Opportunity Details',
     content,
     className: 'modal--wide modal--details',
     footer: el('button', { class: 'details-modal__close-btn', onClick: closeModal }, 'Close'),
-    onClose: () => { if (listDirty) reRender(); },
+    onClose: () => { activeModalOppId = null; if (listDirty) reRender(); },
   });
 
   // Inject the edit button + fullscreen toggle into the modal header,
@@ -1700,13 +1747,6 @@ export async function openOppDetailsModal(opp) {
   });
   detachObserver.observe(document.getElementById('modal-root'), { childList: true });
 
-  // The pill stack attaches to the modal backdrop (which is position:
-  // fixed; inset: 0) so an `position: absolute; bottom/right` pill
-  // anchors against the modal's visual bottom-right corner without
-  // scrolling with the modal body's overflow. When the modal closes
-  // the backdrop is removed so the stack tears down with it.
-  const modalEl = modalResult.element;
-
   // Mutable cache of the documents list — lets the success card inject
   // the newly uploaded file without refetching from Apps Script. The
   // read-only details modal doesn't use buildDocumentsPanel(), so this
@@ -1729,7 +1769,6 @@ export async function openOppDetailsModal(opp) {
     runOppMapPdfFromSelection({
       opp,
       entries,
-      modalEl,
       cardSlot: mapPdfCardSlot,
       onFileSaved: injectNewDocument,
     });
