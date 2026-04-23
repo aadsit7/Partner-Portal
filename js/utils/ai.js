@@ -976,10 +976,24 @@ function findOpportunityMatches(opportunities, hint) {
   );
   if (exact.length > 0) return exact;
 
-  const partial = opportunities.filter(o =>
-    (o.customer_name || '').toLowerCase().includes(h) ||
-    (o.deal_name || '').toLowerCase().includes(h)
-  );
+  // Normalize hint by stripping punctuation so sentences like
+  // "Put together a timeline PDF for Flexera – OEM Expansion" can match
+  // an opportunity named "Flexera - OEM Expansion" (dash vs en-dash).
+  const hNorm = h.replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+
+  const partial = opportunities.filter(o => {
+    const cn = (o.customer_name || '').toLowerCase();
+    const dn = (o.deal_name || '').toLowerCase();
+    // Forward: opp name contains the hint (user typed the name or a substring)
+    if (cn.includes(h) || dn.includes(h)) return true;
+    // Reverse: hint sentence contains the opp name — handles natural-language
+    // messages like "Put together a timeline PDF for <opportunity name>".
+    // Normalize punctuation on both sides before comparing.
+    const cnNorm = cn.replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+    const dnNorm = dn.replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+    return (cnNorm.length >= 3 && hNorm.includes(cnNorm)) ||
+           (dnNorm.length >= 3 && hNorm.includes(dnNorm));
+  });
   if (partial.length > 0) return partial;
 
   const hintUpper = h.toUpperCase().replace(/[^A-Z0-9]/g, '');
