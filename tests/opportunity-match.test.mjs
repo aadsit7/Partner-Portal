@@ -60,6 +60,22 @@ test('no match returns empty array', () => {
   assert.deepEqual(findOpportunityMatches(OPPORTUNITIES, 'completely unrelated name'), []);
 });
 
+test('reverse match — full sentence contains opp name (Timeline PDF preset use-case)', () => {
+  const hits = findOpportunityMatches(OPPORTUNITIES, 'Put together a timeline PDF for Fabrikam Inc please');
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].opportunity_id, 'opp_2');
+});
+
+test('reverse match — sentence with punctuation-differing opp name still matches', () => {
+  const opps = [
+    { opportunity_id: 'x1', deal_name: 'Flexera - OEM Agreement Expansion', customer_name: 'Flexera' },
+  ];
+  // Hint uses a plain hyphen where the deal name uses " - "; normalization bridges the gap
+  const hits = findOpportunityMatches(opps, 'Put together a timeline PDF for Flexera OEM Agreement Expansion');
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].opportunity_id, 'x1');
+});
+
 test('empty / whitespace hint returns empty array', () => {
   assert.deepEqual(findOpportunityMatches(OPPORTUNITIES, ''), []);
   assert.deepEqual(findOpportunityMatches(OPPORTUNITIES, '   '), []);
