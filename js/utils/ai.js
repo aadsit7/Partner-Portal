@@ -666,7 +666,11 @@ export function buildQueryContext(data, userMessage) {
   // Specific-opportunity queries are already handled by the mentionedOpp block above,
   // so this trigger is reserved for partner-wide analysis (e.g. "walk me through everything
   // with Nerdio"). Keeping this narrow prevents inflating context on routine status queries.
-  const needsFullDescriptions = /tell me (all |everything |more )?about|deep dive|full (history|detail|picture|analysis)|analyze|walk me through|break down|everything about|what (happened|has been|have we|are we doing) with|all (notes|activity|meetings|descriptions|updates)|complete (history|picture|overview)|full context|bring me up to speed|catch me up/i.test(userMessage);
+  // Load all partner-level descriptions when the user wants substantive context
+  // about a partner (not just navigation or a simple field lookup). This covers
+  // both explicit deep-dive language and natural VP-style "catch me up" phrases.
+  // Specific-opportunity queries already load full descriptions via mentionedOpp.
+  const needsFullDescriptions = /tell me (all |everything |more )?about|deep dive|full (history|detail|picture|analysis)|analyze|walk me through|break down|everything about|what (happened|has been|have we|are we doing) with|all (notes|activity|meetings|descriptions|updates)|complete (history|picture|overview)|full context|bring me up to speed|catch me up|update me on|what'?s (the )?(latest|update|status|going on|happening|new) (with|on)|how (are|is) (things|it going) with|what have we (done|discussed|talked about)|fill me in/i.test(userMessage);
 
   const sections = [];
   const mentionedOpp = findMentionedOpportunity(data.opportunities || [], userMessage);
