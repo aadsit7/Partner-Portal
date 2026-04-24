@@ -2513,8 +2513,6 @@ function createWidget() {
       <button class="randy__btn" id="randy-btn" title="Randy Voice Assistant" aria-label="Open Randy assistant">
         <img src="assets/randy-avatar.png" alt="Randy" class="randy__avatar">
       </button>
-      <button class="randy__form-btn" id="randy-form-btn" title="Quick Add" aria-label="Quick add opportunity, partner, or event">${FORM_SVG_SM}</button>
-      <span class="randy__hint">Say "Hey Randy"</span>
 
       <div class="randy__backdrop" id="randy-backdrop"></div>
 
@@ -2594,8 +2592,8 @@ function createWidget() {
     }
   });
 
-  // Quick form toggle — collapsed-state button
-  document.getElementById('randy-form-btn').addEventListener('click', (e) => {
+  // Quick form toggle — collapsed-state button (element removed; handler retained for safety)
+  document.getElementById('randy-form-btn')?.addEventListener('click', (e) => {
     e.stopPropagation();
     initQuickForm();
     toggleQuickForm();
