@@ -2094,7 +2094,7 @@ function convertTables(text) {
         html += '</tr>';
       }
       html += '</tbody></table>';
-      out.push(html);
+      out.push(`<div class="randy-table-wrap">${html}</div>`);
       // Eat one trailing blank line so we don't emit a stray <br> after the table.
       if (i < lines.length && lines[i].trim() === '') i++;
     } else {
@@ -2106,8 +2106,15 @@ function convertTables(text) {
 }
 
 function renderMarkdown(text) {
+  // Use U+E000 (private-use area) as a placeholder to carry <br> tags
+  // through HTML-escaping unchanged — the placeholder has no &, <, or >.
+  // Restored to <br> after escaping so line breaks render in both table
+  // cells and regular prose. Only this exact tag is whitelisted; all other
+  // < > chars remain escaped.
   const escaped = text
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    .replace(/<br\s*\/?>/gi, '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(//g, '<br>');
   const withTables = convertTables(escaped);
   return withTables
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -2122,11 +2129,15 @@ function renderMarkdown(text) {
     .replace(/\n{2,}/g, '</p><p>')
     .replace(/\n/g, '<br>')
     .replace(/^/, '<p>').replace(/$/, '</p>')
+    // Strip spurious <p> wrappers around block-level elements
     .replace(/<p><(h[234]|ul|li|hr|table)/g, '<$1')
+    .replace(/<p><div class="randy-table-wrap">/g, '<div class="randy-table-wrap">')
     .replace(/<\/(h[234]|ul|li|table)><\/p>/g, '</$1>')
+    .replace(/<\/div><\/p>/g, '</div>')
     .replace(/<hr><\/p>/g, '<hr>')
-    .replace(/<p><br><table/g, '<table')
-    .replace(/<\/table><br>/g, '</table>');
+    // Strip stray <br>s immediately before/after the table wrapper
+    .replace(/<p><br><div class="randy-table-wrap">/g, '<div class="randy-table-wrap">')
+    .replace(/<\/div><br>/g, '</div>');
 }
 
 function extractVoiceText(text) {
