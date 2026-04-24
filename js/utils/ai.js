@@ -824,18 +824,26 @@ function classifyQueryComplexity(userMessage) {
   return 'medium';
 }
 
-// Per-tier API parameters. SIMPLE omits thinking entirely for minimum TTFT.
+// Per-tier API parameters. SIMPLE omits thinking entirely for minimum TTFT
+// and uses effort:low so Opus 4.7 produces a terse, direct reply.
 // MEDIUM uses adaptive thinking at low effort — enough for synthesis without
 // the multi-second pause of high-effort reasoning. COMPLEX is unchanged.
 const TIER_CONFIG = {
-  simple:  { max_tokens: 800,   thinking: null,                                      effort: null       },
-  medium:  { max_tokens: 4000,  thinking: { type: 'adaptive' }, effort: { effort: 'low'  } },
-  complex: { max_tokens: 16000, thinking: { type: 'adaptive' }, effort: { effort: 'high' } },
+  simple:  { max_tokens: 800,   thinking: null,                  effort: { effort: 'low'  } },
+  medium:  { max_tokens: 4000,  thinking: { type: 'adaptive' },  effort: { effort: 'low'  } },
+  complex: { max_tokens: 16000, thinking: { type: 'adaptive' },  effort: { effort: 'high' } },
 };
 
 function buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stream, activeMode }) {
-  const stableContext = buildStableContext(sheetData);
-  const queryContext = buildQueryContext(sheetData, userMessage);
+  // Classify first so we can skip expensive context work for simple queries.
+  const tier = classifyQueryComplexity(userMessage);
+  const tierCfg = TIER_CONFIG[tier];
+
+  // Navigation/greeting queries don't need the data corpus — omitting it
+  // keeps the request body small and cuts TTFT significantly.
+  const isSimple = tier === 'simple';
+  const stableContext = isSimple ? null : buildStableContext(sheetData);
+  const queryContext  = isSimple ? null : buildQueryContext(sheetData, userMessage);
 
   // When a Mode is active, append a compact reminder to the final user turn.
   // Recency matters — this is the last thing Claude reads before generating,
@@ -846,7 +854,12 @@ function buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stre
 
   const augmentedMessages = messages.map((m, i) => {
     if (i === messages.length - 1 && m.role === 'user') {
+      if (isSimple) {
+        return { role: 'user', content: `${m.content}${modeReminder}` };
+      }
       // Split the final user turn into cached + uncached blocks.
+      // 1-hour TTL keeps the cache alive across a full work session so we
+      // don't re-pay the write cost on every conversation break > 5 minutes.
       const tail = queryContext ? `${m.content}\n\n---${queryContext}` : m.content;
       return {
         role: 'user',
@@ -854,7 +867,7 @@ function buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stre
           {
             type: 'text',
             text: stableContext,
-            cache_control: { type: 'ephemeral' },
+            cache_control: { type: 'ephemeral', ttl: '1h' },
           },
           {
             type: 'text',
@@ -872,7 +885,7 @@ function buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stre
     {
       type: 'text',
       text: systemPrompt || SYSTEM_PROMPT,
-      cache_control: { type: 'ephemeral' },
+      cache_control: { type: 'ephemeral', ttl: '1h' },
     },
   ];
   if (activeMode) {
@@ -882,14 +895,17 @@ function buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stre
     });
   }
 
-  const tier = classifyQueryComplexity(userMessage);
-  const tierCfg = TIER_CONFIG[tier];
+  // output_config: thinking tiers include both thinking + effort; simple tier
+  // uses effort alone (no thinking) to keep replies brief and direct.
+  // temperature is not a valid parameter on claude-opus-4-7.
+  const outputConfig = tierCfg.thinking
+    ? { thinking: tierCfg.thinking, output_config: tierCfg.effort }
+    : { output_config: tierCfg.effort };
 
   return {
     model: 'claude-opus-4-7',
     max_tokens: tierCfg.max_tokens,
-    temperature: 1,
-    ...(tierCfg.thinking ? { thinking: tierCfg.thinking, output_config: tierCfg.effort } : {}),
+    ...outputConfig,
     system,
     messages: augmentedMessages,
     ...(stream ? { stream: true } : {}),
