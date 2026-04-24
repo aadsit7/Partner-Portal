@@ -189,7 +189,7 @@ function setupAppShell() {
 
 function registerAdminShortcuts() {
   // Randy voice activation
-  registerHotkey('Alt+ ', 'Activate Randy voice', () => {
+  registerHotkey('Alt+Z', 'Activate Randy voice', () => {
     if (typeof window.activateRandy === 'function') window.activateRandy();
   }, 'Randy');
 
