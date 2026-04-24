@@ -110,7 +110,7 @@ export function partnerCard(partner, stats, { onClick } = {}) {
  */
 export function statCard(label, value, options) {
   if (typeof options === 'string') options = { change: options };
-  const { change, accentColor, onClick, active } = options || {};
+  const { change, accentColor, onClick, active, icon } = options || {};
 
   const classes = ['stat-card'];
   if (onClick) classes.push('stat-card--clickable');
@@ -126,6 +126,11 @@ export function statCard(label, value, options) {
     style: Object.keys(style).length ? style : undefined,
     onClick: onClick || undefined,
   },
+    icon ? el('div', {
+      class: 'stat-card__icon-wrap',
+      style: accentColor ? { color: accentColor } : undefined,
+      html: icon,
+    }) : null,
     el('div', { class: 'stat-card__label' }, label),
     el('div', { class: 'stat-card__value' }, String(value)),
     change ? el('div', { class: 'stat-card__change' }, change) : null
