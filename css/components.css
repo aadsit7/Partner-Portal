@@ -1603,7 +1603,7 @@
 
 .quill-editor .ql-editor {
   min-height: 200px;
-  max-height: 400px;
+  max-height: 500px;
   overflow-y: auto;
   line-height: var(--leading-relaxed);
   color: var(--color-text-primary);

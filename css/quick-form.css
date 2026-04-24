@@ -362,7 +362,7 @@
 
 .qf-panel .ql-editor {
   min-height: 120px;
-  max-height: 200px;
+  max-height: 350px;
   overflow-y: auto;
   padding: 8px 10px;
   line-height: 1.5;
