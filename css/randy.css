@@ -359,24 +359,33 @@
   border-top: 1px solid #ddd;
   margin: 8px 0;
 }
+/* Scrollable wrapper so wide comparison tables don't overflow the bubble */
+.randy-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 8px 0;
+  border: 1px solid #e3e3ea;
+  border-radius: 6px;
+}
 .randy-msg--assistant .randy-bubble .randy-table {
   width: 100%;
   border-collapse: collapse;
-  margin: 8px 0;
   font-size: 12px;
   table-layout: auto;
   background: #fff;
-  border: 1px solid #e3e3ea;
-  border-radius: 6px;
-  overflow: hidden;
+  /* Border/radius handled by .randy-table-wrap */
+  border: none;
+  border-radius: 0;
+  overflow: visible;
 }
 .randy-msg--assistant .randy-bubble .randy-table th,
 .randy-msg--assistant .randy-bubble .randy-table td {
-  padding: 6px 8px;
+  padding: 7px 10px;
   text-align: left;
   vertical-align: top;
   border-bottom: 1px solid #eceef3;
   word-break: break-word;
+  min-width: 80px;
 }
 .randy-msg--assistant .randy-bubble .randy-table thead th {
   background: #f4f5fa;
@@ -385,13 +394,26 @@
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  border-bottom: 1px solid #d8dae3;
+  border-bottom: 2px solid #d8dae3;
+  white-space: nowrap;   /* prevent multi-word headers from line-breaking */
+}
+/* First column (label/dimension) stays compact and never breaks */
+.randy-msg--assistant .randy-bubble .randy-table th:first-child,
+.randy-msg--assistant .randy-bubble .randy-table td:first-child {
+  white-space: nowrap;
+  font-weight: 600;
+  color: #4a4a6a;
+  background: #f8f8fc;
+  border-right: 1px solid #e3e3ea;
 }
 .randy-msg--assistant .randy-bubble .randy-table tbody tr:last-child td {
   border-bottom: none;
 }
 .randy-msg--assistant .randy-bubble .randy-table tbody tr:nth-child(even) td {
   background: #fafbfd;
+}
+.randy-msg--assistant .randy-bubble .randy-table tbody tr:nth-child(even) td:first-child {
+  background: #f4f4f8;
 }
 
 /* Voice badge */
