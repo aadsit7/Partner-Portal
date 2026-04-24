@@ -3,7 +3,7 @@
 // ============================================
 
 import { CONFIG, getRuntimeConfig, setRuntimeConfig } from '../config.js';
-import { isConfigured, testConnection, initializeSheet, seedSheetData, syncHeaders, loadCustomPrompts, saveCustomPrompt, deleteCustomPrompt } from '../sheets.js';
+import { isConfigured, testConnection, initializeSheet, seedSheetData, syncHeaders, loadCustomPrompts, saveCustomPrompt, deleteCustomPrompt, saveReorderedPrompts } from '../sheets.js';
 import { el, mount } from '../utils/dom.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { showToast } from '../components/toast.js';
@@ -132,12 +132,18 @@ export async function render(container) {
         'Tip: naming a preset “Timeline PDF” activates automatic PDF generation mode — any message you send becomes the opportunity name.'
       ),
       el('div', { id: 'presets-container', style: { display: 'flex', flexDirection: 'column', gap: '12px' } }),
-      el('div', { style: { marginTop: '8px' } },
+      el('div', { style: { marginTop: '8px', display: 'flex', gap: '8px', alignItems: 'center' } },
         el('button', {
           class: 'btn btn--secondary',
           id: 'add-preset-btn',
           onClick: handleAddPreset,
-        }, '+ Add Preset')
+        }, '+ Add Preset'),
+        el('button', {
+          class: 'btn btn--primary',
+          id: 'save-order-btn',
+          style: { display: 'none' },
+          onClick: handleSaveOrder,
+        }, 'Save Order')
       )
     ),
 
@@ -318,10 +324,26 @@ export async function render(container) {
 
   const PRESET_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#0891b2'];
 
+  let originalOrderIds = [];
+  let dragSrc = null;
+
   function buildPresetCard(preset, index) {
     const isNew = !preset._rowIndex;
 
+    const dragHandle = el('span', {
+      style: {
+        cursor: 'grab',
+        color: '#9ca3af',
+        fontSize: '16px',
+        lineHeight: '1',
+        flexShrink: '0',
+        userSelect: 'none',
+        paddingRight: '2px',
+      },
+    }, '⠿');
+
     const colorDot = el('span', {
+      class: 'preset-color-dot',
       style: {
         display: 'inline-block',
         width: '12px',
@@ -401,10 +423,12 @@ export async function render(container) {
     }, '✕');
 
     const card = el('div', {
-      class: 'setup-card',
+      class: 'preset-card setup-card',
+      draggable: 'true',
       style: { margin: '0', padding: '14px', border: '1px solid #e5e7eb', borderRadius: '8px' },
     },
       el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px' } },
+        dragHandle,
         colorDot,
         labelInput,
         deletePresetBtn
@@ -418,6 +442,21 @@ export async function render(container) {
       )
     );
 
+    card._presetData = preset;
+
+    card.addEventListener('dragstart', e => {
+      if (e.target.closest('input, textarea, button')) { e.preventDefault(); return; }
+      dragSrc = card;
+      e.dataTransfer.effectAllowed = 'move';
+      setTimeout(() => { card.style.opacity = '0.4'; }, 0);
+    });
+
+    card.addEventListener('dragend', () => {
+      card.style.opacity = '';
+      dragSrc = null;
+      refreshSaveOrderBtn();
+    });
+
     return card;
   }
 
@@ -425,8 +464,71 @@ export async function render(container) {
     const container = document.getElementById('presets-container');
     if (!container) return;
     container.innerHTML = '';
+    originalOrderIds = presets.map(p => p.prompt_id || p.label);
     presets.forEach((p, i) => container.appendChild(buildPresetCard(p, i)));
+    setupDragDrop(container);
     refreshAddBtn();
+    refreshSaveOrderBtn();
+  }
+
+  function setupDragDrop(container) {
+    if (container._dndReady) return;
+    container._dndReady = true;
+
+    container.addEventListener('dragover', e => {
+      e.preventDefault();
+      if (!dragSrc) return;
+      const target = e.target.closest('.preset-card');
+      if (!target || target === dragSrc) return;
+      const rect = target.getBoundingClientRect();
+      const after = e.clientY > rect.top + rect.height / 2;
+      container.insertBefore(dragSrc, after ? target.nextSibling : target);
+      updateColorDots(container);
+    });
+
+    container.addEventListener('drop', e => { e.preventDefault(); });
+  }
+
+  function updateColorDots(container) {
+    Array.from(container.children).forEach((card, i) => {
+      const dot = card.querySelector('.preset-color-dot');
+      if (dot) dot.style.background = PRESET_COLORS[i] || '#6b7280';
+    });
+  }
+
+  function getCurrentOrder() {
+    const container = document.getElementById('presets-container');
+    if (!container) return [];
+    return Array.from(container.children).map(card => card._presetData).filter(Boolean);
+  }
+
+  function refreshSaveOrderBtn() {
+    const btn = document.getElementById('save-order-btn');
+    if (!btn) return;
+    const current = getCurrentOrder();
+    const changed = current.length > 0 && current.some(
+      (p, i) => (p.prompt_id || p.label) !== originalOrderIds[i]
+    );
+    btn.style.display = changed ? '' : 'none';
+  }
+
+  async function handleSaveOrder() {
+    const saveOrderBtn = document.getElementById('save-order-btn');
+    const orderedPresets = getCurrentOrder().filter(p => p._rowIndex);
+    if (orderedPresets.length === 0) return;
+    saveOrderBtn.disabled = true;
+    saveOrderBtn.textContent = 'Saving...';
+    try {
+      await saveReorderedPrompts(orderedPresets);
+      showToast('Order saved', 'success');
+      window.dispatchEvent(new CustomEvent('custom-prompts-changed'));
+      loadCustomPrompts().then(p => renderPresetCards(p)).catch(() => {});
+    } catch (err) {
+      showToast(err.message || 'Failed to save order', 'error');
+    } finally {
+      saveOrderBtn.disabled = false;
+      saveOrderBtn.textContent = 'Save Order';
+    }
   }
 
   function refreshAddBtn() {
