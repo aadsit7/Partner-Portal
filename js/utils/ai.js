@@ -584,42 +584,62 @@ export function buildStableContext(data) {
   return `DATA CONTEXT:
 
 PARTNERS (${data.partners.length} records):
-${JSON.stringify(data.partners, null, 2)}
+${JSON.stringify(data.partners)}
 
 OPPORTUNITIES (${opps.length} records):
-${JSON.stringify(opps, null, 2)}
+${JSON.stringify(opps)}
 
 EVENTS (${data.events.length} records):
-${JSON.stringify(data.events, null, 2)}
+${JSON.stringify(data.events)}
 
 MEETING_INDEX (${data.meetingIndex.length} records):
-${JSON.stringify(data.meetingIndex, null, 2)}
+${JSON.stringify(data.meetingIndex)}
 
 TRANSCRIPT PREVIEWS (${data.transcriptIndex.length} transcripts available — full text is added only when a question asks for it):
-${JSON.stringify(data.transcriptIndex, null, 2)}
+${JSON.stringify(data.transcriptIndex)}
 
 OPPORTUNITY DESCRIPTION INDEX (${(data.oppDescriptionIndex || []).length} description notes across all opportunities — full text for a specific opportunity is added when that opportunity is mentioned):
-${JSON.stringify(data.oppDescriptionIndex || [], null, 2)}`;
+${JSON.stringify(data.oppDescriptionIndex || [])}`;
+}
+
+// Normalize a string for fuzzy matching: lowercase, strip punctuation, collapse spaces.
+function normStr(str) {
+  return String(str || '').toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Voice-tolerant name matching. Handles speech-recognition artifacts like
+// "Green Shield" for "Greenshield" or "Nerdy Oh" for "Nerdio" via three passes:
+//   1. Exact normalized substring
+//   2. No-space form (multi-word name collapsed into one)
+//   3. Token overlap — ≥80% of name words appear (in any order) in the message
+function fuzzyNameMatch(name, message) {
+  if (!name) return false;
+  const n = normStr(name);
+  const m = normStr(message);
+
+  if (m.includes(n)) return true;
+
+  const nNoSpace = n.replace(/\s+/g, '');
+  const mNoSpace = m.replace(/\s+/g, '');
+  if (mNoSpace.includes(nNoSpace)) return true;
+
+  const nameTokens = n.split(' ').filter(t => t.length > 2);
+  if (nameTokens.length === 0) return false;
+  const msgTokens = m.split(' ');
+  const matched = nameTokens.filter(nt =>
+    msgTokens.some(mt => mt === nt || mt.startsWith(nt) || nt.startsWith(mt))
+  );
+  return matched.length / nameTokens.length >= 0.8;
 }
 
 function findMentionedPartner(partners, userMessage) {
-  const msg = userMessage.toLowerCase();
-  return partners.find(p => {
-    const name = (p.display_name || '').toLowerCase();
-    if (!name) return false;
-    return msg.includes(name) || msg.includes(name.replace(/\s+/g, ''));
-  }) || null;
+  return partners.find(p => fuzzyNameMatch(p.display_name, userMessage)) || null;
 }
 
 function findMentionedOpportunity(opportunities, userMessage) {
-  const msg = userMessage.toLowerCase();
-  return opportunities.find(o => {
-    const deal = (o.deal_name || '').toLowerCase();
-    const cust = (o.customer_name || '').toLowerCase();
-    if (deal && (msg.includes(deal) || msg.includes(deal.replace(/\s+/g, '')))) return true;
-    if (cust && (msg.includes(cust) || msg.includes(cust.replace(/\s+/g, '')))) return true;
-    return false;
-  }) || null;
+  return opportunities.find(o =>
+    fuzzyNameMatch(o.deal_name, userMessage) || fuzzyNameMatch(o.customer_name, userMessage)
+  ) || null;
 }
 
 function buildFullDescriptionsFor(data, opportunityId) {
@@ -642,7 +662,11 @@ function buildFullDescriptionsFor(data, opportunityId) {
 
 export function buildQueryContext(data, userMessage) {
   const needsTranscripts = /transcript|full detail|full history|exact|verbatim|what did .+ say|tell me everything|deep dive|email|contract|agreement/i.test(userMessage);
-  const needsFullDescriptions = /environment|platform|citrix|intune|sccm|avd|technical|architecture|current state|migration|deal|pipeline|status|update|detail|description|summary|recap|meeting|close|revenue|forecast|note|opportunity|opp\b/i.test(userMessage);
+  // Only pull all partner-level descriptions for explicit analytical/deep-dive requests.
+  // Specific-opportunity queries are already handled by the mentionedOpp block above,
+  // so this trigger is reserved for partner-wide analysis (e.g. "walk me through everything
+  // with Nerdio"). Keeping this narrow prevents inflating context on routine status queries.
+  const needsFullDescriptions = /tell me (all |everything |more )?about|deep dive|full (history|detail|picture|analysis)|analyze|walk me through|break down|everything about|what (happened|has been|have we|are we doing) with|all (notes|activity|meetings|descriptions|updates)|complete (history|picture|overview)|full context|bring me up to speed|catch me up/i.test(userMessage);
 
   const sections = [];
   const mentionedOpp = findMentionedOpportunity(data.opportunities || [], userMessage);
@@ -757,6 +781,54 @@ function buildModeSystemBlock({ label, instructions }) {
   );
 }
 
+// ── Query Complexity Classifier ────────────────────────────────────
+//
+// Routes each request into one of three tiers so we don't pay full
+// Opus + high-effort thinking latency for a 3-word navigation reply.
+//
+//  simple  — navigation, greetings, very short queries
+//            → no thinking, max_tokens 800  (~400ms TTFT)
+//  medium  — named-entity summaries, pipeline overviews, single-field Q&A
+//            → adaptive thinking low effort, max_tokens 4000  (~1-2s TTFT)
+//  complex — deep analysis, transcript mining, cross-entity comparisons,
+//            MAP PDF / Timeline PDF
+//            → adaptive thinking high effort, max_tokens 16000 (current baseline)
+//
+// Conservative bias: when uncertain, fall through to medium rather than
+// simple so accuracy is never sacrificed for speed.
+function classifyQueryComplexity(userMessage) {
+  const msg = (userMessage || '').toLowerCase().trim();
+  const wordCount = msg.split(/\s+/).length;
+
+  // SIMPLE — navigation commands, greetings, or very short (<= 4 words)
+  // utterances that don't contain analytical keywords.
+  const isNav = /^(open|go to|show me|show|navigate|take me to|pull up|bring up|switch to)\b/i.test(msg);
+  const isGreeting = /^(hi|hello|hey|thanks|thank you|good morning|good afternoon|what'?s up)\b/i.test(msg);
+  const hasAnalyticalKeyword = /\b(all|every|detail|history|transcript|analyze|compare|tell me about|how many|status|update|summary|pipeline|revenue|deal|forecast|recap|meeting|event|partner|opportunity)\b/.test(msg);
+
+  if (isNav || isGreeting || (wordCount <= 4 && !hasAnalyticalKeyword)) {
+    return 'simple';
+  }
+
+  // COMPLEX — explicit deep-analysis signals or background PDF tasks.
+  const isDeepAnalysis = /\b(analyze|deep dive|full history|all notes|all descriptions|compare|trend|break down|everything about|walk me through|tell me everything|all meetings|all transcripts|map pdf|timeline pdf|verbatim|across all|every partner|all partners|all opportunities|full picture|full context|bring me up to speed|catch me up)\b/.test(msg);
+
+  if (isDeepAnalysis) {
+    return 'complex';
+  }
+
+  return 'medium';
+}
+
+// Per-tier API parameters. SIMPLE omits thinking entirely for minimum TTFT.
+// MEDIUM uses adaptive thinking at low effort — enough for synthesis without
+// the multi-second pause of high-effort reasoning. COMPLEX is unchanged.
+const TIER_CONFIG = {
+  simple:  { max_tokens: 800,   thinking: null,                                      effort: null       },
+  medium:  { max_tokens: 4000,  thinking: { type: 'adaptive' }, effort: { effort: 'low'  } },
+  complex: { max_tokens: 16000, thinking: { type: 'adaptive' }, effort: { effort: 'high' } },
+};
+
 function buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stream, activeMode }) {
   const stableContext = buildStableContext(sheetData);
   const queryContext = buildQueryContext(sheetData, userMessage);
@@ -806,11 +878,14 @@ function buildRequestBody(messages, sheetData, userMessage, systemPrompt, { stre
     });
   }
 
+  const tier = classifyQueryComplexity(userMessage);
+  const tierCfg = TIER_CONFIG[tier];
+
   return {
     model: 'claude-opus-4-7',
-    max_tokens: 16000,
-    thinking: { type: 'adaptive' },
-    output_config: { effort: 'high' },
+    max_tokens: tierCfg.max_tokens,
+    temperature: 1,
+    ...(tierCfg.thinking ? { thinking: tierCfg.thinking, output_config: tierCfg.effort } : {}),
     system,
     messages: augmentedMessages,
     ...(stream ? { stream: true } : {}),
