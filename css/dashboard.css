@@ -11,9 +11,8 @@
 .dashboard-top,
 #dashboard-activity-view,
 #dashboard-partners-view {
-  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI',
-    'Plus Jakarta Sans', sans-serif;
-  color: #374151;
+  font-family: var(--font-sans);
+  color: var(--color-text-secondary);
 }
 
 /* -----------------------------------------------
@@ -22,12 +21,12 @@
    dashboard's stat cards are not affected.
    ----------------------------------------------- */
 .dashboard-top__stats .stat-card {
-  background: #ffffff;
-  border: 1px solid #E2E6F4;
-  border-left: 3px solid #D5DAE8;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-left: 3px solid var(--color-border);
   border-radius: 12px;
   padding: 16px 20px;
-  box-shadow: 0 1px 3px rgba(11, 22, 64, 0.07), 0 1px 2px rgba(0, 0, 0, 0.03);
+  box-shadow: var(--shadow-card);
   transition: box-shadow 0.2s, transform 0.2s;
 }
 
@@ -35,55 +34,55 @@
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: #7E82A0;
+  color: var(--color-text-muted);
   font-weight: 600;
 }
 
 .dashboard-top__stats .stat-card__value {
   font-size: 24px;
   font-weight: 700;
-  color: #0D1229;
+  color: var(--color-text-primary);
   letter-spacing: -0.02em;
 }
 
 .dashboard-top__stats .stat-card--clickable:hover {
-  box-shadow: 0 6px 20px rgba(11, 22, 64, 0.11);
+  box-shadow: var(--shadow-card-hover);
   transform: translateY(-2px);
-  background: #ffffff;
+  background: var(--color-surface);
 }
 
 .dashboard-top__stats .stat-card--active {
   background: rgba(30, 48, 204, 0.045);
-  border-left-color: #1E30CC;
+  border-left-color: var(--color-primary);
   box-shadow: 0 4px 16px rgba(30, 48, 204, 0.12);
   transform: translateY(-1px);
 }
 
 .dashboard-top__stats .stat-card--active .stat-card__value {
-  color: #1E30CC;
+  color: var(--color-primary);
 }
 
 /* -----------------------------------------------
    Opportunity Source by Partner Chart
    ----------------------------------------------- */
 .dashboard-top__chart .demandgen-chart {
-  background: #ffffff;
-  border: 1px solid #E2E6F4;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
   border-radius: 12px;
   padding: 24px;
-  box-shadow: 0 1px 3px rgba(11, 22, 64, 0.07);
+  box-shadow: var(--shadow-card);
   transition: box-shadow 0.2s;
 }
 
 .dashboard-top__chart .demandgen-chart__title {
   font-size: 16px;
   font-weight: 600;
-  color: #0D1229;
+  color: var(--color-text-primary);
 }
 
 .dashboard-top__chart .demandgen-chart__subtitle {
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--color-text-muted);
 }
 
 /* -----------------------------------------------
@@ -102,31 +101,43 @@
   background: transparent;
   border-radius: 0;
   padding: 0;
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--color-border-light);
+  display: flex;
 }
 
 .view-toggle:not(.type-filter-bar) .btn {
   padding: 8px 16px;
-  border-radius: 8px;
+  border-radius: 0;
   font-size: 13px;
   font-weight: 600;
   height: auto;
-  color: #6b7280;
+  color: var(--color-text-muted);
   background: transparent;
   border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.view-toggle:not(.type-filter-bar) .btn:hover {
+  color: var(--color-text-secondary);
+  background: transparent;
 }
 
 .view-toggle:not(.type-filter-bar) .btn--primary {
-  background: #0D1229;
-  color: #ffffff;
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  background: transparent;
   box-shadow: none;
 }
 
 .view-toggle:not(.type-filter-bar) .btn--secondary {
   background: transparent;
-  color: #6b7280;
+  color: var(--color-text-muted);
   border: none;
+  border-bottom: 2px solid transparent;
   box-shadow: none;
 }
 
@@ -144,25 +155,30 @@
 }
 
 .view-toggle.type-filter-bar .btn {
-  background: #f9fafb;
-  color: #4A4E6A;
-  border: 1px solid #D5DAE8;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 6px 14px;
   height: auto;
-  transition: box-shadow 0.2s, transform 0.2s;
+  transition: box-shadow var(--transition-fast), transform var(--transition-fast), background var(--transition-fast);
+}
+
+.view-toggle.type-filter-bar .btn:hover {
+  background: var(--color-bg);
+  border-color: var(--color-text-muted);
 }
 
 .view-toggle.type-filter-bar .btn--primary {
-  background: #0D1229;
+  background: var(--color-text-primary);
   color: #ffffff;
-  border-color: #0D1229;
+  border-color: var(--color-text-primary);
   box-shadow: none;
 }
 
 .view-toggle.type-filter-bar .btn .type-filter-pipeline {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--color-text-muted);
   opacity: 1;
 }
 
@@ -177,13 +193,13 @@
 #dashboard-activity-view .section-header__title {
   font-size: 20px;
   font-weight: 600;
-  color: #0D1229;
+  color: var(--color-text-primary);
   margin-bottom: 8px;
 }
 
 #dashboard-activity-view .section-header__subtitle {
   font-size: 14px;
-  color: #9ca3af;
+  color: var(--color-text-muted);
   margin-bottom: 12px;
 }
 
@@ -202,7 +218,7 @@
 }
 
 .activity-card {
-  border: 1px solid #E2E6F4;
+  border: 1px solid var(--color-border-light);
   border-radius: 12px;
   box-shadow: 0 1px 3px rgba(11, 22, 64, 0.07);
   transition: box-shadow 0.2s, transform 0.2s;
@@ -213,7 +229,7 @@
 .activity-card:hover {
   box-shadow: 0 6px 20px rgba(11, 22, 64, 0.11);
   transform: translateY(-2px);
-  border-color: #D5DAE8;
+  border-color: var(--color-border);
 }
 
 /* Activity card padding — tighter than default */
@@ -229,14 +245,14 @@
 .activity-card__metrics {
   gap: 0;
   padding: 10px 0;
-  border-top: 1px solid #EDF0F7;
-  border-bottom: 1px solid #EDF0F7;
+  border-top: 1px solid var(--color-border-light);
+  border-bottom: 1px solid var(--color-border-light);
   margin-bottom: 10px;
 }
 
 .activity-card__metric {
   position: relative;
-  padding: 0 16px;
+  padding: 0 14px;
 }
 
 .activity-card__metric + .activity-card__metric::before {
@@ -246,7 +262,7 @@
   top: 20%;
   height: 60%;
   width: 1px;
-  background: #E2E6F4;
+  background: var(--color-border-light);
 }
 
 .activity-card__metric:first-child {
@@ -255,6 +271,23 @@
 
 .activity-card__metric:last-child {
   padding-right: 0;
+}
+
+.activity-card__metric-value {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.activity-card__metric-label {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+  margin-top: 2px;
 }
 
 /* Event chips — tighter text */
@@ -275,30 +308,40 @@
    Upcoming Joint Events (Timeline) Cards
    ----------------------------------------------- */
 .timeline-card {
-  border: 1px solid #E2E6F4;
+  border: 1px solid var(--color-border-light);
   border-radius: 12px;
   box-shadow: 0 1px 3px rgba(11, 22, 64, 0.07);
-  border-left: 3px solid #D5DAE8;
+  border-left: 3px solid var(--color-border);
   transition: box-shadow 0.2s, transform 0.2s;
 }
 
 .timeline-card:hover {
   box-shadow: 0 6px 20px rgba(11, 22, 64, 0.11);
   transform: translateY(-2px);
-  border-color: #D5DAE8;
-  border-left-color: #1E30CC;
+  border-color: var(--color-border);
+  border-left-color: var(--color-primary);
 }
 
-/* Date box */
+/* Date box — brand-colored calendar badge */
 .timeline-card__date-col {
-  background: #EDF0F7;
+  background: var(--color-primary);
   border-radius: 10px;
+  min-width: 52px;
 }
 
 .timeline-card__month {
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.72);
+  font-weight: var(--font-semibold);
+}
+
+.timeline-card__day {
+  color: #ffffff;
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  line-height: 1;
 }
 
 /* Event type badges */
@@ -310,7 +353,7 @@
 /* Progress bar */
 .timeline-card__checklist-bar {
   height: 4px;
-  background: #E2E6F4;
+  background: var(--color-border-light);
   border-radius: 99px;
   overflow: hidden;
 }
@@ -326,15 +369,15 @@
   border-radius: 10px;
   border-width: 1px;
   border-style: solid;
-  border-color: #D5DAE8;
+  border-color: var(--color-border);
 }
 
 .type-card--active {
-  border-color: #1E30CC;
-  box-shadow: 0 0 0 1px #1E30CC;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
 }
 
 .type-card__pipeline {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--color-text-muted);
 }

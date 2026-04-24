@@ -510,6 +510,18 @@
   line-height: var(--leading-tight);
 }
 
+.stat-card__icon-wrap {
+  display: flex;
+  align-items: center;
+  margin-bottom: var(--space-3);
+  opacity: 0.85;
+}
+
+.stat-card__icon-wrap svg {
+  width: 22px;
+  height: 22px;
+}
+
 .stat-card__change {
   font-size: var(--text-xs);
   font-weight: var(--font-medium);

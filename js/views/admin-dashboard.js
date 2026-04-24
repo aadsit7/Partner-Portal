@@ -286,18 +286,22 @@ function renderDashboard(container, partners, opportunities, events) {
       el('div', { class: 'dashboard-top__stats stagger' },
         statCard('Total Partners', tfPartners.length, {
           accentColor: 'var(--color-primary-lighter)',
+          icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="7.5" cy="6" r="2.5" stroke="currentColor" stroke-width="1.5"/><path d="M2 17c0-3 2.5-5 5.5-5s5.5 2 5.5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="14" cy="6.5" r="2" stroke="currentColor" stroke-width="1.5"/><path d="M13 12c2 0 4.5 1 4.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
           onClick: () => toggleStat('partners'),
         }),
         statCard('Total Pipeline', formatCurrency(tfTotalPipeline), {
           accentColor: 'var(--color-accent)',
+          icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 14l4-5 3 3 3.5-5L17 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 5h3v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
           onClick: () => toggleStat('pipeline'),
         }),
         statCard('Revenue Won', formatCurrency(tfWonValue), {
           accentColor: 'var(--color-status-won)',
+          icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2l2.2 4.4 4.9.72-3.55 3.46.84 4.88L10 13.27l-4.4 2.23.84-4.88L2.9 7.12l4.9-.72L10 2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>',
           onClick: () => toggleStat('won'),
         }),
         statCard('Upcoming Events', tfUpcoming.length, {
           accentColor: 'var(--color-status-registered)',
+          icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M3 9h14" stroke="currentColor" stroke-width="1.5"/><path d="M7 2v4M13 2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M7 13h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
           onClick: () => toggleStat('events'),
         }),
       ),
