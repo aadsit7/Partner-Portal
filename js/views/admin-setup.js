@@ -220,7 +220,7 @@ export async function render(container) {
         ),
         el('tbody', {},
           shortcutRow('?', 'Show keyboard shortcuts', 'General'),
-          shortcutRow('Alt + R', 'Activate Randy voice', 'Randy'),
+          shortcutRow('Alt + Space', 'Activate Randy voice', 'Randy'),
           shortcutRow('Alt + O', 'New Opportunity', 'Opportunities'),
           shortcutRow('Alt + D', 'Dashboard', 'Navigation'),
           shortcutRow('Alt + A', 'Quick Form', 'Navigation'),
