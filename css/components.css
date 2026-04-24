@@ -2138,6 +2138,53 @@
   line-height: var(--leading-relaxed);
 }
 
+/* --- Keyboard Shortcuts Table --- */
+
+.shortcuts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin-top: var(--space-3);
+}
+
+.shortcuts-table thead th {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.shortcuts-table tbody tr:not(:last-child) td {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.shortcuts-table tbody td {
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text);
+  vertical-align: middle;
+}
+
+.shortcut-kbd {
+  display: inline-block;
+  padding: 2px 8px;
+  font-family: monospace;
+  font-size: var(--text-xs);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.shortcut-group {
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+}
+
 /* --- Content Visibility Toggles --- */
 
 .toggle-section {

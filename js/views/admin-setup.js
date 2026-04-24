@@ -204,6 +204,31 @@ export async function render(container) {
         infoItem('Delete', 'Deleting a record removes the row from the sheet.'),
         infoItem('Read', 'Every page load reads live data from the Google Sheet.'),
       )
+    ),
+
+    // Keyboard Shortcuts
+    el('div', { class: 'setup-card' },
+      el('h3', { class: 'setup-card__title' }, 'Keyboard Shortcuts'),
+      el('p', { class: 'setup-card__description' }, 'Available to admin users. Press ? anywhere to open the full shortcuts overlay.'),
+      el('table', { class: 'shortcuts-table' },
+        el('thead', {},
+          el('tr', {},
+            el('th', {}, 'Shortcut'),
+            el('th', {}, 'Action'),
+            el('th', {}, 'Group'),
+          )
+        ),
+        el('tbody', {},
+          shortcutRow('?', 'Show keyboard shortcuts', 'General'),
+          shortcutRow('Alt + R', 'Activate Randy voice', 'Randy'),
+          shortcutRow('Alt + O', 'New Opportunity', 'Opportunities'),
+          shortcutRow('Alt + D', 'Dashboard', 'Navigation'),
+          shortcutRow('Alt + A', 'Quick Form', 'Navigation'),
+          shortcutRow('Alt + P', 'Partners', 'Navigation'),
+          shortcutRow('Alt + E', 'Events', 'Navigation'),
+          shortcutRow('Alt + L', 'LeadCheck', 'Navigation'),
+        )
+      )
     )
   );
 
@@ -553,6 +578,14 @@ function infoItem(label, description) {
   return el('div', { class: 'setup-info__item' },
     el('div', { class: 'setup-info__label' }, label),
     el('div', { class: 'setup-info__desc' }, description)
+  );
+}
+
+function shortcutRow(combo, action, group) {
+  return el('tr', {},
+    el('td', {}, el('kbd', { class: 'shortcut-kbd' }, combo)),
+    el('td', {}, action),
+    el('td', { class: 'shortcut-group' }, group),
   );
 }
 

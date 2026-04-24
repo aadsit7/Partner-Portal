@@ -22,6 +22,7 @@ import { renderAdminAIAssistant, cleanupAdminAIAssistant } from './views/admin-a
 import { mountVoiceWidget } from './components/voice-widget.js';
 import { initRandy } from './components/randy.js';
 import { initHotkeys, registerHotkey } from './utils/hotkeys.js';
+import { toggleQuickForm } from './components/quick-form.js';
 
 // ---- Register Routes ----
 
@@ -204,7 +205,7 @@ function registerAdminShortcuts() {
 
   // Navigation shortcuts
   registerHotkey('Alt+D', 'Dashboard', () => navigate('/admin/dashboard'), 'Navigation');
-  registerHotkey('Alt+A', 'AI Assistant (Randy)', () => navigate('/admin/ai-assistant'), 'Navigation');
+  registerHotkey('Alt+A', 'Quick Form', () => toggleQuickForm(), 'Navigation');
   registerHotkey('Alt+P', 'Partners', () => navigate('/admin/partners'), 'Navigation');
   registerHotkey('Alt+E', 'Events', () => navigate('/admin/events'), 'Navigation');
   registerHotkey('Alt+L', 'LeadCheck', () => navigate('/admin/leadcheck'), 'Navigation');
