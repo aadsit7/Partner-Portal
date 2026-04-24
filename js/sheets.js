@@ -376,6 +376,14 @@ export async function deleteCustomPrompt(rowIndex) {
   return deleteRow(CONFIG.SHEET_CUSTOM_PROMPTS, rowIndex);
 }
 
+export async function saveReorderedPrompts(orderedPresets) {
+  for (let i = 0; i < orderedPresets.length; i++) {
+    const p = orderedPresets[i];
+    const row = [p.prompt_id, p.label, p.icon, p.instructions, p.created_at];
+    await updateRow(CONFIG.SHEET_CUSTOM_PROMPTS, i + 2, row);
+  }
+}
+
 /**
  * Test the connection by reading spreadsheet metadata.
  */
