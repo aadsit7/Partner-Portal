@@ -19,6 +19,7 @@ const ADMIN_NAV = [
   { path: '/admin/leadcheck', label: 'Accounts', icon: 'leadcheck' },
   { path: '/admin/partners', label: 'Partners', icon: 'partners' },
   { path: '/admin/events', label: 'Events / JLG', icon: 'events' },
+  { label: 'Pricing', icon: 'pricing', externalUrl: 'https://aadsit7.github.io/Partner-Calculator/' },
   { path: '/admin/setup', label: 'Setup', icon: 'setup' },
 ];
 
@@ -32,6 +33,7 @@ const ICONS = {
   ai: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 3.5l1.55 3.15L15 7.55l-2.3 2.25.55 3.2L10 11.5l-3.25 1.5.55-3.2L5 7.55l3.45-.9L10 3.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/><path d="M15.5 13.5l.8 1.6 1.7.4-1.25 1.2.3 1.75-1.55-.85-1.55.85.3-1.75L13 15.5l1.7-.4.8-1.6z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/></svg>',
   setup: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 5h2m0 0a2 2 0 004 0m-4 0a2 2 0 014 0m0 0h8M3 10h8m0 0a2 2 0 004 0m-4 0a2 2 0 014 0m0 0h2M3 15h2m0 0a2 2 0 004 0m-4 0a2 2 0 014 0m0 0h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   leadcheck: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M13.5 13.5L18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M6.5 8.5l1.5 1.5 2.5-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  pricing: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 3v14M13.5 6.5h-5a2 2 0 100 4h3a2 2 0 110 4h-5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   logout: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M7 16H4a2 2 0 01-2-2V4a2 2 0 012-2h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12 13l4-4-4-4M7.5 9H16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 
@@ -67,19 +69,38 @@ export function renderSidebar() {
   const nav = el('nav', { class: 'sidebar__nav' },
     el('div', { class: 'sidebar__section-label' }, sectionLabel),
     ...navItems.map(item =>
-      el('a', {
-        class: `sidebar__link ${currentPath === item.path ? 'sidebar__link--active' : ''}`,
-        href: `#${item.path}`,
-        dataset: { path: item.path },
-        onClick: (e) => {
-          e.preventDefault();
-          navigate(item.path);
-          closeMobileSidebar();
-        }
-      },
-        el('span', { class: 'sidebar__link-icon', html: ICONS[item.icon] }),
-        item.label
-      )
+      item.externalUrl
+        ? el('a', {
+            class: 'sidebar__link',
+            href: item.externalUrl,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            onClick: (e) => {
+              e.preventDefault();
+              window.open(
+                item.externalUrl,
+                'pricingPopup',
+                'popup=yes,width=1200,height=800,noopener,noreferrer'
+              );
+              closeMobileSidebar();
+            }
+          },
+            el('span', { class: 'sidebar__link-icon', html: ICONS[item.icon] }),
+            item.label
+          )
+        : el('a', {
+            class: `sidebar__link ${currentPath === item.path ? 'sidebar__link--active' : ''}`,
+            href: `#${item.path}`,
+            dataset: { path: item.path },
+            onClick: (e) => {
+              e.preventDefault();
+              navigate(item.path);
+              closeMobileSidebar();
+            }
+          },
+            el('span', { class: 'sidebar__link-icon', html: ICONS[item.icon] }),
+            item.label
+          )
     )
   );
 
