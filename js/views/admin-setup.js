@@ -122,6 +122,22 @@ export async function render(container) {
       el('div', { class: 'setup-actions' }, saveBtn, testBtn)
     ),
 
+    // Sheet Initialization
+    el('div', { class: 'setup-card' },
+      el('h3', { class: 'setup-card__title' }, 'Sheet Initialization'),
+      el('p', { class: 'setup-card__description' },
+        'Create the required tabs (Partners, Opportunities, Events) with header rows in your Google Sheet.'
+      ),
+      el('div', { class: 'setup-actions' },
+        initBtn,
+        syncBtn,
+        seedBtn
+      ),
+      el('div', { class: 'form-hint', style: { marginTop: 'var(--space-3)' } },
+        'Initialize creates the 3 tabs with headers. Seed populates them with sample data. You must be logged in with Google SSO for these to work.'
+      )
+    ),
+
     // AI Assistant Presets
     el('div', { class: 'setup-card' },
       el('h3', { class: 'setup-card__title' }, 'AI Assistant Presets'),
@@ -144,22 +160,6 @@ export async function render(container) {
           style: { display: 'none' },
           onClick: handleSaveOrder,
         }, 'Save Order')
-      )
-    ),
-
-    // Sheet Initialization
-    el('div', { class: 'setup-card' },
-      el('h3', { class: 'setup-card__title' }, 'Sheet Initialization'),
-      el('p', { class: 'setup-card__description' },
-        'Create the required tabs (Partners, Opportunities, Events) with header rows in your Google Sheet.'
-      ),
-      el('div', { class: 'setup-actions' },
-        initBtn,
-        syncBtn,
-        seedBtn
-      ),
-      el('div', { class: 'form-hint', style: { marginTop: 'var(--space-3)' } },
-        'Initialize creates the 3 tabs with headers. Seed populates them with sample data. You must be logged in with Google SSO for these to work.'
       )
     ),
 
