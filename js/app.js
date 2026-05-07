@@ -2,7 +2,7 @@
 // Partner Portal — App Entry Point
 // ============================================
 
-import { getCurrentUser } from './auth.js';
+import { getCurrentUser, storeAccessToken } from './auth.js';
 import { addRoute, initRouter, navigate } from './router.js';
 import { renderSidebar, setupMobileSidebar } from './components/sidebar.js';
 
@@ -211,9 +211,52 @@ function registerAdminShortcuts() {
   registerHotkey('Alt+L', 'LeadCheck', () => navigate('/admin/leadcheck'), 'Navigation');
 }
 
+// ---- Token Refresh for Returning Admin Sessions ----
+
+/**
+ * Schedule a silent token refresh ~5 minutes before the current token expires.
+ * Keeps the admin signed in indefinitely without manual re-authentication.
+ */
+function scheduleTokenRefresh() {
+  const user = getCurrentUser();
+  if (!user?.is_admin || !user.access_token_expires) return;
+
+  const msUntilRefresh = user.access_token_expires - Date.now() - 5 * 60 * 1000;
+  const delay = Math.max(msUntilRefresh, 0);
+
+  setTimeout(async () => {
+    try {
+      const newToken = await loginView.refreshAccessToken();
+      if (newToken) {
+        storeAccessToken(newToken);
+        scheduleTokenRefresh(); // schedule the next cycle
+      }
+    } catch {}
+  }, delay);
+}
+
 // ---- Initialize ----
 
 document.addEventListener('DOMContentLoaded', () => {
   setupMobileSidebar();
   initRouter();
+
+  // For returning admin sessions (already in localStorage), re-initialize
+  // the OAuth token client and refresh the access token silently so the admin
+  // never has to sign in again or visit Setup to resync.
+  const user = getCurrentUser();
+  if (user?.is_admin) {
+    loginView.initTokenClient();
+
+    // Give the Google GSI library ~2 s to load, then do a silent token refresh.
+    setTimeout(async () => {
+      try {
+        const newToken = await loginView.refreshAccessToken();
+        if (newToken) {
+          storeAccessToken(newToken);
+        }
+      } catch {}
+      scheduleTokenRefresh();
+    }, 2000);
+  }
 });

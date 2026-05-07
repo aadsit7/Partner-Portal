@@ -75,8 +75,21 @@ export async function readSheet(sheetName) {
   const res = await fetch(url, token ? { headers: { 'Authorization': `Bearer ${token}` } } : undefined);
 
   if (!res.ok) {
-    // Fall back to demo data on auth/permission errors
     if (res.status === 401 || res.status === 403) {
+      // Try a silent token refresh then retry the request once before giving up.
+      try {
+        const { refreshAccessToken } = await import('./views/login.js');
+        const { storeAccessToken } = await import('./auth.js');
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          storeAccessToken(newToken);
+          const retryRes = await fetch(url, { headers: { 'Authorization': `Bearer ${newToken}` } });
+          if (retryRes.ok) {
+            const retryData = await retryRes.json();
+            return retryData.values || [];
+          }
+        }
+      } catch {}
       console.warn(`Sheets API auth failed (${res.status}), using demo data for ${sheetName}`);
       return getDemoData(sheetName);
     }
