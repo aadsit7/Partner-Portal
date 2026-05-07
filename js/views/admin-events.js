@@ -6,7 +6,7 @@ import { getCurrentUser } from '../auth.js';
 import { readSheetAsObjects, appendRow, updateRow, deleteRow, isConfigured, addDemoRow, updateDemoRow, deleteDemoRow } from '../sheets.js';
 import { CONFIG } from '../config.js';
 import { el, mount, uuid, $, debounce, formatCurrency } from '../utils/dom.js';
-import { nowISO, formatDate, parseDate, isDateInRange } from '../utils/date.js';
+import { nowISO, formatDate, todayISO, parseDate, isDateInRange } from '../utils/date.js';
 import { openModal, closeModal, confirmDialog } from '../components/modal.js';
 import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
@@ -15,6 +15,17 @@ import { statCard } from '../components/card.js';
 import { parseChecklist, renderChecklist } from '../components/checklist.js';
 import { filterPartners, filterEvents } from '../utils/filters.js';
 import { loadTypeFilter, computeTypeData, buildTypeFilterBar, applyTypeFilter } from '../components/type-filter.js';
+import { stripHtml } from '../components/quill-editor.js';
+import {
+  buildDescriptionsPanel,
+  isDescriptionEmpty,
+  pickLatestDescriptionText,
+  toISODateOnly,
+} from '../components/descriptions-panel.js';
+import {
+  buildDocumentsPanel,
+  listEntityDocuments,
+} from '../components/documents-panel.js';
 
 export const title = 'Events';
 
@@ -787,7 +798,10 @@ function renderList(events) {
       ),
       el('tbody', {},
         ...sorted.map(evt =>
-          el('tr', {},
+          el('tr', {
+            style: { cursor: 'pointer' },
+            onClick: () => openEventModal(evt, document.getElementById('view-container')),
+          },
             el('td', {},
               el('div', { style: { fontWeight: 'var(--font-semibold)' } }, evt.title),
               el('div', {
@@ -810,8 +824,15 @@ function renderList(events) {
             el('td', {}, evt.location || '—'),
             el('td', {},
               el('div', { class: 'table__actions' },
-                el('button', { class: 'btn btn--ghost btn--sm', onClick: () => openEventModal(evt, document.getElementById('view-container')) }, 'Edit'),
-                el('button', { class: 'btn btn--ghost btn--sm', style: { color: 'var(--color-danger)' }, onClick: () => handleDelete(evt) }, 'Delete')
+                el('button', {
+                  class: 'btn btn--ghost btn--sm',
+                  onClick: (e) => { e.stopPropagation(); openEventModal(evt, document.getElementById('view-container')); },
+                }, 'Edit'),
+                el('button', {
+                  class: 'btn btn--ghost btn--sm',
+                  style: { color: 'var(--color-danger)' },
+                  onClick: (e) => { e.stopPropagation(); handleDelete(evt); },
+                }, 'Delete')
               )
             )
           )
@@ -846,6 +867,48 @@ export async function openEventModal(event, container, onSaved) {
   if (!cachedPartners) {
     const partners = await readSheetAsObjects(CONFIG.SHEET_PARTNERS);
     cachedPartners = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
+  }
+
+  // Load existing descriptions + documents in parallel when editing.
+  // Failures are tolerated (e.g. the Event_Descriptions sheet may not
+  // exist yet on a fresh install) — empty list on failure.
+  let workingDescriptions = [];
+  let initialDocuments = [];
+  if (isEdit) {
+    const [descResult, docsResult] = await Promise.allSettled([
+      readSheetAsObjects(CONFIG.SHEET_EVENT_DESCRIPTIONS),
+      listEntityDocuments(event.event_id),
+    ]);
+
+    if (descResult.status === 'fulfilled') {
+      workingDescriptions = descResult.value
+        .filter(d => d.event_id === event.event_id)
+        .map(d => ({ ...d }))
+        .sort((a, b) => new Date(b.description_date || b.created_at) - new Date(a.description_date || a.created_at));
+    } else {
+      console.warn('Failed to load event descriptions', descResult.reason);
+    }
+
+    if (docsResult.status === 'fulfilled') {
+      initialDocuments = docsResult.value;
+    } else {
+      console.warn('Failed to load event documents', docsResult.reason);
+    }
+
+    // Legacy migration: if no separate description records exist but the
+    // event row still has a description, surface it as a pending
+    // first-version card. Saving the modal will persist it to the new sheet.
+    if (workingDescriptions.length === 0 && event.description) {
+      workingDescriptions.push({
+        _tempId: `tmp_${uuid('dsc')}`,
+        _isNew: true,
+        event_id: event.event_id,
+        title: event.title,
+        description_date: toISODateOnly(event.created_at) || todayISO(),
+        description_text: event.description,
+        created_at: event.created_at || nowISO(),
+      });
+    }
   }
 
   // Parse or initialize checklist
@@ -883,7 +946,6 @@ export async function openEventModal(event, container, onSaved) {
     },
     { name: 'location', label: 'Location', placeholder: 'e.g., Virtual (Zoom), San Francisco, CA' },
     { name: 'url', label: 'Event URL', type: 'url', placeholder: 'https://...' },
-    { name: 'description', label: 'Description', type: 'textarea', placeholder: 'Describe the event...' },
   ];
 
   const initialValues = isEdit ? {
@@ -895,7 +957,6 @@ export async function openEventModal(event, container, onSaved) {
     partner_id: event.partner_id || '',
     location: event.location,
     url: event.url,
-    description: event.description,
   } : {};
 
   // Build the checklist UI
@@ -931,11 +992,22 @@ export async function openEventModal(event, container, onSaved) {
       const user = getCurrentUser();
       const checklistJson = JSON.stringify(checklistItems);
 
+      // Denormalize the most recent description (plain text) onto the
+      // event row so list-view previews and search keep working.
+      const latestDescHtml = pickLatestDescriptionText(workingDescriptions);
+      const latestDescPlain = stripHtml(latestDescHtml || '').trim();
+
+      let eventId;
+      let createdAt;
+
       if (isEdit) {
+        eventId = event.event_id;
+        createdAt = event.created_at;
+
         const values = [
-          event.event_id, data.title, data.description, data.event_date,
+          eventId, data.title, latestDescPlain, data.event_date,
           data.end_date || data.event_date, data.event_type, data.location,
-          data.url, event.created_by, event.created_at, data.status || 'Upcoming',
+          data.url, event.created_by, createdAt, data.status || 'Upcoming',
           data.partner_id || '', checklistJson,
         ];
 
@@ -944,12 +1016,14 @@ export async function openEventModal(event, container, onSaved) {
         } else {
           updateDemoRow(CONFIG.SHEET_EVENTS, event._rowIndex, values);
         }
-        showToast('Event updated successfully!', 'success');
       } else {
+        eventId = uuid('evt');
+        createdAt = nowISO();
+
         const values = [
-          uuid('evt'), data.title, data.description, data.event_date,
+          eventId, data.title, latestDescPlain, data.event_date,
           data.end_date || data.event_date, data.event_type, data.location,
-          data.url, user.partner_id, nowISO(), data.status || 'Upcoming',
+          data.url, user.partner_id, createdAt, data.status || 'Upcoming',
           data.partner_id || '', checklistJson,
         ];
 
@@ -958,9 +1032,56 @@ export async function openEventModal(event, container, onSaved) {
         } else {
           addDemoRow(CONFIG.SHEET_EVENTS, values);
         }
-        showToast('Event created successfully!', 'success');
       }
 
+      // Persist description changes to SHEET_EVENT_DESCRIPTIONS.
+      // Process deletes before inserts so row indices stay valid when
+      // deleting the highest-index rows first.
+      const toDelete = workingDescriptions
+        .filter(d => d._deleted && d.description_id && d._rowIndex)
+        .sort((a, b) => b._rowIndex - a._rowIndex);
+      for (const d of toDelete) {
+        if (isConfigured()) {
+          await deleteRow(CONFIG.SHEET_EVENT_DESCRIPTIONS, d._rowIndex);
+        } else {
+          deleteDemoRow(CONFIG.SHEET_EVENT_DESCRIPTIONS, d._rowIndex);
+        }
+      }
+
+      // Skip updates that would blank out an existing row.
+      const toUpdate = workingDescriptions.filter(d =>
+        !d._deleted && !d._isNew && d._modified && !isDescriptionEmpty(d)
+      );
+      for (const d of toUpdate) {
+        const values = [
+          d.description_id, eventId, data.title,
+          d.description_date, d.description_text, d.created_at,
+        ];
+        if (isConfigured()) {
+          await updateRow(CONFIG.SHEET_EVENT_DESCRIPTIONS, d._rowIndex, values);
+        } else {
+          updateDemoRow(CONFIG.SHEET_EVENT_DESCRIPTIONS, d._rowIndex, values);
+        }
+      }
+
+      // Skip brand-new cards where the user never actually typed anything.
+      const toInsert = workingDescriptions.filter(d =>
+        !d._deleted && d._isNew && !isDescriptionEmpty(d)
+      );
+      for (const d of toInsert) {
+        const descriptionId = uuid('dsc');
+        const values = [
+          descriptionId, eventId, data.title,
+          d.description_date, d.description_text, d.created_at || nowISO(),
+        ];
+        if (isConfigured()) {
+          await appendRow(CONFIG.SHEET_EVENT_DESCRIPTIONS, values);
+        } else {
+          addDemoRow(CONFIG.SHEET_EVENT_DESCRIPTIONS, values);
+        }
+      }
+
+      showToast(isEdit ? 'Event updated successfully!' : 'Event created successfully!', 'success');
       closeModal();
       if (onSaved) { onSaved(); } else { reRender(); }
     } catch (err) {
@@ -968,12 +1089,32 @@ export async function openEventModal(event, container, onSaved) {
     }
   }, initialValues);
 
-  // Combine form and checklist in modal content
-  const modalContent = el('div', {}, form, checklistSection);
+  // Descriptions panel — versioned dated cards (Quill editor in edit mode)
+  const { panel: descriptionsPanel } = buildDescriptionsPanel(workingDescriptions, {
+    placeholder: 'Write the description for this event...',
+    entityLabel: 'event',
+  });
+
+  // Documents panel — drag-and-drop uploads to Google Drive via the file API.
+  // For new (unsaved) events there's no event_id to attach to yet, so the
+  // upload zone is hidden with a helper note.
+  const docsHandle = buildDocumentsPanel({
+    entityId: isEdit ? event.event_id : null,
+    getContextName: () => {
+      const input = form.querySelector('[name="title"]');
+      return (input && input.value) || (isEdit ? (event.title || '') : '');
+    },
+    initialFiles: initialDocuments,
+    savePrompt: 'Save this event first to attach documents',
+  });
+
+  // Combine form, descriptions, documents, and checklist in modal content
+  const modalContent = el('div', {}, form, descriptionsPanel, docsHandle.panel, checklistSection);
 
   openModal({
     title: isEdit ? 'Edit Event' : 'New Demand Gen Event',
     content: modalContent,
+    className: 'modal--wide',
     footer: [
       el('button', { class: 'btn btn--secondary', onClick: closeModal }, 'Cancel'),
       el('button', {

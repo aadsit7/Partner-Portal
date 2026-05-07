@@ -238,6 +238,7 @@ const SHEET_HEADERS = {
   [CONFIG.SHEET_EVENTS]: ['event_id', 'title', 'description', 'event_date', 'end_date', 'event_type', 'location', 'url', 'created_by', 'created_at', 'status', 'partner_id', 'checklist'],
   [CONFIG.SHEET_TRANSCRIPTS]: ['transcript_id', 'partner_id', 'partner_name', 'conversation_date', 'transcript_text', 'created_at'],
   [CONFIG.SHEET_OPP_DESCRIPTIONS]: ['description_id', 'opportunity_id', 'deal_name', 'description_date', 'description_text', 'created_at'],
+  [CONFIG.SHEET_EVENT_DESCRIPTIONS]: ['description_id', 'event_id', 'title', 'description_date', 'description_text', 'created_at'],
   [CONFIG.SHEET_PARTNER_DOCUMENTS]: ['document_id', 'partner_id', 'partner_name', 'title', 'doc_type', 'html_content', 'status', 'created_at', 'updated_at'],
   [CONFIG.SHEET_CUSTOM_PROMPTS]: ['prompt_id', 'label', 'icon', 'instructions', 'created_at'],
 };
@@ -264,7 +265,7 @@ export async function initializeSheet() {
 
   // 2. Build batchUpdate requests to add missing tabs
   const requests = [];
-  const tabsToCreate = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS, CONFIG.SHEET_TRANSCRIPTS, CONFIG.SHEET_OPP_DESCRIPTIONS, CONFIG.SHEET_PARTNER_DOCUMENTS, CONFIG.SHEET_CUSTOM_PROMPTS];
+  const tabsToCreate = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS, CONFIG.SHEET_TRANSCRIPTS, CONFIG.SHEET_OPP_DESCRIPTIONS, CONFIG.SHEET_EVENT_DESCRIPTIONS, CONFIG.SHEET_PARTNER_DOCUMENTS, CONFIG.SHEET_CUSTOM_PROMPTS];
 
   for (const tabName of tabsToCreate) {
     if (!existingSheets.includes(tabName)) {
@@ -308,7 +309,7 @@ export async function syncHeaders() {
   if (!token) throw new Error('OAuth token required — please log in with Google SSO first.');
 
   const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
-  const tabs = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS, CONFIG.SHEET_TRANSCRIPTS, CONFIG.SHEET_OPP_DESCRIPTIONS, CONFIG.SHEET_PARTNER_DOCUMENTS, CONFIG.SHEET_CUSTOM_PROMPTS];
+  const tabs = [CONFIG.SHEET_PARTNERS, CONFIG.SHEET_OPPORTUNITIES, CONFIG.SHEET_EVENTS, CONFIG.SHEET_TRANSCRIPTS, CONFIG.SHEET_OPP_DESCRIPTIONS, CONFIG.SHEET_EVENT_DESCRIPTIONS, CONFIG.SHEET_PARTNER_DOCUMENTS, CONFIG.SHEET_CUSTOM_PROMPTS];
 
   for (const tabName of tabs) {
     const headerRow = SHEET_HEADERS[tabName];
@@ -480,6 +481,10 @@ let demoOppDescriptions = [
   ['description_id', 'opportunity_id', 'deal_name', 'description_date', 'description_text', 'created_at'],
 ];
 
+let demoEventDescriptions = [
+  ['description_id', 'event_id', 'title', 'description_date', 'description_text', 'created_at'],
+];
+
 let demoPartnerDocuments = [
   ['document_id', 'partner_id', 'partner_name', 'title', 'doc_type', 'html_content', 'status', 'created_at', 'updated_at'],
 ];
@@ -489,7 +494,7 @@ let demoPartnerDocuments = [
 // ============================================
 
 const DEMO_STORAGE_KEY = 'pp_demo_data';
-const DEMO_SCHEMA_VERSION = 13; // Bump when demo data structure changes
+const DEMO_SCHEMA_VERSION = 14; // Bump when demo data structure changes
 
 function persistDemoData() {
   try {
@@ -500,6 +505,7 @@ function persistDemoData() {
       events: demoEvents,
       transcripts: demoTranscripts,
       oppDescriptions: demoOppDescriptions,
+      eventDescriptions: demoEventDescriptions,
       partnerDocuments: demoPartnerDocuments,
     }));
   } catch { /* quota exceeded — silently ignore */ }
@@ -520,6 +526,7 @@ function loadPersistedDemoData() {
     if (data.events) demoEvents = data.events;
     if (data.transcripts) demoTranscripts = data.transcripts;
     if (data.oppDescriptions) demoOppDescriptions = data.oppDescriptions;
+    if (data.eventDescriptions) demoEventDescriptions = data.eventDescriptions;
     if (data.partnerDocuments) demoPartnerDocuments = data.partnerDocuments;
     return true;
   } catch {
@@ -544,6 +551,7 @@ function getDemoData(sheetName) {
     case CONFIG.SHEET_EVENTS: return [...demoEvents.map(r => [...r])];
     case CONFIG.SHEET_TRANSCRIPTS: return [...demoTranscripts.map(r => [...r])];
     case CONFIG.SHEET_OPP_DESCRIPTIONS: return [...demoOppDescriptions.map(r => [...r])];
+    case CONFIG.SHEET_EVENT_DESCRIPTIONS: return [...demoEventDescriptions.map(r => [...r])];
     case CONFIG.SHEET_PARTNER_DOCUMENTS: return [...demoPartnerDocuments.map(r => [...r])];
     default: return [];
   }
@@ -559,6 +567,7 @@ export function addDemoRow(sheetName, values) {
     case CONFIG.SHEET_EVENTS: demoEvents.push(values); break;
     case CONFIG.SHEET_TRANSCRIPTS: demoTranscripts.push(values); break;
     case CONFIG.SHEET_OPP_DESCRIPTIONS: demoOppDescriptions.push(values); break;
+    case CONFIG.SHEET_EVENT_DESCRIPTIONS: demoEventDescriptions.push(values); break;
     case CONFIG.SHEET_PARTNER_DOCUMENTS: demoPartnerDocuments.push(values); break;
   }
   persistDemoData();
@@ -575,6 +584,7 @@ export function updateDemoRow(sheetName, rowIndex, values) {
     case CONFIG.SHEET_EVENTS: data = demoEvents; break;
     case CONFIG.SHEET_TRANSCRIPTS: data = demoTranscripts; break;
     case CONFIG.SHEET_OPP_DESCRIPTIONS: data = demoOppDescriptions; break;
+    case CONFIG.SHEET_EVENT_DESCRIPTIONS: data = demoEventDescriptions; break;
     case CONFIG.SHEET_PARTNER_DOCUMENTS: data = demoPartnerDocuments; break;
     default: return;
   }
@@ -595,6 +605,7 @@ export function deleteDemoRow(sheetName, rowIndex) {
     case CONFIG.SHEET_EVENTS: data = demoEvents; break;
     case CONFIG.SHEET_TRANSCRIPTS: data = demoTranscripts; break;
     case CONFIG.SHEET_OPP_DESCRIPTIONS: data = demoOppDescriptions; break;
+    case CONFIG.SHEET_EVENT_DESCRIPTIONS: data = demoEventDescriptions; break;
     case CONFIG.SHEET_PARTNER_DOCUMENTS: data = demoPartnerDocuments; break;
     default: return;
   }
