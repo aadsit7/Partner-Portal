@@ -5,7 +5,7 @@
 import { getCurrentUser } from '../auth.js';
 import { readSheetAsObjects, appendRow, updateRow, deleteRow, isConfigured, addDemoRow, updateDemoRow, deleteDemoRow } from '../sheets.js';
 import { CONFIG } from '../config.js';
-import { el, mount, uuid, $, debounce, formatCurrency } from '../utils/dom.js';
+import { el, mount, uuid, debounce, formatCurrency } from '../utils/dom.js';
 import { nowISO, formatDate, todayISO, parseDate, isDateInRange } from '../utils/date.js';
 import { openModal, closeModal, confirmDialog } from '../components/modal.js';
 import { buildForm } from '../components/form.js';

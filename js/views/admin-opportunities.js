@@ -13,7 +13,7 @@ import { showToast } from '../components/toast.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { statCard } from '../components/card.js';
 import { filterPartners, filterOpportunities } from '../utils/filters.js';
-import { initQuillEditor, ensureHtml, stripHtml } from '../components/quill-editor.js';
+import { ensureHtml, stripHtml } from '../components/quill-editor.js';
 import { loadTypeFilter, computeTypeData, buildTypeFilterBar, applyTypeFilter } from '../components/type-filter.js';
 import { generateMapPdfFromSelection } from '../utils/map-pdf-from-selection.js';
 import { createPill, updatePillStage, markPillSuccess, markPillFailure } from '../components/map-pdf-pill.js';
