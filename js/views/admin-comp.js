@@ -36,6 +36,10 @@ const DEFAULT_PLAN = {
   accelTier1Rate: 0.23,   // 100-150% of budget
   accelTier2Rate: 0.27,   // 150%+ of budget
   ridgepointFlatRate: 0.05,
+  // Personal stretch goal — separate from the contractual quota.
+  // Drives the "Goal Gap" projection: shows how much more ARR the rep
+  // needs and what additional commission that closes out.
+  personalGoal: 1000000,
   // Partners excluded from quota attainment but still paid via flat
   // commission (RidgePoint) or excluded entirely (Microsoft).
   excludedPartnerNames: ['Microsoft'],
@@ -266,6 +270,19 @@ function computeCompModel(opps, partners, plan) {
     ? ((wonQuotaArr + openQuotaArr) / plan.annualTarget) * 100
     : 0;
 
+  // Personal goal — synthetic "Goal Gap" deal representing the ARR the rep
+  // would still need to close beyond their current pipeline to hit goal.
+  // Goal commission is computed as quota commission (using bracket walk)
+  // because the personal goal is denominated in quota-eligible ARR.
+  const goal = Math.max(0, plan.personalGoal || 0);
+  const projectedQuotaArr = wonQuotaArr + openQuotaArr;
+  const goalGapArr = Math.max(0, goal - projectedQuotaArr);
+  const goalGapCommission = goalGapArr > 0
+    ? commissionOnQuotaSlice(goalGapArr, projectedCursor, plan)
+    : 0;
+  const goalAttainmentPct = goal > 0 ? (projectedQuotaArr / goal) * 100 : 0;
+  const totalIfGoalHit = earnedTotal + projectedIfAllClose + goalGapCommission;
+
   return {
     enriched,
     totals: {
@@ -276,6 +293,7 @@ function computeCompModel(opps, partners, plan) {
       attainmentPct, projectedAttainmentPct,
       totalProjectedAtFullClose: earnedTotal + projectedIfAllClose,
       totalProjectedWeighted: earnedTotal + projectedWeighted,
+      goal, goalGapArr, goalGapCommission, goalAttainmentPct, totalIfGoalHit,
     },
   };
 }
@@ -429,6 +447,17 @@ function renderView(container) {
       accentColor: 'var(--color-accent)',
       change: `Weighted: ${formatCurrency(t.totalProjectedWeighted)}`,
     }));
+
+    // Personal goal payout — only render when a goal is set.
+    if (t.goal > 0) {
+      const subtitle = t.goalGapArr > 0
+        ? `Gap to goal: ${formatCurrency(t.goalGapArr)} ARR → +${formatCurrency(t.goalGapCommission)}`
+        : `Goal reached at ${t.goalAttainmentPct.toFixed(0)}% — pipeline already covers it`;
+      statsContainer.appendChild(statCard('Total If Goal Hit', formatCurrency(t.totalIfGoalHit), {
+        accentColor: 'var(--color-warning)',
+        change: subtitle,
+      }));
+    }
   }
 
   function refreshAttainment(model) {
@@ -436,13 +465,18 @@ function renderView(container) {
     const t = model.totals;
     const target = plan.annualTarget;
 
-    // Compute pct of total bar (cap at 200% for visualization)
-    const cap = Math.max(200, t.projectedAttainmentPct + 20);
+    // Goal as percent of quota (so it sits on the same axis as the bar).
+    const goalPctOfQuota = target > 0 && t.goal > 0 ? (t.goal / target) * 100 : 0;
+
+    // Cap the visualization wide enough to cover whichever is largest:
+    // 200%, current projection + 20pp, or the personal goal + 10pp.
+    const cap = Math.max(200, t.projectedAttainmentPct + 20, goalPctOfQuota + 10);
     const wonPct = target > 0 ? Math.min((t.wonQuotaArr / target) * 100, cap) : 0;
     const openPct = target > 0 ? Math.min((t.openQuotaArr / target) * 100, cap - wonPct) : 0;
 
     const tier1Pos = (100 / cap) * 100;
     const tier2Pos = (150 / cap) * 100;
+    const goalPos = goalPctOfQuota > 0 ? Math.min((goalPctOfQuota / cap) * 100, 100) : 0;
 
     const wonWidth = (wonPct / cap) * 100;
     const openWidth = (openPct / cap) * 100;
@@ -468,26 +502,42 @@ function renderView(container) {
         style: { left: `${tier2Pos}%` },
         title: '150% — Super accelerator begins',
       }, el('span', { class: 'comp-attainment__marker-label' }, '150%')),
+      goalPos > 0 ? el('div', {
+        class: 'comp-attainment__marker comp-attainment__marker--goal',
+        style: { left: `${goalPos}%` },
+        title: `Personal Goal: ${formatCurrency(t.goal)} (${goalPctOfQuota.toFixed(0)}% of quota)`,
+      }, el('span', { class: 'comp-attainment__marker-label' }, 'Goal')) : null,
     );
+
+    const headerChips = [
+      el('span', { class: 'comp-attainment__chip comp-attainment__chip--won' },
+        `Won ${t.attainmentPct.toFixed(1)}%`),
+      el('span', { class: 'comp-attainment__chip comp-attainment__chip--open' },
+        `+ Pipeline ${t.projectedAttainmentPct.toFixed(1)}%`),
+    ];
+    if (t.goal > 0) {
+      headerChips.push(el('span', { class: 'comp-attainment__chip comp-attainment__chip--goal' },
+        `${t.goalAttainmentPct.toFixed(0)}% to goal`));
+    }
 
     attainmentContainer.appendChild(
       el('div', { class: 'comp-attainment__header' },
         el('span', { class: 'comp-attainment__title' }, 'Quota Attainment'),
-        el('span', { class: 'comp-attainment__values' },
-          el('span', { class: 'comp-attainment__chip comp-attainment__chip--won' },
-            `Won ${t.attainmentPct.toFixed(1)}%`),
-          el('span', { class: 'comp-attainment__chip comp-attainment__chip--open' },
-            `+ Pipeline ${t.projectedAttainmentPct.toFixed(1)}%`),
-        ),
+        el('span', { class: 'comp-attainment__values' }, ...headerChips),
       ),
     );
     attainmentContainer.appendChild(bar);
+
+    const legendItems = [
+      el('span', {}, `Quota: ${formatCurrency(plan.annualTarget)}`),
+      el('span', {}, `Won ARR: ${formatCurrency(t.wonQuotaArr)}`),
+      el('span', {}, `Open ARR: ${formatCurrency(t.openQuotaArr)}`),
+    ];
+    if (t.goal > 0) {
+      legendItems.push(el('span', {}, `Goal: ${formatCurrency(t.goal)}`));
+    }
     attainmentContainer.appendChild(
-      el('div', { class: 'comp-attainment__legend' },
-        el('span', {}, `Quota: ${formatCurrency(plan.annualTarget)}`),
-        el('span', {}, `Won ARR: ${formatCurrency(t.wonQuotaArr)}`),
-        el('span', {}, `Open ARR: ${formatCurrency(t.openQuotaArr)}`),
-      ),
+      el('div', { class: 'comp-attainment__legend' }, ...legendItems),
     );
   }
 
@@ -585,7 +635,13 @@ function renderView(container) {
     const model = getModel();
     const filtered = getFilteredEnriched(model);
     tableContainer.innerHTML = '';
-    tableContainer.appendChild(buildOppsTable(filtered, plan));
+    // Goal Gap is conceptually "future open quota deals you'd need to win,"
+    // so it only makes sense when the filters could have shown an open
+    // quota deal: hidden on closed/won/lost-only or non-quota filters.
+    const showGoalGap = model.totals.goalGapArr > 0
+      && (filters.statusGroup === 'all' || filters.statusGroup === 'open')
+      && (filters.eligibility === 'all' || filters.eligibility === 'quota');
+    tableContainer.appendChild(buildOppsTable(filtered, plan, model, { showGoalGap }));
   }
 
   function refreshAll() {
@@ -600,9 +656,6 @@ function renderView(container) {
     el('div', { class: 'section-header' },
       el('div', {},
         el('h2', { class: 'section-header__title' }, 'Compensation Calculator'),
-        el('p', { class: 'section-header__subtitle' },
-          `${plan.participantName} · ${plan.role} · Plan starts ${plan.planStart}`,
-        )
       ),
     ),
 
@@ -671,15 +724,41 @@ function buildPlanCard(plan, onChange) {
     );
   }
 
-  return el('div', { class: 'comp-plan' },
-    el('div', { class: 'comp-plan__header' },
-      el('h3', { class: 'comp-plan__title' }, 'Plan Inputs'),
-      el('p', { class: 'comp-plan__subtitle' },
+  // Collapsible state — defaults to collapsed, persisted to localStorage
+  // so the rep doesn't have to keep re-collapsing on every page load.
+  const COLLAPSE_KEY = 'pp_comp_plan_collapsed_v1';
+  const stored = localStorage.getItem(COLLAPSE_KEY);
+  const isOpen = stored === 'open';   // default = collapsed
+
+  const chevronSvg = '<svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M5 8l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  const card = el('div', {
+    class: `comp-plan comp-plan--collapsible ${isOpen ? 'comp-plan--open' : ''}`,
+  });
+
+  const header = el('button', {
+    type: 'button',
+    class: 'comp-plan__header comp-plan__header--toggle',
+    'aria-expanded': isOpen ? 'true' : 'false',
+    onClick: () => {
+      const nowOpen = card.classList.toggle('comp-plan--open');
+      header.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
+      try { localStorage.setItem(COLLAPSE_KEY, nowOpen ? 'open' : 'collapsed'); } catch {}
+    },
+  },
+    el('div', { class: 'comp-plan__header-text' },
+      el('span', { class: 'comp-plan__title' }, 'Plan Inputs'),
+      el('span', { class: 'comp-plan__subtitle' },
         'Adjust to model "what-if" scenarios. Saved locally to your browser.'),
     ),
+    el('span', { class: 'comp-plan__chevron', html: chevronSvg }),
+  );
+
+  const body = el('div', { class: 'comp-plan__body' },
     el('div', { class: 'comp-plan__grid' },
       numField('Annual Quota Target', 'annualTarget'),
       numField('Annual Quota Incentive', 'annualIncentive'),
+      numField('Personal Goal', 'personalGoal'),
       numField('Primary Rate', 'primaryRate', { isPercent: true, step: '0.01' }),
       numField('Accelerator 100-150%', 'accelTier1Rate', { isPercent: true, step: '0.01' }),
       numField('Accelerator 150%+', 'accelTier2Rate', { isPercent: true, step: '0.01' }),
@@ -699,6 +778,10 @@ function buildPlanCard(plan, onChange) {
       }, 'Reset to FY26 Plan'),
     ),
   );
+
+  card.appendChild(header);
+  card.appendChild(body);
+  return card;
 }
 
 // ---- Stage multi-select (lightweight clone of admin-opportunities) ----
@@ -767,8 +850,9 @@ function buildStageMultiSelect({ allStages, selected, onChange }) {
 
 // ---- Opportunity table ----
 
-function buildOppsTable(rows, plan) {
-  if (rows.length === 0) {
+function buildOppsTable(rows, plan, model, options = {}) {
+  const { showGoalGap = false } = options;
+  if (rows.length === 0 && !showGoalGap) {
     return el('div', { class: 'empty-state' },
       el('div', { class: 'empty-state__title' }, 'No opportunities match'),
       el('div', { class: 'empty-state__description' }, 'Try clearing filters above.'),
@@ -799,32 +883,55 @@ function buildOppsTable(rows, plan) {
     return (a.opp.expected_close || '').localeCompare(b.opp.expected_close || '');
   });
 
-  const body = el('tbody', {},
-    ...sorted.map(e => {
-      const statusClass = (e.status || 'registered').toLowerCase().replace(/\s+/g, '-');
-      const earned = e.commissionEarned || 0;
-      const ifWon = e.commissionIfWon || 0;
-      const weighted = e.commissionWeighted || 0;
+  const realRows = sorted.map(e => {
+    const statusClass = (e.status || 'registered').toLowerCase().replace(/\s+/g, '-');
+    const earned = e.commissionEarned || 0;
+    const ifWon = e.commissionIfWon || 0;
+    const weighted = e.commissionWeighted || 0;
 
-      return el('tr', { class: `comp-table__row comp-table__row--${e.eligibility}` },
-        el('td', { class: 'comp-table__deal' }, e.opp.deal_name || '—'),
-        el('td', {}, e.opp.customer_name || '—'),
-        el('td', {}, e.partnerName || '—'),
-        el('td', {}, el('span', { class: 'comp-table__stage' }, e.stage)),
-        el('td', {}, el('span', { class: `badge badge--${statusClass}` }, e.status || '—')),
-        el('td', { class: 'comp-table__num' }, formatCurrency(e.value)),
-        el('td', {}, eligibilityBadge(e.eligibility, e.isRenewal)),
-        el('td', { class: 'comp-table__num' }, e.isWon ? formatCurrency(earned) : '—'),
-        el('td', { class: 'comp-table__num' }, e.isOpen ? formatCurrency(ifWon) : '—'),
-        el('td', { class: 'comp-table__num' }, e.isOpen
-          ? el('span', { title: `${(e.probability * 100).toFixed(0)}% × ${formatCurrency(ifWon)}` }, formatCurrency(weighted))
-          : '—'),
-        el('td', {}, e.opp.expected_close ? formatDate(e.opp.expected_close) : '—'),
-      );
-    }),
-  );
+    return el('tr', { class: `comp-table__row comp-table__row--${e.eligibility}` },
+      el('td', { class: 'comp-table__deal' }, e.opp.deal_name || '—'),
+      el('td', {}, e.opp.customer_name || '—'),
+      el('td', {}, e.partnerName || '—'),
+      el('td', {}, el('span', { class: 'comp-table__stage' }, e.stage)),
+      el('td', {}, el('span', { class: `badge badge--${statusClass}` }, e.status || '—')),
+      el('td', { class: 'comp-table__num' }, formatCurrency(e.value)),
+      el('td', {}, eligibilityBadge(e.eligibility, e.isRenewal)),
+      el('td', { class: 'comp-table__num' }, e.isWon ? formatCurrency(earned) : '—'),
+      el('td', { class: 'comp-table__num' }, e.isOpen ? formatCurrency(ifWon) : '—'),
+      el('td', { class: 'comp-table__num' }, e.isOpen
+        ? el('span', { title: `${(e.probability * 100).toFixed(0)}% × ${formatCurrency(ifWon)}` }, formatCurrency(weighted))
+        : '—'),
+      el('td', {}, e.opp.expected_close ? formatDate(e.opp.expected_close) : '—'),
+    );
+  });
 
-  // Footer totals
+  // Synthetic Goal Gap row — represents the additional ARR the rep would
+  // need to close beyond their current pipeline to hit their personal goal.
+  // Rendered as the final row so it visually reads as "next up."
+  const goalGapRow = showGoalGap && model
+    ? el('tr', { class: 'comp-table__row comp-table__row--goal-gap' },
+        el('td', { class: 'comp-table__deal' },
+          el('span', { class: 'comp-table__goal-marker' }, '🎯 '),
+          'Goal Gap',
+        ),
+        el('td', {}, '—'),
+        el('td', {}, '—'),
+        el('td', {}, el('span', { class: 'comp-table__stage' }, 'Goal')),
+        el('td', {}, el('span', { class: 'badge badge--registered' }, 'Stretch')),
+        el('td', { class: 'comp-table__num' }, formatCurrency(model.totals.goalGapArr)),
+        el('td', {}, el('span', { class: 'comp-eligibility comp-eligibility--goal' }, 'Goal')),
+        el('td', { class: 'comp-table__num' }, '—'),
+        el('td', { class: 'comp-table__num' }, formatCurrency(model.totals.goalGapCommission)),
+        el('td', { class: 'comp-table__num' }, '—'),
+        el('td', {}, '—'),
+      )
+    : null;
+
+  const body = el('tbody', {}, ...realRows, goalGapRow);
+
+  // Footer totals — include Goal Gap when shown so the bottom line matches
+  // the "Total If Goal Hit" KPI.
   const totals = sorted.reduce((acc, e) => {
     acc.value += e.value;
     acc.earned += e.commissionEarned || 0;
@@ -833,9 +940,18 @@ function buildOppsTable(rows, plan) {
     return acc;
   }, { value: 0, earned: 0, ifWon: 0, weighted: 0 });
 
+  if (showGoalGap && model) {
+    totals.value += model.totals.goalGapArr;
+    totals.ifWon += model.totals.goalGapCommission;
+  }
+
+  const dealLabel = showGoalGap
+    ? `${sorted.length} deal${sorted.length === 1 ? '' : 's'} + Goal Gap`
+    : `${sorted.length} deal${sorted.length === 1 ? '' : 's'}`;
+
   const foot = el('tfoot', {},
     el('tr', { class: 'comp-table__totals' },
-      el('td', { colspan: 5 }, `${sorted.length} deal${sorted.length === 1 ? '' : 's'}`),
+      el('td', { colspan: 5 }, dealLabel),
       el('td', { class: 'comp-table__num' }, formatCurrency(totals.value)),
       el('td', {}, ''),
       el('td', { class: 'comp-table__num' }, formatCurrency(totals.earned)),
