@@ -5972,6 +5972,71 @@
   flex-wrap: wrap;
 }
 
+/* Collapsible variant — used for the Plan Inputs card so it can default
+   to closed and not dominate the page. */
+.comp-plan--collapsible {
+  padding: 0;
+}
+
+.comp-plan--collapsible .comp-plan__header--toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  width: 100%;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  padding: var(--space-4) var(--space-6);
+  font: inherit;
+  color: var(--color-text-primary);
+  margin-bottom: 0;
+  border-radius: var(--radius-lg);
+  transition: background var(--transition-fast);
+}
+
+.comp-plan--collapsible .comp-plan__header--toggle:hover {
+  background: var(--color-bg);
+}
+
+.comp-plan--collapsible .comp-plan__header--toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.comp-plan__header-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.comp-plan__chevron {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform var(--transition-fast);
+  color: var(--color-text-muted);
+}
+
+.comp-plan--open .comp-plan__chevron {
+  transform: rotate(180deg);
+}
+
+.comp-plan__body {
+  display: none;
+  padding: 0 var(--space-6) var(--space-5);
+  border-top: 1px solid var(--color-border-light);
+  margin-top: var(--space-2);
+  padding-top: var(--space-5);
+}
+
+.comp-plan--open .comp-plan__body {
+  display: block;
+}
+
 .comp-plan__title {
   font-size: var(--text-lg);
   font-weight: var(--font-semibold);
@@ -6189,6 +6254,23 @@
 .comp-attainment__marker--tier1 .comp-attainment__marker-label { color: var(--color-warning); }
 .comp-attainment__marker--tier2 .comp-attainment__marker-label { color: var(--color-primary); }
 
+.comp-attainment__marker--goal {
+  background: var(--color-status-won);
+  border-left: 1px dashed var(--color-status-won);
+}
+
+.comp-attainment__marker--goal .comp-attainment__marker-label {
+  color: var(--color-status-won);
+  font-weight: var(--font-bold);
+  border-color: var(--color-status-won);
+}
+
+.comp-attainment__chip--goal {
+  background: rgba(15, 122, 63, 0.10);
+  color: var(--color-success);
+  border-color: rgba(15, 122, 63, 0.30);
+}
+
 .comp-attainment__legend {
   display: flex;
   gap: var(--space-4);
@@ -6388,4 +6470,30 @@
 .comp-eligibility--excluded {
   background: rgba(126, 130, 160, 0.18);
   color: var(--color-text-muted);
+}
+
+.comp-eligibility--goal {
+  background: rgba(15, 122, 63, 0.14);
+  color: var(--color-success);
+}
+
+/* Goal-gap synthetic row — visually distinct from real opportunities. */
+.comp-table__row--goal-gap td {
+  background: rgba(15, 122, 63, 0.04);
+  border-top: 1px dashed var(--color-success);
+  font-style: italic;
+}
+
+.comp-table__row--goal-gap:hover td {
+  background: rgba(15, 122, 63, 0.08);
+}
+
+.comp-table__row--goal-gap .comp-table__deal {
+  color: var(--color-success);
+  font-style: normal;
+  font-weight: var(--font-semibold);
+}
+
+.comp-table__goal-marker {
+  margin-right: var(--space-1);
 }
