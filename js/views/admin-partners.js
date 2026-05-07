@@ -92,8 +92,24 @@ function partnerInitials(name) {
 // Main View
 // ============================================
 
+const VIEW_STORAGE_KEY = 'admin-partners-view';
+
+function loadActiveView() {
+  try {
+    const saved = localStorage.getItem(VIEW_STORAGE_KEY);
+    return saved === 'card' ? 'card' : 'list';
+  } catch {
+    return 'list';
+  }
+}
+
+function saveActiveView(view) {
+  try { localStorage.setItem(VIEW_STORAGE_KEY, view); } catch {}
+}
+
 function renderView(container, partners, filterBar) {
   let searchQuery = '';
+  let activeView = loadActiveView();
 
   function applyFilters() {
     let result = [...partners];
@@ -110,6 +126,23 @@ function renderView(container, partners, filterBar) {
     return result;
   }
 
+  const listBtn = el('button', { class: 'btn btn--sm', onClick: () => switchView('list') }, 'List');
+  const cardBtn = el('button', { class: 'btn btn--sm', onClick: () => switchView('card') }, 'Cards');
+
+  function applyToggleClasses() {
+    listBtn.className = activeView === 'list' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm';
+    cardBtn.className = activeView === 'card' ? 'btn btn--primary btn--sm' : 'btn btn--secondary btn--sm';
+  }
+  applyToggleClasses();
+
+  function switchView(view) {
+    if (view === activeView) return;
+    activeView = view;
+    saveActiveView(view);
+    applyToggleClasses();
+    renderContent(applyFilters());
+  }
+
   const content = el('div', {},
     filterBar,
     el('div', { class: 'section-header' },
@@ -118,6 +151,7 @@ function renderView(container, partners, filterBar) {
         el('p', { class: 'section-header__subtitle' }, `${partners.length} registered partners`)
       ),
       el('div', { style: { display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' } },
+        el('div', { class: 'view-toggle', style: { marginBottom: '0' } }, listBtn, cardBtn),
         el('div', { class: 'search-bar' },
           el('span', { class: 'search-bar__icon', html: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M12.5 12.5L16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
           el('input', {
@@ -126,7 +160,7 @@ function renderView(container, partners, filterBar) {
             placeholder: 'Search partners...',
             onInput: debounce((e) => {
               searchQuery = e.target.value;
-              renderCards(applyFilters());
+              renderContent(applyFilters());
             }, 200),
           })
         ),
@@ -140,33 +174,40 @@ function renderView(container, partners, filterBar) {
       )
     ),
 
-    el('div', { id: 'partners-grid' })
+    el('div', { id: 'partners-view' })
   );
 
   mount(container, content);
-  renderCards(applyFilters());
+  renderContent(applyFilters());
+
+  function renderContent(filtered) {
+    const host = $('#partners-view');
+    if (!host) return;
+    host.innerHTML = '';
+    host.className = '';
+
+    if (filtered.length === 0) {
+      host.appendChild(
+        el('div', { class: 'empty-state' },
+          el('div', { class: 'empty-state__title' }, 'No partners found'),
+          el('div', { class: 'empty-state__description' }, 'Try adjusting your search or add a new partner.')
+        )
+      );
+      return;
+    }
+
+    const sorted = sortPartnersByPipeline(filtered);
+    if (activeView === 'list') {
+      host.appendChild(renderList(sorted));
+    } else {
+      host.className = 'partner-card-grid stagger';
+      sorted.forEach(p => host.appendChild(buildPartnerCard(p)));
+    }
+  }
 }
 
-function renderCards(partners) {
-  const grid = $('#partners-grid');
-  if (!grid) return;
-
-  if (partners.length === 0) {
-    grid.innerHTML = '';
-    grid.appendChild(
-      el('div', { class: 'empty-state' },
-        el('div', { class: 'empty-state__title' }, 'No partners found'),
-        el('div', { class: 'empty-state__description' }, 'Try adjusting your search or add a new partner.')
-      )
-    );
-    return;
-  }
-
-  grid.innerHTML = '';
-  grid.className = 'partner-card-grid stagger';
-
-  // Sort by pipeline revenue (desc), then by opportunity count (desc)
-  const sorted = [...partners].sort((a, b) => {
+function sortPartnersByPipeline(partners) {
+  return [...partners].sort((a, b) => {
     const aRev = partnerRevenue[a.partner_id]?.totalPipeline || 0;
     const bRev = partnerRevenue[b.partner_id]?.totalPipeline || 0;
     if (bRev !== aRev) return bRev - aRev;
@@ -174,59 +215,110 @@ function renderCards(partners) {
     const bOpp = partnerRevenue[b.partner_id]?.oppCount || 0;
     return bOpp - aOpp;
   });
+}
 
-  sorted.forEach(p => {
-    const tierClass = tierSlug(p.tier);
-    const initials = partnerInitials(p.display_name);
-    const rev = partnerRevenue[p.partner_id];
-    const pipeline = rev ? rev.totalPipeline : 0;
-    const wonValue = rev ? rev.wonValue : 0;
-    const oppCount = rev ? rev.oppCount : 0;
-
-    const card = el('div', { class: 'partner-mgmt-card' },
-      // Card header with avatar and info
-      el('div', { class: 'partner-mgmt-card__header' },
-        el('div', { class: `partner-avatar partner-avatar--${tierClass}` }, initials),
-        el('div', { class: 'partner-mgmt-card__info' },
-          el('div', { class: 'partner-mgmt-card__name' }, p.display_name),
-          el('div', { class: 'partner-mgmt-card__username' }, p.username),
-        ),
-        el('span', { class: `badge badge--${tierClass}` }, p.tier || 'Registered')
+function renderList(partners) {
+  return el('div', { class: 'table-wrapper' },
+    el('table', { class: 'table' },
+      el('thead', {},
+        el('tr', {},
+          el('th', {}, 'Partner'),
+          el('th', {}, 'Tier'),
+          el('th', {}, 'Type'),
+          el('th', {}, 'Pipeline'),
+          el('th', {}, 'Won'),
+          el('th', {}, 'Opportunities'),
+          el('th', {}, 'Status'),
+          el('th', {}, 'Actions')
+        )
       ),
+      el('tbody', {},
+        ...partners.map(p => {
+          const tierClass = tierSlug(p.tier);
+          const initials = partnerInitials(p.display_name);
+          const rev = partnerRevenue[p.partner_id];
+          const pipeline = rev ? rev.totalPipeline : 0;
+          const wonValue = rev ? rev.wonValue : 0;
+          const oppCount = rev ? rev.oppCount : 0;
 
-      // Card details
-      el('div', { class: 'partner-mgmt-card__details' },
-        detailRow('Pipeline', formatCurrency(pipeline)),
-        wonValue > 0 ? detailRow('Won', formatCurrency(wonValue)) : null,
-        detailRow('Opportunities', String(oppCount)),
-        detailRow('Type', p.partner_type || '—'),
-        detailRow('Status', null, el('span', { class: `badge badge--xs badge--${p.status?.toLowerCase() || 'active'}` }, p.status || 'active')),
-      ),
-
-      // Card actions
-      el('div', { class: 'partner-mgmt-card__actions' },
-        el('button', {
-          class: 'btn btn--primary btn--sm',
-          style: { flex: '1' },
-          onClick: () => navigate(`/admin/partner-detail?id=${p.partner_id}`),
-        }, 'View'),
-        el('button', {
-          class: 'btn btn--secondary btn--sm',
-          style: { flex: '1' },
-          onClick: () => openPartnerModal(p),
-        }, 'Edit'),
-        el('button', {
-          class: 'btn btn--ghost btn--sm btn--icon',
-          style: { color: 'var(--color-danger)' },
-          title: 'Delete partner',
-          onClick: () => handleDelete(p),
-          html: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M12.67 4v9.33a1.33 1.33 0 01-1.34 1.34H4.67a1.33 1.33 0 01-1.34-1.34V4h9.34z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-        }),
+          return el('tr', {},
+            el('td', {},
+              el('div', { style: { display: 'flex', alignItems: 'center', gap: 'var(--space-3)' } },
+                el('div', { class: `partner-avatar partner-avatar--sm partner-avatar--${tierClass}` }, initials),
+                el('div', {},
+                  el('a', {
+                    href: '#',
+                    class: 'deal-name-link',
+                    onClick: (e) => { e.preventDefault(); navigate(`/admin/partner-detail?id=${p.partner_id}`); },
+                  }, p.display_name),
+                  el('div', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' } }, p.username || '')
+                )
+              )
+            ),
+            el('td', {}, el('span', { class: `badge badge--${tierClass}` }, p.tier || 'Registered')),
+            el('td', {}, p.partner_type || '—'),
+            el('td', { style: { fontWeight: 'var(--font-semibold)' } }, formatCurrency(pipeline)),
+            el('td', {}, wonValue > 0 ? formatCurrency(wonValue) : '—'),
+            el('td', {}, String(oppCount)),
+            el('td', {}, el('span', { class: `badge badge--xs badge--${p.status?.toLowerCase() || 'active'}` }, p.status || 'active')),
+            el('td', {},
+              el('div', { class: 'table__actions' },
+                el('button', { class: 'btn btn--ghost btn--sm', onClick: () => navigate(`/admin/partner-detail?id=${p.partner_id}`) }, 'View'),
+                el('button', { class: 'btn btn--ghost btn--sm', onClick: () => openPartnerModal(p) }, 'Edit'),
+                el('button', { class: 'btn btn--ghost btn--sm', style: { color: 'var(--color-danger)' }, onClick: () => handleDelete(p) }, 'Delete')
+              )
+            )
+          );
+        })
       )
-    );
+    )
+  );
+}
 
-    grid.appendChild(card);
-  });
+function buildPartnerCard(p) {
+  const tierClass = tierSlug(p.tier);
+  const initials = partnerInitials(p.display_name);
+  const rev = partnerRevenue[p.partner_id];
+  const pipeline = rev ? rev.totalPipeline : 0;
+  const wonValue = rev ? rev.wonValue : 0;
+  const oppCount = rev ? rev.oppCount : 0;
+
+  return el('div', { class: 'partner-mgmt-card' },
+    el('div', { class: 'partner-mgmt-card__header' },
+      el('div', { class: `partner-avatar partner-avatar--${tierClass}` }, initials),
+      el('div', { class: 'partner-mgmt-card__info' },
+        el('div', { class: 'partner-mgmt-card__name' }, p.display_name),
+        el('div', { class: 'partner-mgmt-card__username' }, p.username),
+      ),
+      el('span', { class: `badge badge--${tierClass}` }, p.tier || 'Registered')
+    ),
+    el('div', { class: 'partner-mgmt-card__details' },
+      detailRow('Pipeline', formatCurrency(pipeline)),
+      wonValue > 0 ? detailRow('Won', formatCurrency(wonValue)) : null,
+      detailRow('Opportunities', String(oppCount)),
+      detailRow('Type', p.partner_type || '—'),
+      detailRow('Status', null, el('span', { class: `badge badge--xs badge--${p.status?.toLowerCase() || 'active'}` }, p.status || 'active')),
+    ),
+    el('div', { class: 'partner-mgmt-card__actions' },
+      el('button', {
+        class: 'btn btn--primary btn--sm',
+        style: { flex: '1' },
+        onClick: () => navigate(`/admin/partner-detail?id=${p.partner_id}`),
+      }, 'View'),
+      el('button', {
+        class: 'btn btn--secondary btn--sm',
+        style: { flex: '1' },
+        onClick: () => openPartnerModal(p),
+      }, 'Edit'),
+      el('button', {
+        class: 'btn btn--ghost btn--sm btn--icon',
+        style: { color: 'var(--color-danger)' },
+        title: 'Delete partner',
+        onClick: () => handleDelete(p),
+        html: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M12.67 4v9.33a1.33 1.33 0 01-1.34 1.34H4.67a1.33 1.33 0 01-1.34-1.34V4h9.34z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      }),
+    )
+  );
 }
 
 function detailRow(label, textValue, element) {
