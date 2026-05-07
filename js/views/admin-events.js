@@ -885,30 +885,21 @@ export async function openEventModal(event, container, onSaved) {
     0,
   );
 
-  // Load existing descriptions + documents in parallel when editing.
-  // Failures are tolerated (e.g. the Event_Descriptions sheet may not
-  // exist yet on a fresh install) — empty list on failure.
+  // Load existing descriptions when editing. Documents are loaded in the
+  // background after the modal opens (see docsHandle.refresh() below) so
+  // the user doesn't wait on the Apps Script round-trip just to see the
+  // form. Description failures are tolerated (e.g. the Event_Descriptions
+  // sheet may not exist yet on a fresh install) — empty list on failure.
   let workingDescriptions = [];
-  let initialDocuments = [];
   if (isEdit) {
-    const [descResult, docsResult] = await Promise.allSettled([
-      readSheetAsObjects(CONFIG.SHEET_EVENT_DESCRIPTIONS),
-      listEntityDocuments(event.event_id),
-    ]);
-
-    if (descResult.status === 'fulfilled') {
-      workingDescriptions = descResult.value
+    try {
+      const all = await readSheetAsObjects(CONFIG.SHEET_EVENT_DESCRIPTIONS);
+      workingDescriptions = all
         .filter(d => d.event_id === event.event_id)
         .map(d => ({ ...d }))
         .sort((a, b) => new Date(b.description_date || b.created_at) - new Date(a.description_date || a.created_at));
-    } else {
-      console.warn('Failed to load event descriptions', descResult.reason);
-    }
-
-    if (docsResult.status === 'fulfilled') {
-      initialDocuments = docsResult.value;
-    } else {
-      console.warn('Failed to load event documents', docsResult.reason);
+    } catch (err) {
+      console.warn('Failed to load event descriptions', err);
     }
 
     // Legacy migration: if no separate description records exist but the
@@ -1128,14 +1119,18 @@ export async function openEventModal(event, container, onSaved) {
 
   // Documents panel — drag-and-drop uploads to Google Drive via the file API.
   // For new (unsaved) events there's no event_id to attach to yet, so the
-  // upload zone is hidden with a helper note.
+  // upload zone is hidden with a helper note. For existing events we open
+  // the modal with a loading state and fetch the document list in the
+  // background (see refresh() call after openModal) so the Apps Script
+  // round-trip doesn't block the modal from appearing.
   const docsHandle = buildDocumentsPanel({
     entityId: isEdit ? event.event_id : null,
     getContextName: () => {
       const input = form.querySelector('[name="title"]');
       return (input && input.value) || (isEdit ? (event.title || '') : '');
     },
-    initialFiles: initialDocuments,
+    initialFiles: [],
+    loading: isEdit,
     savePrompt: 'Save this event first to attach documents',
   });
 
@@ -1168,6 +1163,11 @@ export async function openEventModal(event, container, onSaved) {
       }, isEdit ? 'Save Changes' : 'Create Event'),
     ],
   });
+
+  // Kick off the documents fetch only after the modal is on screen so the
+  // user sees the form and descriptions immediately, then the document list
+  // fills in. Errors are swallowed by refresh() itself.
+  if (isEdit) docsHandle.refresh();
 }
 
 /**
