@@ -20,6 +20,7 @@ const ADMIN_NAV = [
   { path: '/admin/partners', label: 'Partners', icon: 'partners' },
   { path: '/admin/events', label: 'Events / JLG', icon: 'events' },
   { label: 'Pricing', icon: 'pricing', externalUrl: 'https://aadsit7.github.io/Partner-Calculator/' },
+  { path: '/admin/comp', label: 'Comp', icon: 'comp' },
   { path: '/admin/setup', label: 'Setup', icon: 'setup' },
 ];
 
@@ -34,6 +35,7 @@ const ICONS = {
   setup: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 5h2m0 0a2 2 0 004 0m-4 0a2 2 0 014 0m0 0h8M3 10h8m0 0a2 2 0 004 0m-4 0a2 2 0 014 0m0 0h2M3 15h2m0 0a2 2 0 004 0m-4 0a2 2 0 014 0m0 0h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   leadcheck: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M13.5 13.5L18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M6.5 8.5l1.5 1.5 2.5-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   pricing: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 3v14M13.5 6.5h-5a2 2 0 100 4h3a2 2 0 110 4h-5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  comp: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2.5" y="3.5" width="15" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 7h2M5.5 10h2M5.5 13h2M10 7h4.5M10 10h4.5M10 13h2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   logout: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M7 16H4a2 2 0 01-2-2V4a2 2 0 012-2h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12 13l4-4-4-4M7.5 9H16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 
