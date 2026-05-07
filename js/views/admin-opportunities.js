@@ -1676,15 +1676,14 @@ function renderOppMapPdfErrorCard(slot, { opportunity, error, onRetry }) {
 export async function openOppDetailsModal(opp) {
   // Partners/events are needed to render the in-memory fields (partner name,
   // lead source label) and are typically already cached by the list view.
-  // Only block on them when they're missing.
-  if (!cachedPartners || !cachedEvents) {
-    const [partners, events] = await Promise.all([
-      cachedPartners ? Promise.resolve(null) : readSheetAsObjects(CONFIG.SHEET_PARTNERS),
-      cachedEvents ? Promise.resolve(null) : readSheetAsObjects(CONFIG.SHEET_EVENTS),
-    ]);
-    if (partners) cachedPartners = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
-    if (events) cachedEvents = events;
-  }
+  // Always refresh events so the lead source label resolves correctly even
+  // for events created since this view was last rendered.
+  const [partnersResult, eventsResult] = await Promise.all([
+    cachedPartners ? Promise.resolve(null) : readSheetAsObjects(CONFIG.SHEET_PARTNERS),
+    readSheetAsObjects(CONFIG.SHEET_EVENTS),
+  ]);
+  if (partnersResult) cachedPartners = partnersResult.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
+  cachedEvents = eventsResult;
 
   const editBtn = el('button', {
     class: 'details-modal__edit-btn',
@@ -1978,15 +1977,16 @@ function buildDetailsLoadingPlaceholder() {
 export async function openOppModal(opp, container, onSaved) {
   const isEdit = !!opp;
 
-  // Ensure partners and events are loaded (modal may be opened from other views)
-  if (!cachedPartners || !cachedEvents) {
-    const [partners, events] = await Promise.all([
-      cachedPartners ? Promise.resolve(null) : readSheetAsObjects(CONFIG.SHEET_PARTNERS),
-      cachedEvents ? Promise.resolve(null) : readSheetAsObjects(CONFIG.SHEET_EVENTS),
-    ]);
-    if (partners) cachedPartners = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
-    if (events) cachedEvents = events;
-  }
+  // Always refresh the events list so the lead_source dropdown reflects
+  // any events that have been added since this view was last loaded.
+  // Partners are loaded only when missing — they don't change as often
+  // and re-rendering the page would refresh them anyway.
+  const [partnersResult, eventsResult] = await Promise.all([
+    cachedPartners ? Promise.resolve(null) : readSheetAsObjects(CONFIG.SHEET_PARTNERS),
+    readSheetAsObjects(CONFIG.SHEET_EVENTS),
+  ]);
+  if (partnersResult) cachedPartners = partnersResult.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
+  cachedEvents = eventsResult;
 
   // Load existing descriptions + documents for this opportunity in parallel.
   let workingDescriptions = [];
@@ -2080,7 +2080,12 @@ export async function openOppModal(opp, container, onSaved) {
     lead_source: opp.lead_source || 'salesperson',
   } : { lead_source: 'salesperson' };
 
+  // Guard against rapid double-clicks dispatching two submit events
+  // before the first appendRow / updateRow resolves.
+  let saving = false;
   const form = buildForm(fields, async (data) => {
+    if (saving) return;
+    saving = true;
     try {
       const leadSource = data.lead_source || 'salesperson';
 
@@ -2179,6 +2184,8 @@ export async function openOppModal(opp, container, onSaved) {
       if (onSaved) { onSaved(); } else { reRender(); }
     } catch (err) {
       showToast(err.message || 'Failed to save opportunity', 'error');
+    } finally {
+      saving = false;
     }
   }, initialValues);
 
