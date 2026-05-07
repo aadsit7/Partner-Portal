@@ -1314,6 +1314,134 @@
   max-width: 720px;
 }
 
+/* ---------- Extra-Wide Modal (Events with sourced-opportunities summary) ---------- */
+.modal--xwide {
+  max-width: 1080px;
+}
+
+/* ---------- Event Opportunities Summary (inside Edit Event modal) ---------- */
+.event-opps-section {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.event-opps-section__title {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-3) 0;
+}
+
+.event-opps-stats {
+  display: flex;
+  gap: var(--space-6);
+  padding: var(--space-2) 0 var(--space-3);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.event-opps-stats__metric {
+  flex: 1;
+  min-width: 0;
+}
+
+.event-opps-stats__value {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--color-text-primary);
+  line-height: 1.1;
+}
+
+.event-opps-stats__label {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: var(--space-1);
+}
+
+.event-opps-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.event-opp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  font: inherit;
+  transition: background 150ms, border-color 150ms;
+}
+
+.event-opp-row:hover {
+  background: var(--color-bg);
+  border-color: var(--color-primary-lighter);
+}
+
+.event-opp-row__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.event-opp-row__name {
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-opp-row__sub {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.event-opp-row__dot {
+  opacity: 0.6;
+}
+
+.event-opp-row__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+.event-opp-row__value {
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+}
+
+.event-opp-row__chevron {
+  color: var(--color-text-muted);
+  display: inline-flex;
+}
+
+.event-opps-empty {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
 /* ---------- Opportunity Details Modal ---------- */
 .modal--details {
   max-width: 960px;
