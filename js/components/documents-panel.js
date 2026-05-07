@@ -73,6 +73,9 @@ function fileIconSvg() {
  *   resulting description, and setting file.analyzed = 'TRUE'.
  * @param {string} [opts.savePrompt] - Message shown when entityId is empty
  *   (e.g., for new unsaved entities).
+ * @param {boolean} [opts.loading] - When true, show a loading indicator
+ *   inside the list area instead of the empty state. Cleared automatically
+ *   on the first refresh() / addFile() call.
  * @returns {{ panel: HTMLElement, addFile: Function, refresh: Function, entityId: string|null }}
  */
 export function buildDocumentsPanel({
@@ -81,14 +84,26 @@ export function buildDocumentsPanel({
   initialFiles,
   onAnalyze,
   savePrompt,
+  loading = false,
 }) {
   const files = [...(initialFiles || [])];
   const list = el('div', { class: 'documents-list' });
   const countBadge = el('span', { class: 'descriptions-panel__count' }, '0');
+  let isLoading = !!loading;
 
   function rebuildList() {
     list.innerHTML = '';
-    countBadge.textContent = String(files.length);
+    countBadge.textContent = isLoading ? '…' : String(files.length);
+
+    if (isLoading) {
+      list.appendChild(
+        el('div', { class: 'documents-list__loading', style: { padding: 'var(--space-5) var(--space-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-2)', color: 'var(--color-text-muted)' } },
+          el('div', { class: 'spinner', style: { width: '16px', height: '16px', borderWidth: '2px' } }),
+          el('span', {}, 'Loading documents…'),
+        )
+      );
+      return;
+    }
 
     if (files.length === 0) {
       list.appendChild(
@@ -297,6 +312,7 @@ export function buildDocumentsPanel({
   // visible list (used by Randy's MAP PDF flow); refresh reloads from server.
   function addFile(file) {
     if (!file) return;
+    isLoading = false;
     files.unshift(file);
     rebuildList();
     const firstRow = list.querySelector('.document-row');
@@ -306,13 +322,19 @@ export function buildDocumentsPanel({
     }
   }
   async function refresh() {
-    if (!entityId) return;
+    if (!entityId) {
+      isLoading = false;
+      rebuildList();
+      return;
+    }
     try {
       const fresh = await listEntityDocuments(entityId);
       files.splice(0, files.length, ...fresh);
-      rebuildList();
     } catch (err) {
       console.warn('documents panel refresh failed', err);
+    } finally {
+      isLoading = false;
+      rebuildList();
     }
   }
 

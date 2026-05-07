@@ -61,6 +61,48 @@ export function isConfigured() {
   return !!token || (!!apiKey && apiKey !== 'YOUR_GOOGLE_API_KEY_HERE');
 }
 
+// ============================================
+// Read cache (TTL + write-invalidation)
+// ============================================
+// The portal does the same readSheetAsObjects() round-trip many times
+// per session: once on view render, again when an event/opp modal opens
+// to refresh the linked-rollups, again when the user switches tabs and
+// returns. Each one is a Google Sheets API hop costing 100-500ms.
+//
+// This in-memory cache short-circuits repeat reads inside a TTL window
+// and de-dupes concurrent in-flight reads. Any write through this
+// module's appendRow / updateRow / deleteRow (and demo equivalents)
+// invalidates the affected sheet's cache entry, so the next reader
+// re-fetches fresh data. Callers that need fresh-no-matter-what can
+// pass `{ forceRefresh: true }` to readSheetAsObjects().
+
+const SHEET_CACHE_TTL_MS = 30_000;
+const _sheetCache = new Map();   // sheetName -> { ts, rows }
+const _inflight = new Map();     // sheetName -> Promise<rows>
+
+function getCachedRows(sheetName) {
+  const entry = _sheetCache.get(sheetName);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > SHEET_CACHE_TTL_MS) return null;
+  return entry.rows;
+}
+
+function setCachedRows(sheetName, rows) {
+  _sheetCache.set(sheetName, { ts: Date.now(), rows });
+}
+
+/**
+ * Drop one or all sheet cache entries. Called automatically after writes;
+ * exported so callers can force a refresh after batch operations.
+ */
+export function invalidateSheetCache(sheetName) {
+  if (sheetName) {
+    _sheetCache.delete(sheetName);
+  } else {
+    _sheetCache.clear();
+  }
+}
+
 /**
  * Read all rows from a sheet.
  * Returns array of row arrays (first row = headers).
@@ -101,13 +143,8 @@ export async function readSheet(sheetName) {
   return data.values || [];
 }
 
-/**
- * Read rows and parse into objects using header row.
- */
-export async function readSheetAsObjects(sheetName) {
-  const rows = await readSheet(sheetName);
-  if (rows.length < 2) return [];
-
+function rowsToObjects(rows) {
+  if (!rows || rows.length < 2) return [];
   const headers = rows[0];
   return rows.slice(1).map((row, idx) => {
     const obj = { _rowIndex: idx + 2 }; // 1-indexed, skip header
@@ -116,6 +153,48 @@ export async function readSheetAsObjects(sheetName) {
     });
     return obj;
   });
+}
+
+/**
+ * Read rows and parse into objects using header row.
+ *
+ * Results are cached for SHEET_CACHE_TTL_MS and shared across concurrent
+ * callers. Pass { forceRefresh: true } to bypass the cache (e.g. after a
+ * write the caller already knows about, or for cross-window freshness).
+ *
+ * Returns a fresh top-level array on every call so callers can sort/splice
+ * without polluting the cache; the row objects themselves are shared
+ * references — treat as read-only or shallow-clone before mutating.
+ */
+export async function readSheetAsObjects(sheetName, options = {}) {
+  const { forceRefresh = false } = options;
+
+  if (!forceRefresh) {
+    const cached = getCachedRows(sheetName);
+    if (cached) return cached.slice();
+
+    // Coalesce concurrent reads of the same sheet into a single network hop.
+    const pending = _inflight.get(sheetName);
+    if (pending) {
+      const rows = await pending;
+      return rows.slice();
+    }
+  }
+
+  const promise = (async () => {
+    const raw = await readSheet(sheetName);
+    const objects = rowsToObjects(raw);
+    setCachedRows(sheetName, objects);
+    return objects;
+  })();
+
+  _inflight.set(sheetName, promise);
+  try {
+    const rows = await promise;
+    return rows.slice();
+  } finally {
+    _inflight.delete(sheetName);
+  }
 }
 
 /**
@@ -143,6 +222,7 @@ export async function appendRow(sheetName, values) {
     throw new Error(err.error?.message || `Failed to append to ${sheetName}`);
   }
 
+  invalidateSheetCache(sheetName);
   return res.json();
 }
 
@@ -175,6 +255,7 @@ export async function updateRow(sheetName, rowIndex, values) {
     throw new Error(err.error?.message || `Failed to update ${sheetName}`);
   }
 
+  invalidateSheetCache(sheetName);
   return res.json();
 }
 
@@ -225,6 +306,7 @@ export async function deleteRow(sheetName, rowIndex) {
     throw new Error(err.error?.message || `Failed to delete from ${sheetName}`);
   }
 
+  invalidateSheetCache(sheetName);
   return res.json();
 }
 
@@ -359,6 +441,7 @@ export async function seedSheetData() {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error?.message || `Failed to seed ${sheet}`);
     }
+    invalidateSheetCache(sheet);
   }
 
   return { success: true };
@@ -539,6 +622,7 @@ function loadPersistedDemoData() {
  */
 export function clearDemoData() {
   localStorage.removeItem(DEMO_STORAGE_KEY);
+  invalidateSheetCache();
 }
 
 // On module init, restore persisted demo data if available
@@ -570,6 +654,7 @@ export function addDemoRow(sheetName, values) {
     case CONFIG.SHEET_EVENT_DESCRIPTIONS: demoEventDescriptions.push(values); break;
     case CONFIG.SHEET_PARTNER_DOCUMENTS: demoPartnerDocuments.push(values); break;
   }
+  invalidateSheetCache(sheetName);
   persistDemoData();
 }
 
@@ -591,6 +676,7 @@ export function updateDemoRow(sheetName, rowIndex, values) {
   if (data[rowIndex - 1]) {
     data[rowIndex - 1] = values;
   }
+  invalidateSheetCache(sheetName);
   persistDemoData();
 }
 
@@ -610,5 +696,6 @@ export function deleteDemoRow(sheetName, rowIndex) {
     default: return;
   }
   data.splice(rowIndex - 1, 1);
+  invalidateSheetCache(sheetName);
   persistDemoData();
 }

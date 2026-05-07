@@ -1983,28 +1983,19 @@ export async function openOppModal(opp, container, onSaved) {
   if (partnersResult) cachedPartners = partnersResult.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
   cachedEvents = eventsResult;
 
-  // Load existing descriptions + documents for this opportunity in parallel.
+  // Load existing descriptions for this opportunity. Documents are loaded
+  // in the background after the modal opens (see docsHandle.refresh()
+  // below) so the Apps Script round-trip doesn't block the modal.
   let workingDescriptions = [];
-  let initialDocuments = [];
   if (isEdit) {
-    const [descResult, docsResult] = await Promise.allSettled([
-      readSheetAsObjects(CONFIG.SHEET_OPP_DESCRIPTIONS),
-      listEntityDocuments(opp.opportunity_id),
-    ]);
-
-    if (descResult.status === 'fulfilled') {
-      workingDescriptions = descResult.value
+    try {
+      const all = await readSheetAsObjects(CONFIG.SHEET_OPP_DESCRIPTIONS);
+      workingDescriptions = all
         .filter(d => d.opportunity_id === opp.opportunity_id)
         .map(d => ({ ...d }))
         .sort((a, b) => new Date(b.description_date || b.created_at) - new Date(a.description_date || a.created_at));
-    } else {
-      console.warn('Failed to load opportunity descriptions', descResult.reason);
-    }
-
-    if (docsResult.status === 'fulfilled') {
-      initialDocuments = docsResult.value;
-    } else {
-      console.warn('Failed to load opportunity documents', docsResult.reason);
+    } catch (err) {
+      console.warn('Failed to load opportunity descriptions', err);
     }
 
     // Legacy migration: if no separate description records exist but the
@@ -2231,7 +2222,10 @@ export async function openOppModal(opp, container, onSaved) {
 
   // Documents panel — drag-and-drop uploads to Google Drive via the file API.
   // For new (unsaved) opportunities there's no opportunity_id to attach to yet,
-  // so the upload zone is hidden with a helper note.
+  // so the upload zone is hidden with a helper note. For existing opps we
+  // open the modal in a loading state and fetch the list in the background
+  // (see docsHandle.refresh() after openModal) so the Apps Script round-trip
+  // doesn't block the modal.
   const opportunityIdForDocs = isEdit ? opp.opportunity_id : null;
   const docsHandle = buildDocumentsPanel({
     entityId: opportunityIdForDocs,
@@ -2239,7 +2233,8 @@ export async function openOppModal(opp, container, onSaved) {
       const input = form.querySelector('[name="customer_name"]');
       return (input && input.value) || (isEdit ? (opp.customer_name || '') : '');
     },
-    initialFiles: initialDocuments,
+    initialFiles: [],
+    loading: isEdit,
     savePrompt: 'Save this opportunity first to attach documents',
     onAnalyze: async (file) => {
       const data = await fileApiRequest({
@@ -2299,6 +2294,11 @@ export async function openOppModal(opp, container, onSaved) {
       }, isEdit ? 'Save Changes' : 'Create Opportunity'),
     ],
   });
+
+  // Kick off the documents fetch only after the modal is on screen so the
+  // user sees the form immediately, then the document list fills in.
+  // refresh() handles its own errors.
+  if (isEdit) docsHandle.refresh();
 }
 
 // ============================================
