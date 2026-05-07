@@ -16,6 +16,7 @@ import * as adminDashboard from './views/admin-dashboard.js';
 import * as adminPartners from './views/admin-partners.js';
 import * as adminEvents from './views/admin-events.js';
 import * as adminOpportunities from './views/admin-opportunities.js';
+import * as adminComp from './views/admin-comp.js';
 import * as adminPartnerDetail from './views/admin-partner-detail.js';
 import * as adminSetup from './views/admin-setup.js';
 import { renderAdminAIAssistant, cleanupAdminAIAssistant } from './views/admin-ai-assistant.js';
@@ -133,6 +134,15 @@ addRoute('/admin/ai-assistant', {
     renderAdminAIAssistant(container);
   },
   cleanup: cleanupAdminAIAssistant,
+});
+
+addRoute('/admin/comp', {
+  title: 'Comp',
+  render: async (container) => {
+    setupAppShell();
+    await adminComp.render(container);
+  },
+  cleanup: adminComp.cleanup,
 });
 
 addRoute('/admin/partner-detail', {

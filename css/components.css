@@ -5949,3 +5949,443 @@
     min-width: 0;
   }
 }
+
+/* ============================================
+   Comp / Compensation Calculator
+   ============================================ */
+
+.comp-plan {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-6);
+  margin-bottom: var(--space-6);
+  box-shadow: var(--shadow-card);
+}
+
+.comp-plan__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.comp-plan__title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.comp-plan__subtitle {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.comp-plan__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+}
+
+.comp-plan__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.comp-plan__label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.comp-plan__input-wrap {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  padding: 0 var(--space-3);
+  height: 40px;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.comp-plan__input-wrap:focus-within {
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+}
+
+.comp-plan__prefix,
+.comp-plan__suffix {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  font-weight: var(--font-medium);
+}
+
+.comp-plan__input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  height: 100%;
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  padding: 0 var(--space-2);
+  min-width: 0;
+}
+
+.comp-plan__input:focus {
+  outline: none;
+}
+
+.comp-plan__footer {
+  margin-top: var(--space-4);
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---- Stats grid override for the comp page ---- */
+
+.comp-stats {
+  margin-bottom: var(--space-6);
+}
+
+/* ---- Two-column grid for attainment + bracket waterfall ---- */
+
+.comp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5);
+  margin-bottom: var(--space-6);
+}
+
+@media (max-width: 1100px) {
+  .comp-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.comp-grid__attainment,
+.comp-grid__bracket {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-6);
+  box-shadow: var(--shadow-card);
+}
+
+/* ---- Attainment progress bar ---- */
+
+.comp-attainment__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.comp-attainment__title {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+}
+
+.comp-attainment__values {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.comp-attainment__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  border: 1px solid transparent;
+}
+
+.comp-attainment__chip--won {
+  background: rgba(15, 122, 63, 0.10);
+  color: var(--color-success);
+  border-color: rgba(15, 122, 63, 0.25);
+}
+
+.comp-attainment__chip--open {
+  background: rgba(0, 207, 255, 0.10);
+  color: #0a7da0;
+  border-color: rgba(0, 207, 255, 0.30);
+}
+
+.comp-attainment__bar {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  height: 28px;
+  background: var(--color-border-light);
+  border-radius: var(--radius-md);
+  overflow: visible;
+  margin: var(--space-6) 0 var(--space-8);
+}
+
+.comp-attainment__segment {
+  position: relative;
+  height: 100%;
+  flex-shrink: 0;
+  transition: width var(--transition-normal);
+}
+
+.comp-attainment__segment--won {
+  background: var(--color-status-won);
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.comp-attainment__segment--open {
+  background: var(--color-status-in-progress);
+  opacity: 0.65;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.comp-attainment__marker {
+  position: absolute;
+  top: -8px;
+  bottom: -22px;
+  width: 2px;
+  background: var(--color-text-secondary);
+  z-index: 5;
+}
+
+.comp-attainment__marker--tier1 {
+  background: var(--color-warning);
+}
+
+.comp-attainment__marker--tier2 {
+  background: var(--color-primary);
+}
+
+.comp-attainment__marker-label {
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  background: var(--color-surface);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.comp-attainment__marker--tier1 .comp-attainment__marker-label { color: var(--color-warning); }
+.comp-attainment__marker--tier2 .comp-attainment__marker-label { color: var(--color-primary); }
+
+.comp-attainment__legend {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.comp-attainment__legend span strong {
+  color: var(--color-text-primary);
+}
+
+/* ---- Bracket waterfall ---- */
+
+.comp-bracket__header {
+  margin-bottom: var(--space-4);
+}
+
+.comp-bracket__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+}
+
+.comp-bracket__subtitle {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.comp-bracket__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.comp-bracket__row {
+  display: grid;
+  grid-template-columns: 200px 1fr auto;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+@media (max-width: 700px) {
+  .comp-bracket__row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.comp-bracket__row-label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-primary);
+}
+
+.comp-bracket__row-bar {
+  display: flex;
+  height: 14px;
+  background: var(--color-border-light);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.comp-bracket__seg {
+  height: 100%;
+}
+
+.comp-bracket__seg--won {
+  background: var(--color-success);
+}
+
+.comp-bracket__seg--open {
+  background: var(--color-status-in-progress);
+  opacity: 0.65;
+}
+
+.comp-bracket__row-values {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.comp-bracket__row-earned {
+  font-weight: var(--font-semibold);
+  color: var(--color-success);
+}
+
+.comp-bracket__row-proj {
+  color: var(--color-text-muted);
+}
+
+/* ---- Comp opportunity table ---- */
+
+.comp-table-wrap {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: auto;
+  box-shadow: var(--shadow-card);
+  margin-bottom: var(--space-6);
+}
+
+.comp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.comp-table thead th {
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.comp-table tbody td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-light);
+  color: var(--color-text-primary);
+  vertical-align: middle;
+}
+
+.comp-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.comp-table tbody tr:hover {
+  background: var(--color-bg);
+}
+
+.comp-table__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.comp-table__deal {
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+}
+
+.comp-table__stage {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  background: var(--color-border-light);
+  color: var(--color-text-secondary);
+}
+
+.comp-table__row--excluded td {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.comp-table__row--flat td {
+  background: rgba(0, 207, 255, 0.04);
+}
+
+.comp-table__totals td {
+  background: var(--color-bg);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  border-top: 2px solid var(--color-border);
+  border-bottom: none;
+}
+
+.comp-eligibility {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.02em;
+}
+
+.comp-eligibility--quota {
+  background: rgba(30, 48, 204, 0.10);
+  color: var(--color-primary);
+}
+
+.comp-eligibility--flat {
+  background: rgba(0, 207, 255, 0.14);
+  color: #0a7da0;
+}
+
+.comp-eligibility--excluded {
+  background: rgba(126, 130, 160, 0.18);
+  color: var(--color-text-muted);
+}
