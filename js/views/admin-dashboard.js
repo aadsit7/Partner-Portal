@@ -324,16 +324,19 @@ function renderDashboard(container, partners, opportunities, events) {
 // ============================================
 
 function buildActivityView(container, partnerStats, upcomingEvents, allEvents, opportunities, viewContainer) {
+  const activePartners = partnerStats.filter(ps => ps.stats.totalDeals > 0 || ps.upcomingEvents.length > 0);
+
   // Partner Activity Cards
-  const partnerHubTitle = el('div', { class: 'section-header', style: { marginBottom: 'var(--space-2)' } },
+  const partnerHubTitle = el('div', { class: 'section-header' },
     el('div', {},
       el('h3', { class: 'section-header__title' }, 'Partner Activity'),
-      el('p', { class: 'section-header__subtitle' }, 'Joint events and opportunities by partner')
+      el('p', { class: 'section-header__subtitle' },
+        `${activePartners.length} partner${activePartners.length === 1 ? '' : 's'} with active deals or upcoming events`
+      )
     )
   );
 
-  const partnerCards = partnerStats
-    .filter(ps => ps.stats.totalDeals > 0 || ps.upcomingEvents.length > 0)
+  const partnerCards = activePartners
     .map(({ partner, stats, upcomingEvents: partnerUpcoming }) => {
       const tc = tierSlug(partner.tier);
       const initials = (partner.display_name || '')
@@ -410,14 +413,6 @@ function buildActivityView(container, partnerStats, upcomingEvents, allEvents, o
       );
     });
 
-  // Upcoming Events Timeline
-  const timelineTitle = el('div', { class: 'section-header', style: { marginBottom: 'var(--space-2)', marginTop: 'var(--space-5)' } },
-    el('div', {},
-      el('h3', { class: 'section-header__title' }, 'Upcoming Joint Events'),
-      el('p', { class: 'section-header__subtitle' }, 'Next 60 days')
-    )
-  );
-
   const now = new Date();
   const sixtyDaysOut = new Date(now);
   sixtyDaysOut.setDate(sixtyDaysOut.getDate() + 60);
@@ -428,6 +423,18 @@ function buildActivityView(container, partnerStats, upcomingEvents, allEvents, o
       return d >= now && d <= sixtyDaysOut;
     })
     .sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
+
+  // Upcoming Events Timeline
+  const timelineTitle = el('div', { class: 'section-header' },
+    el('div', {},
+      el('h3', { class: 'section-header__title' }, 'Upcoming Joint Events'),
+      el('p', { class: 'section-header__subtitle' },
+        timelineEvents.length === 0
+          ? 'Next 60 days'
+          : `${timelineEvents.length} event${timelineEvents.length === 1 ? '' : 's'} in the next 60 days`
+      )
+    )
+  );
 
   const getPartnerName = (pid) => {
     if (!pid) return 'All Partners';
