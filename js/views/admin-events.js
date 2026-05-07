@@ -26,6 +26,7 @@ import {
   buildDocumentsPanel,
   listEntityDocuments,
 } from '../components/documents-panel.js';
+import { openOppModal } from './admin-opportunities.js';
 
 export const title = 'Events';
 
@@ -869,6 +870,21 @@ export async function openEventModal(event, container, onSaved) {
     cachedPartners = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
   }
 
+  // Ensure opportunities are loaded so we can show the sourced-opportunities
+  // rollup at the top of the modal (modal may be opened from other views).
+  if (!cachedOpps) {
+    cachedOpps = await readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES);
+  }
+
+  // Compute opportunities sourced from this event (lead_source links opp → event_id).
+  const linkedOpps = isEdit
+    ? (cachedOpps || []).filter(o => o.lead_source === event.event_id)
+    : [];
+  const totalPipeline = linkedOpps.reduce(
+    (sum, o) => sum + (parseFloat(o.deal_value) || 0),
+    0,
+  );
+
   // Load existing descriptions + documents in parallel when editing.
   // Failures are tolerated (e.g. the Event_Descriptions sheet may not
   // exist yet on a fresh install) — empty list on failure.
@@ -1108,13 +1124,26 @@ export async function openEventModal(event, container, onSaved) {
     savePrompt: 'Save this event first to attach documents',
   });
 
-  // Combine form, descriptions, documents, and checklist in modal content
-  const modalContent = el('div', {}, form, descriptionsPanel, docsHandle.panel, checklistSection);
+  // Sourced opportunities summary — shown only for existing events. New
+  // events have no event_id yet, so nothing can be linked to them.
+  const sourcedOppsSection = isEdit
+    ? buildSourcedOppsSection(linkedOpps, totalPipeline)
+    : null;
+
+  // Combine sections in modal content. The opportunities rollup sits at
+  // the top so users see pipeline impact before anything else.
+  const modalContent = el('div', {},
+    sourcedOppsSection,
+    form,
+    descriptionsPanel,
+    docsHandle.panel,
+    checklistSection,
+  );
 
   openModal({
     title: isEdit ? 'Edit Event' : 'New Demand Gen Event',
     content: modalContent,
-    className: 'modal--wide',
+    className: 'modal--xwide',
     footer: [
       el('button', { class: 'btn btn--secondary', onClick: closeModal }, 'Cancel'),
       el('button', {
@@ -1123,6 +1152,74 @@ export async function openEventModal(event, container, onSaved) {
       }, isEdit ? 'Save Changes' : 'Create Event'),
     ],
   });
+}
+
+/**
+ * Build the "Sourced Opportunities" panel that sits at the top of the
+ * Edit Event modal: a count + total pipeline summary, and a clickable
+ * list of the linked opportunities (clicking switches to the opp modal).
+ */
+function buildSourcedOppsSection(linkedOpps, totalPipeline) {
+  const sorted = [...linkedOpps].sort(
+    (a, b) => (parseFloat(b.deal_value) || 0) - (parseFloat(a.deal_value) || 0),
+  );
+
+  const stats = el('div', { class: 'event-opps-stats' },
+    el('div', { class: 'event-opps-stats__metric' },
+      el('div', { class: 'event-opps-stats__value' }, String(linkedOpps.length)),
+      el('div', { class: 'event-opps-stats__label' },
+        linkedOpps.length === 1 ? 'Opportunity' : 'Opportunities',
+      ),
+    ),
+    el('div', { class: 'event-opps-stats__metric' },
+      el('div', { class: 'event-opps-stats__value' }, formatCurrency(totalPipeline)),
+      el('div', { class: 'event-opps-stats__label' }, 'Total Pipeline'),
+    ),
+  );
+
+  const chevronSvg = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 3l5 4-5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  let listEl;
+  if (sorted.length === 0) {
+    listEl = el('div', { class: 'event-opps-empty' },
+      'No opportunities sourced from this event yet.',
+    );
+  } else {
+    listEl = el('div', { class: 'event-opps-list' },
+      ...sorted.map(opp => {
+        const statusClass = (opp.status || 'Registered')
+          .toLowerCase()
+          .replace(/\s+/g, '-');
+        return el('button', {
+          type: 'button',
+          class: 'event-opp-row',
+          onClick: () => openOppModal(opp, document.getElementById('view-container')),
+        },
+          el('div', { class: 'event-opp-row__main' },
+            el('div', { class: 'event-opp-row__name' }, opp.deal_name || 'Untitled deal'),
+            el('div', { class: 'event-opp-row__sub' },
+              el('span', {}, opp.customer_name || '—'),
+              el('span', { class: 'event-opp-row__dot' }, '·'),
+              el('span', {}, opp.stage || '—'),
+            ),
+          ),
+          el('div', { class: 'event-opp-row__right' },
+            el('span', { class: 'event-opp-row__value' },
+              formatCurrency(parseFloat(opp.deal_value) || 0),
+            ),
+            el('span', { class: `badge badge--${statusClass}` }, opp.status || 'Registered'),
+          ),
+          el('span', { class: 'event-opp-row__chevron', html: chevronSvg }),
+        );
+      }),
+    );
+  }
+
+  return el('div', { class: 'event-opps-section' },
+    el('h3', { class: 'event-opps-section__title' }, 'Sourced Opportunities'),
+    stats,
+    listEl,
+  );
 }
 
 async function handleDelete(event) {
