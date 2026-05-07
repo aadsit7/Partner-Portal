@@ -494,7 +494,7 @@ let demoPartnerDocuments = [
 // ============================================
 
 const DEMO_STORAGE_KEY = 'pp_demo_data';
-const DEMO_SCHEMA_VERSION = 14; // Bump when demo data structure changes
+const DEMO_SCHEMA_VERSION = 15; // Bump when demo data structure changes
 
 function persistDemoData() {
   try {
