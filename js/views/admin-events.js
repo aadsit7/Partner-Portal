@@ -962,6 +962,10 @@ export async function openEventModal(event, container, onSaved) {
     },
     { name: 'location', label: 'Location', placeholder: 'e.g., Virtual (Zoom), San Francisco, CA' },
     { name: 'url', label: 'Event URL', type: 'url', placeholder: 'https://...' },
+    {
+      name: 'lead_count', label: 'Leads', type: 'number',
+      min: 0, step: 1, placeholder: '0',
+    },
   ];
 
   const initialValues = isEdit ? {
@@ -973,6 +977,7 @@ export async function openEventModal(event, container, onSaved) {
     partner_id: event.partner_id || '',
     location: event.location,
     url: event.url,
+    lead_count: event.lead_count || '',
   } : {};
 
   // Build the checklist UI
@@ -992,7 +997,7 @@ export async function openEventModal(event, container, onSaved) {
         event.event_id, event.title, event.description, event.event_date,
         event.end_date || event.event_date, event.event_type, event.location,
         event.url, event.created_by, event.created_at, event.status || 'Upcoming',
-        event.partner_id || '', checklistJson,
+        event.partner_id || '', checklistJson, event.lead_count || 0,
       ];
       if (isConfigured()) {
         updateRow(CONFIG.SHEET_EVENTS, event._rowIndex, values).catch(() => {});
@@ -1022,6 +1027,8 @@ export async function openEventModal(event, container, onSaved) {
       let eventId;
       let createdAt;
 
+      const leadCount = Math.max(0, parseInt(data.lead_count, 10) || 0);
+
       if (isEdit) {
         eventId = event.event_id;
         createdAt = event.created_at;
@@ -1030,7 +1037,7 @@ export async function openEventModal(event, container, onSaved) {
           eventId, data.title, latestDescPlain, data.event_date,
           data.end_date || data.event_date, data.event_type, data.location,
           data.url, event.created_by, createdAt, data.status || 'Upcoming',
-          data.partner_id || '', checklistJson,
+          data.partner_id || '', checklistJson, leadCount,
         ];
 
         if (isConfigured()) {
@@ -1046,7 +1053,7 @@ export async function openEventModal(event, container, onSaved) {
           eventId, data.title, latestDescPlain, data.event_date,
           data.end_date || data.event_date, data.event_type, data.location,
           data.url, user.partner_id, createdAt, data.status || 'Upcoming',
-          data.partner_id || '', checklistJson,
+          data.partner_id || '', checklistJson, leadCount,
         ];
 
         if (isConfigured()) {
@@ -1134,8 +1141,9 @@ export async function openEventModal(event, container, onSaved) {
 
   // Sourced opportunities summary — shown only for existing events. New
   // events have no event_id yet, so nothing can be linked to them.
+  const leadCountValue = Math.max(0, parseInt(event && event.lead_count, 10) || 0);
   const sourcedOppsSection = isEdit
-    ? buildSourcedOppsSection(linkedOpps, totalPipeline)
+    ? buildSourcedOppsSection(linkedOpps, totalPipeline, leadCountValue)
     : null;
 
   // Combine sections in modal content. The opportunities rollup sits at
@@ -1167,12 +1175,18 @@ export async function openEventModal(event, container, onSaved) {
  * Edit Event modal: a count + total pipeline summary, and a clickable
  * list of the linked opportunities (clicking switches to the opp modal).
  */
-function buildSourcedOppsSection(linkedOpps, totalPipeline) {
+function buildSourcedOppsSection(linkedOpps, totalPipeline, leadCount = 0) {
   const sorted = [...linkedOpps].sort(
     (a, b) => (parseFloat(b.deal_value) || 0) - (parseFloat(a.deal_value) || 0),
   );
 
   const stats = el('div', { class: 'event-opps-stats' },
+    el('div', { class: 'event-opps-stats__metric' },
+      el('div', { class: 'event-opps-stats__value' }, String(leadCount)),
+      el('div', { class: 'event-opps-stats__label' },
+        leadCount === 1 ? 'Lead' : 'Leads',
+      ),
+    ),
     el('div', { class: 'event-opps-stats__metric' },
       el('div', { class: 'event-opps-stats__value' }, String(linkedOpps.length)),
       el('div', { class: 'event-opps-stats__label' },
