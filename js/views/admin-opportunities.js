@@ -931,6 +931,10 @@ function buildOppDetailsHero(opp, refs) {
   const valueEl = el('div', { class: 'details-hero__value' },
     formatCurrency(parseFloat(opp.deal_value) || 0),
   );
+  const valueWrap = el('div', { class: 'details-hero__value-wrap' },
+    el('span', { class: 'details-hero__value-eyebrow' }, 'Deal Value'),
+    valueEl,
+  );
   const stageHolder = el('span', { class: 'details-hero__badge-slot' }, stageBadge(opp.stage));
   const statusHolder = el('span', { class: 'details-hero__badge-slot' }, statusBadge(opp.status));
 
@@ -949,9 +953,13 @@ function buildOppDetailsHero(opp, refs) {
   );
 
   const hero = el('div', { class: 'details-hero' },
+    el('span', { class: 'details-hero__plus details-hero__plus--a', 'aria-hidden': 'true' }, '+'),
+    el('span', { class: 'details-hero__plus details-hero__plus--b', 'aria-hidden': 'true' }, '+'),
+    el('span', { class: 'details-hero__plus details-hero__plus--c', 'aria-hidden': 'true' }, '+'),
+    el('span', { class: 'details-hero__plus details-hero__plus--d', 'aria-hidden': 'true' }, '+'),
     el('div', { class: 'details-hero__top' },
       el('div', { class: 'details-hero__badges' }, stageHolder, statusHolder),
-      valueEl,
+      valueWrap,
     ),
     el('div', { class: 'details-hero__meta' }, customerMeta, partnerMeta, closeMeta),
   );
@@ -971,10 +979,16 @@ function buildOppDetailsHero(opp, refs) {
 
 function makeCategoryPill(category) {
   if (category === 'meeting_recap') {
-    return el('span', { class: 'category-pill category-pill--meeting-recap' }, '🔵 Meeting Recap');
+    return el('span', { class: 'category-pill category-pill--meeting-recap' },
+      el('span', { class: 'category-pill__dot' }),
+      el('span', { class: 'category-pill__label' }, 'Meeting Recap'),
+    );
   }
   if (category === 'opportunity_note') {
-    return el('span', { class: 'category-pill category-pill--opportunity-note' }, '🟢 Opportunity Note');
+    return el('span', { class: 'category-pill category-pill--opportunity-note' },
+      el('span', { class: 'category-pill__dot' }),
+      el('span', { class: 'category-pill__label' }, 'Opportunity Note'),
+    );
   }
   return null;
 }
@@ -1063,6 +1077,9 @@ function buildDetailsDescriptionsSection(descriptions, options = {}) {
         const runningJob = realId ? standardizeJobs.get(realId) : null;
         const isJobRunning = runningJob?.status === 'running';
 
+        const sparkleSvg = '<svg class="standardize-btn__sparkle" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5l1.4 4.1L13.5 7l-4.1 1.4L8 12.5 6.6 8.4 2.5 7l4.1-1.4L8 1.5z" fill="currentColor"/></svg>';
+        const standardizeIdleHtml = `${sparkleSvg}<span class="standardize-btn__label">Standardize</span>`;
+        const standardizeRunningHtml = '<span class="standardize-btn__label">Standardizing…</span>';
         const standardizeBtn = el('button', {
           class: 'btn btn--xs btn--secondary standardize-btn',
           type: 'button',
@@ -1072,13 +1089,14 @@ function buildDetailsDescriptionsSection(descriptions, options = {}) {
             : isJobRunning
               ? 'Standardization in progress — check the progress ticker'
               : 'Reformat with AI while preserving all content',
-        }, isJobRunning ? 'Standardizing…' : '✨ Standardize');
+          html: isJobRunning ? standardizeRunningHtml : standardizeIdleHtml,
+        });
 
         if (realId && !isJobRunning) {
           standardizeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             standardizeBtn.disabled = true;
-            standardizeBtn.textContent = 'Standardizing…';
+            standardizeBtn.innerHTML = standardizeRunningHtml;
 
             // Body-fixed progress pill — stays visible even after the modal is closed.
             const descLabel = desc.description_date
@@ -1128,7 +1146,7 @@ function buildDetailsDescriptionsSection(descriptions, options = {}) {
                 // Re-enable button if still mounted.
                 try {
                   standardizeBtn.disabled = false;
-                  standardizeBtn.textContent = '✨ Standardize';
+                  standardizeBtn.innerHTML = standardizeIdleHtml;
                 } catch { /* card may be gone */ }
                 showToast(err.message || 'Standardize failed', 'error');
               } finally {
@@ -1860,6 +1878,20 @@ export async function openOppDetailsModal(opp) {
   const closeX = headerEl.querySelector('.modal__close');
   headerEl.insertBefore(editBtn, closeX);
   headerEl.insertBefore(fullscreenBtn, closeX);
+
+  // Wrap the title with a stacked eyebrow ("DEAL · ID #...") + title group
+  // so the title bar follows the Recast brand pattern. The title element
+  // itself stays in place — refreshDependentViews still queries .modal__title
+  // and updates its textContent when the deal name changes inline.
+  const titleEl = headerEl.querySelector('.modal__title');
+  if (titleEl && !headerEl.querySelector('.details-modal__title-wrap')) {
+    const titleWrap = el('div', { class: 'details-modal__title-wrap' });
+    const eyebrowText = `DEAL${opp.opportunity_id ? ` · ID #${opp.opportunity_id}` : ''}`;
+    const eyebrow = el('span', { class: 'details-modal__eyebrow' }, eyebrowText);
+    headerEl.insertBefore(titleWrap, titleEl);
+    titleWrap.appendChild(eyebrow);
+    titleWrap.appendChild(titleEl);
+  }
 
   // Fullscreen toggle ------------------------------------------------
   const modalBox = modalResult.element.querySelector('.modal');

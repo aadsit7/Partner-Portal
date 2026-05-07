@@ -5050,3 +5050,902 @@
   align-items: center;
   gap: var(--space-3);
 }
+
+/* ============================================================
+   Recast Deal Pop-out — Brand Redesign
+   ------------------------------------------------------------
+   Sharp-cornered, flat-blue hero, cyan accents, tracked
+   uppercase eyebrows. Tokens are scoped to .modal--details so
+   the rest of the portal (legacy modals, dashboards, etc.) is
+   untouched. All overrides live below — to revert the redesign,
+   delete this block and the popup falls back to the old look.
+   ============================================================ */
+
+.modal--details {
+  /* Recast brand tokens, scoped */
+  --recast-primary-blue: #0000CC;
+  --recast-primary-blue-deep: #0000A8;
+  --recast-accent-cyan:  #00BFFF;
+  --recast-accent-cyan-hover: #33CCFF;
+  --recast-decorator-blue: #2222DD;
+  --recast-dark-text:   #1A1A2E;
+  --recast-medium-gray: #4A4A5A;
+  --recast-muted-blue:  #AABBEE;
+  --recast-section-band: #F0F0F6;
+  --recast-row-tint:    #FAFAFE;
+  --recast-quote-bg:    #F6F8FF;
+  --recast-divider:     #DDDDEE;
+  --recast-green:       #0F7A3F;
+  --recast-green-bg:    #E8F5EE;
+  --recast-blue-bg:     #E6F8FF;
+  --recast-blue-text:   #0066A3;
+  --recast-risk-red:    #CC2222;
+  --recast-risk-bg:     #FBE9E9;
+  --recast-warn-amber:  #CC8800;
+  --recast-warn-bg:     #FFF5E0;
+
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  border-radius: 0;
+  border: 1px solid var(--recast-divider);
+  box-shadow: 0 20px 60px rgba(26, 26, 46, 0.18);
+  max-width: 880px;
+  background: #ffffff;
+  /* No scale-down on open — only an 8px translate-up + fade per spec. */
+  transform: translateY(8px);
+  transition: transform 200ms ease-out, opacity 200ms ease-out,
+              max-width 250ms cubic-bezier(0.4, 0, 0.2, 1),
+              max-height 250ms cubic-bezier(0.4, 0, 0.2, 1),
+              width 250ms cubic-bezier(0.4, 0, 0.2, 1),
+              height 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.modal-backdrop--visible .modal--details {
+  transform: translateY(0);
+}
+
+.modal--details.modal--fullscreen {
+  border-radius: 0;
+  max-width: 96vw;
+  max-height: 96vh;
+  width: 96vw;
+  height: 96vh;
+}
+
+/* ---------- Title bar ---------- */
+.modal--details .modal__header {
+  position: relative;
+  background: #fff;
+  border-bottom: 1px solid var(--recast-divider);
+  padding: 18px 28px 18px 32px;
+  align-items: center;
+  gap: 14px;
+}
+
+/* 4×28px cyan rule on the left of the title bar */
+.modal--details .modal__header::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 28px;
+  background: var(--recast-accent-cyan);
+  border-radius: 0;
+}
+
+.modal--details .details-modal__title-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.modal--details .details-modal__eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--recast-primary-blue);
+  line-height: 1.2;
+}
+
+.modal--details .modal__title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--recast-dark-text);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Header action buttons — sharp corners, white bg, divider border. */
+.modal--details .details-modal__edit-btn {
+  border-radius: 6px;
+  border: 1.5px solid var(--recast-divider);
+  background: #fff;
+  color: var(--recast-dark-text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 9px 14px;
+  transition: background 200ms ease-out, color 200ms ease-out, border-color 200ms ease-out, transform 80ms ease-out;
+}
+
+.modal--details .details-modal__edit-btn:hover {
+  background: var(--recast-primary-blue);
+  border-color: var(--recast-primary-blue);
+  color: #fff;
+}
+
+.modal--details .details-modal__edit-btn:active {
+  transform: translateY(1px);
+}
+
+.modal--details .details-modal__fullscreen-btn,
+.modal--details .modal__close {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  border: 1.5px solid var(--recast-divider);
+  background: #fff;
+  color: var(--recast-medium-gray);
+  transition: background 200ms ease-out, color 200ms ease-out, border-color 200ms ease-out, transform 80ms ease-out;
+}
+
+.modal--details .details-modal__fullscreen-btn:hover,
+.modal--details .modal__close:hover {
+  background: var(--recast-quote-bg);
+  border-color: var(--recast-primary-blue);
+  color: var(--recast-primary-blue);
+}
+
+.modal--details .details-modal__fullscreen-btn:active,
+.modal--details .modal__close:active {
+  transform: translateY(1px);
+}
+
+.modal--details .modal__body {
+  padding: 0;
+  background: #fff;
+}
+
+/* ---------- Hero card (flat #0000CC) ---------- */
+.modal--details .details-hero {
+  position: relative;
+  margin: 0;
+  padding: 24px 28px 22px;
+  background: var(--recast-primary-blue);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: hidden;
+  color: #fff;
+}
+
+.modal--details .details-hero::before { display: none; }
+
+.modal--details .details-hero__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.modal--details .details-hero__badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* "+" decorator marks scattered on the blue surface (rule #5) */
+.modal--details .details-hero__plus {
+  position: absolute;
+  font-family: inherit;
+  font-weight: 700;
+  color: var(--recast-decorator-blue);
+  user-select: none;
+  pointer-events: none;
+  line-height: 1;
+}
+
+.modal--details .details-hero__plus--a { top: 14px;   right: 22%; font-size: 14px; }
+.modal--details .details-hero__plus--b { top: 38%;    right: 7%;  font-size: 18px; }
+.modal--details .details-hero__plus--c { bottom: 18px; right: 32%; font-size: 12px; }
+.modal--details .details-hero__plus--d { top: 60%;    right: 48%; font-size: 16px; }
+
+/* DEAL VALUE eyebrow + amount */
+.modal--details .details-hero__value-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.modal--details .details-hero__value-eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--recast-muted-blue);
+  line-height: 1;
+}
+
+.modal--details .details-hero__value {
+  font-size: 44px;
+  line-height: 1;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hero meta strip: 3-col mini-grid */
+.modal--details .details-hero__meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.modal--details .details-hero__meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.modal--details .details-hero__meta-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--recast-muted-blue);
+}
+
+.modal--details .details-hero__meta-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Status & stage chips — inside the hero (outlined-on-blue + cyan filled) */
+.modal--details .details-hero .stage-pill {
+  background: transparent;
+  color: #ffffff;
+  border: 1.5px solid rgba(255, 255, 255, 0.65);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+}
+
+.modal--details .details-hero .status-pill {
+  background: var(--recast-accent-cyan);
+  color: var(--recast-primary-blue);
+  border: none;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+}
+
+.modal--details .details-hero .status-pill__dot {
+  background: var(--recast-primary-blue);
+  box-shadow: 0 0 0 3px rgba(0, 0, 204, 0.18);
+}
+
+/* Status chips outside the hero — Recast semantic palette */
+.modal--details .status-pill,
+.modal--details .stage-pill {
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+}
+
+.modal--details .status-pill--won,
+.modal--details .stage-pill--closed,
+.modal--details .stage-pill--won { background: var(--recast-green-bg); color: var(--recast-green); border-color: #BFE2CE; }
+.modal--details .status-pill--lost { background: var(--recast-risk-bg); color: var(--recast-risk-red); border-color: #F1CACA; }
+.modal--details .status-pill--in-progress,
+.modal--details .stage-pill--qualified,
+.modal--details .stage-pill--negotiation { background: var(--recast-blue-bg); color: var(--recast-blue-text); border-color: #C4E5F2; }
+.modal--details .status-pill--registered,
+.modal--details .stage-pill--prospect,
+.modal--details .stage-pill--proposal { background: var(--recast-warn-bg); color: var(--recast-warn-amber); border-color: #F2DCA8; }
+
+/* ---------- Section headers (grey band + cyan left border) ---------- */
+.modal--details .details-modal__section {
+  margin-top: 0;
+  padding: 0;
+}
+
+.modal--details .details-modal__section--fields,
+.modal--details .details-modal__section--documents,
+.modal--details .details-modal__section ~ .details-modal__section {
+  border-top: 1px solid var(--recast-divider);
+}
+
+.modal--details .details-modal__section--documents {
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.modal--details .details-modal__section-header {
+  background: var(--recast-section-band);
+  border-left: 3px solid var(--recast-accent-cyan);
+  padding: 10px 28px 10px 16px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 0;
+}
+
+/* The non-header sections (Documents) only have an h3 inline. Style it
+   to match the section-header band. */
+.modal--details .details-modal__section--documents > .details-modal__section-title {
+  background: var(--recast-section-band);
+  border-left: 3px solid var(--recast-accent-cyan);
+  padding: 10px 16px;
+  margin: 0 0 16px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--recast-primary-blue);
+  border-radius: 0;
+}
+
+.modal--details .details-modal__section-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--recast-primary-blue);
+}
+
+.modal--details .details-modal__section-hint {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--recast-medium-gray);
+  text-transform: none;
+  letter-spacing: normal;
+  margin-left: 8px;
+}
+
+.modal--details .details-modal__section-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Inner padding for section bodies (grids, descriptions, documents) */
+.modal--details .details-modal__section--fields,
+.modal--details .details-modal__section {
+  display: flex;
+  flex-direction: column;
+}
+
+.modal--details .details-modal__section--fields .details-modal__grid,
+.modal--details .details-modal__section .details-modal__descriptions-toolbar-slot,
+.modal--details .details-modal__section .details-modal__descriptions-slot,
+.modal--details .details-modal__section .details-modal__map-card-slot,
+.modal--details .details-modal__section .details-modal__documents-slot {
+  margin: 16px 28px 24px;
+}
+
+.modal--details .details-modal__descriptions-toolbar-slot:empty {
+  margin: 0;
+}
+
+.modal--details .details-modal__map-card-slot:empty {
+  margin: 0;
+}
+
+/* ---------- Field cells (3-col grid) ---------- */
+.modal--details .details-modal__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.modal--details.modal--fullscreen .details-modal__grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.modal--details .field-card {
+  position: relative;
+  background: #ffffff;
+  border: 1px solid var(--recast-divider);
+  border-radius: 0;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 200ms ease-out, box-shadow 200ms ease-out, background 200ms ease-out;
+  box-shadow: none;
+}
+
+/* Top-edge cyan accent strip — overlaps the 1px border so layout stays stable. */
+.modal--details .field-card::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  height: 2px;
+  background: transparent;
+  transition: background 200ms ease-out;
+  pointer-events: none;
+}
+
+.modal--details .field-card:hover {
+  background: #ffffff;
+  border-color: var(--recast-divider);
+  box-shadow: 0 2px 8px rgba(26, 26, 46, 0.08);
+  transform: none;
+}
+
+.modal--details .field-card:hover::before,
+.modal--details .field-card--editing::before,
+.modal--details .field-card[aria-label="Edit Deal Value"]::before {
+  background: var(--recast-accent-cyan);
+}
+
+.modal--details .field-card:focus-visible {
+  outline: 2px solid var(--recast-accent-cyan);
+  outline-offset: 2px;
+  border-color: var(--recast-divider);
+  box-shadow: none;
+}
+
+.modal--details .field-card--editing {
+  border-color: var(--recast-divider);
+  box-shadow: 0 2px 8px rgba(26, 26, 46, 0.08);
+}
+
+.modal--details .field-card__label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--recast-primary-blue);
+}
+
+.modal--details .field-card__pencil {
+  color: var(--recast-primary-blue);
+}
+
+.modal--details .field-card__value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--recast-dark-text);
+}
+
+.modal--details .field-card__value:empty::before {
+  color: #9696B0;
+}
+
+.modal--details .field-card__input {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--recast-dark-text);
+}
+
+/* ---------- Descriptions list ---------- */
+.modal--details .details-modal__descriptions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal--details .details-modal__descriptions .transcript-card {
+  background: var(--recast-row-tint);
+  border: 1px solid var(--recast-divider);
+  border-radius: 0;
+  box-shadow: none;
+  margin-bottom: 0;
+  transition: border-color 200ms ease-out, background 200ms ease-out;
+}
+
+.modal--details .details-modal__descriptions .transcript-card:hover {
+  border-color: var(--recast-accent-cyan);
+  background: #ffffff;
+  box-shadow: none;
+  transform: none;
+}
+
+.modal--details .details-modal__descriptions .transcript-card__header {
+  padding: 10px 12px;
+  gap: 10px;
+}
+
+/* The big visual change: solid blue date badge instead of the soft
+   blue-grey pill. Sharp corners, tracked uppercase, white text. */
+.modal--details .details-modal__descriptions .transcript-card__date {
+  background: var(--recast-primary-blue);
+  color: #ffffff;
+  border-radius: 0;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.modal--details .details-modal__descriptions .transcript-card__preview {
+  font-size: 13px;
+  color: var(--recast-medium-gray);
+  font-weight: 500;
+}
+
+.modal--details .details-modal__descriptions .transcript-card__toggle {
+  color: var(--recast-medium-gray);
+}
+
+.modal--details .details-modal__descriptions .transcript-card__body {
+  border-top: 1px solid var(--recast-divider);
+  padding: 0 14px 12px;
+}
+
+.modal--details .details-modal__descriptions .transcript-card__text {
+  font-size: 13px;
+  color: var(--recast-dark-text);
+  padding: 12px 0 0;
+}
+
+/* Description card row layout (transcript card + actions on the right) */
+.modal--details .description-card__row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.modal--details .description-card__row > .transcript-card {
+  flex: 1;
+  min-width: 0;
+}
+
+.modal--details .description-card__actions {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 0;
+  flex-shrink: 0;
+  min-width: 130px;
+}
+
+.modal--details .description-card__inline-actions {
+  margin-left: 0;
+}
+
+/* ---------- Standardize button (white, cyan border, sparkle SVG) ---------- */
+.modal--details .standardize-btn {
+  background: #ffffff;
+  border: 1.5px solid var(--recast-accent-cyan);
+  color: var(--recast-primary-blue);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1;
+  height: auto;
+  min-height: 0;
+  transition: background 200ms ease-out, color 200ms ease-out, border-color 200ms ease-out, transform 80ms ease-out;
+}
+
+.modal--details .standardize-btn:hover:not(:disabled) {
+  background: var(--recast-quote-bg);
+  border-color: var(--recast-accent-cyan-hover);
+}
+
+.modal--details .standardize-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.modal--details .standardize-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.modal--details .standardize-btn__sparkle {
+  color: var(--recast-accent-cyan);
+  flex-shrink: 0;
+}
+
+.modal--details .standardize-btn__label {
+  display: inline-block;
+}
+
+/* Standardize completion checkmark — green halo dot replaces the bare ✓ */
+.modal--details .standardize-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--recast-green-bg);
+  color: var(--recast-green);
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+/* ---------- Category pill (replaces emoji-prefixed text) ---------- */
+.modal--details .category-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 3px 9px 3px 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+
+.modal--details .category-pill__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.modal--details .category-pill--meeting-recap {
+  background: var(--recast-blue-bg);
+  color: var(--recast-blue-text);
+}
+
+.modal--details .category-pill--opportunity-note {
+  background: var(--recast-green-bg);
+  color: var(--recast-green);
+}
+
+/* ---------- Generate MAP / Copy buttons in section header ---------- */
+.modal--details .details-modal__generate-map-btn {
+  background: var(--recast-primary-blue);
+  color: #ffffff;
+  border: 1px solid var(--recast-primary-blue);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 7px 12px;
+  height: auto;
+  min-height: 0;
+  line-height: 1.2;
+  transition: background 200ms ease-out, border-color 200ms ease-out, transform 80ms ease-out;
+}
+
+.modal--details .details-modal__generate-map-btn:hover {
+  background: var(--recast-primary-blue-deep);
+  border-color: var(--recast-primary-blue-deep);
+}
+
+.modal--details .details-modal__generate-map-btn:active {
+  transform: translateY(1px);
+}
+
+.modal--details .details-modal__copy-btn {
+  background: #ffffff;
+  border: 1.5px solid var(--recast-primary-blue);
+  color: var(--recast-primary-blue);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  height: auto;
+  min-height: 0;
+  line-height: 1.2;
+  transition: background 200ms ease-out, color 200ms ease-out, transform 80ms ease-out;
+}
+
+.modal--details .details-modal__copy-btn:hover {
+  background: var(--recast-quote-bg);
+  border-color: var(--recast-primary-blue);
+  color: var(--recast-primary-blue);
+}
+
+.modal--details .details-modal__copy-btn:active {
+  transform: translateY(1px);
+}
+
+/* ---------- Document rows ---------- */
+.modal--details .documents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.modal--details .document-row {
+  background: var(--recast-row-tint);
+  border: 1px solid var(--recast-divider);
+  border-radius: 0;
+  padding: 10px 12px;
+  transition: border-color 200ms ease-out, background 200ms ease-out, transform 200ms ease-out;
+}
+
+.modal--details .document-row:hover {
+  border-color: var(--recast-accent-cyan);
+  background: #ffffff;
+  transform: none;
+}
+
+.modal--details .document-row__name {
+  color: var(--recast-primary-blue);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.modal--details .document-row__date {
+  color: var(--recast-medium-gray);
+  font-size: 11.5px;
+}
+
+.modal--details .document-row__badge {
+  border-radius: 0;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+/* ---------- Footer ---------- */
+.modal--details .modal__footer {
+  background: var(--recast-quote-bg);
+  border-top: 1px solid var(--recast-divider);
+  padding: 14px 28px;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.modal--details .details-modal__close-btn {
+  background: #ffffff;
+  border: 1.5px solid var(--recast-primary-blue);
+  color: var(--recast-primary-blue);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 9px 22px;
+  transition: background 200ms ease-out, color 200ms ease-out, transform 80ms ease-out;
+}
+
+.modal--details .details-modal__close-btn:hover {
+  background: var(--recast-primary-blue);
+  color: #ffffff;
+  border-color: var(--recast-primary-blue);
+}
+
+.modal--details .details-modal__close-btn:active {
+  transform: translateY(1px);
+}
+
+/* ---------- Loading + empty states ---------- */
+.modal--details .details-modal__loading {
+  padding: 16px 28px;
+}
+
+.modal--details .details-modal__empty {
+  padding: 16px 0;
+  font-size: 13px;
+  color: var(--recast-medium-gray);
+}
+
+/* ---------- Selection toolbar (Copy/Generate selected) ---------- */
+.modal--details .description-select__toolbar {
+  background: var(--recast-quote-bg);
+  border: 1px solid var(--recast-divider);
+  border-radius: 0;
+  padding: 10px 14px;
+  margin: 0 0 12px;
+}
+
+.modal--details .description-select__count {
+  color: var(--recast-primary-blue);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.modal--details .description-select__link {
+  color: var(--recast-primary-blue);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ---------- Focus ring (everywhere inside the popup) ---------- */
+.modal--details :focus-visible {
+  outline: 2px solid var(--recast-accent-cyan);
+  outline-offset: 2px;
+}
+
+/* ---------- Compact / responsive ---------- */
+@media (max-width: 900px) {
+  .modal--details .details-modal__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .modal--details {
+    max-width: 100%;
+  }
+  .modal--details .details-hero {
+    padding: 18px 18px 16px;
+  }
+  .modal--details .details-hero__top {
+    gap: 14px;
+  }
+  .modal--details .details-hero__value-wrap {
+    align-items: flex-start;
+    text-align: left;
+  }
+  .modal--details .details-hero__value {
+    font-size: 32px;
+  }
+  .modal--details .details-hero__meta {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .modal--details .modal__header {
+    padding: 14px 18px 14px 26px;
+  }
+  .modal--details .details-modal__section-header {
+    padding: 10px 18px 10px 14px;
+  }
+  .modal--details .details-modal__section--fields .details-modal__grid,
+  .modal--details .details-modal__section .details-modal__descriptions-slot,
+  .modal--details .details-modal__section .details-modal__documents-slot {
+    margin: 12px 18px 18px;
+  }
+  .modal--details .details-modal__grid {
+    grid-template-columns: 1fr;
+  }
+  .modal--details .modal__footer {
+    padding: 12px 18px;
+  }
+  .modal--details .description-card__row {
+    flex-direction: column;
+  }
+  .modal--details .description-card__actions {
+    flex-direction: row;
+    align-items: center;
+    min-width: 0;
+  }
+}
