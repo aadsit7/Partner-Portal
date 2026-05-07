@@ -18,6 +18,18 @@ import { loadTypeFilter, computeTypeData, buildTypeFilterBar, applyTypeFilter } 
 import { generateMapPdfFromSelection } from '../utils/map-pdf-from-selection.js';
 import { createPill, updatePillStage, markPillSuccess, markPillFailure } from '../components/map-pdf-pill.js';
 import { fileApiRequest as fileApiRequestImpl } from '../utils/file-api.js';
+import {
+  buildDescriptionsPanel,
+  buildDescriptionEditorForm,
+  isDescriptionEmpty,
+  pickLatestDescriptionText,
+  toISODateOnly,
+  getDescriptionKey,
+} from '../components/descriptions-panel.js';
+import {
+  buildDocumentsPanel,
+  listEntityDocuments,
+} from '../components/documents-panel.js';
 import { standardizeDescription, applyStandardizedDescription } from '../utils/ai.js';
 
 export const title = 'Opportunities';
@@ -57,7 +69,7 @@ const standardizeJobs = new Map();
  */
 export function addFileToActiveDocsPanel(opportunityId, file) {
   if (!activeDocsPanel || !opportunityId) return false;
-  if (String(activeDocsPanel.opportunityId) !== String(opportunityId)) return false;
+  if (String(activeDocsPanel.entityId) !== String(opportunityId)) return false;
   try {
     activeDocsPanel.addFile(file);
     return true;
@@ -1917,7 +1929,7 @@ export async function openOppDetailsModal(opp) {
   // replaceChildren on a detached node (modal already closed) is a no-op.
   Promise.allSettled([
     readSheetAsObjects(CONFIG.SHEET_OPP_DESCRIPTIONS),
-    listOpportunityDocuments(opp.opportunity_id),
+    listEntityDocuments(opp.opportunity_id),
   ]).then(([descResult, docsResult]) => {
     let descriptions = [];
     if (descResult.status === 'fulfilled') {
@@ -1982,7 +1994,7 @@ export async function openOppModal(opp, container, onSaved) {
   if (isEdit) {
     const [descResult, docsResult] = await Promise.allSettled([
       readSheetAsObjects(CONFIG.SHEET_OPP_DESCRIPTIONS),
-      listOpportunityDocuments(opp.opportunity_id),
+      listEntityDocuments(opp.opportunity_id),
     ]);
 
     if (descResult.status === 'fulfilled') {
@@ -2210,24 +2222,57 @@ export async function openOppModal(opp, container, onSaved) {
   }
 
   // Descriptions panel (replaces the old single-description textarea)
-  const { panel: descriptionsPanel, refresh: refreshDescriptions } = buildDescriptionsPanel(workingDescriptions);
+  const { panel: descriptionsPanel, refresh: refreshDescriptions } = buildDescriptionsPanel(workingDescriptions, {
+    placeholder: 'Write the description for this opportunity...',
+    entityLabel: 'opportunity',
+  });
 
   // Documents panel — drag-and-drop uploads to Google Drive via the file API.
   // For new (unsaved) opportunities there's no opportunity_id to attach to yet,
   // so the upload zone is hidden with a helper note.
+  const opportunityIdForDocs = isEdit ? opp.opportunity_id : null;
   const docsHandle = buildDocumentsPanel({
-    opportunityId: isEdit ? opp.opportunity_id : null,
-    getCustomerName: () => {
+    entityId: opportunityIdForDocs,
+    getContextName: () => {
       const input = form.querySelector('[name="customer_name"]');
       return (input && input.value) || (isEdit ? (opp.customer_name || '') : '');
     },
-    getDealName: () => {
-      const input = form.querySelector('[name="deal_name"]');
-      return (input && input.value) || (isEdit ? (opp.deal_name || '') : '');
-    },
     initialFiles: initialDocuments,
-    workingDescriptions,
-    refreshDescriptions,
+    savePrompt: 'Save this opportunity first to attach documents',
+    onAnalyze: async (file) => {
+      const data = await fileApiRequest({
+        action: 'analyzeDocument',
+        docId: file.doc_id,
+        driveUrl: file.drive_url,
+      });
+      const fileName = data.fileName || file.file_name || 'Document';
+      const dateISO = todayISO();
+      const dateLabel = formatDate(dateISO);
+      const descriptionHtml =
+        `<h4>📄 ${escapeHtml(fileName)} — Analyzed ${escapeHtml(dateLabel)}</h4>` +
+        ensureHtml(data.html || '');
+      const dealNameInput = form.querySelector('[name="deal_name"]');
+      const dealName = (dealNameInput && dealNameInput.value) || (isEdit ? (opp.deal_name || '') : '');
+      const descriptionId = uuid('dsc');
+      const createdAt = nowISO();
+      const values = [descriptionId, opportunityIdForDocs, dealName, dateISO, descriptionHtml, createdAt];
+      if (isConfigured()) {
+        await appendRow(CONFIG.SHEET_OPP_DESCRIPTIONS, values);
+      } else {
+        addDemoRow(CONFIG.SHEET_OPP_DESCRIPTIONS, values);
+      }
+      workingDescriptions.push({
+        description_id: descriptionId,
+        opportunity_id: opportunityIdForDocs,
+        deal_name: dealName,
+        description_date: dateISO,
+        description_text: descriptionHtml,
+        created_at: createdAt,
+      });
+      file.analyzed = 'TRUE';
+      refreshDescriptions();
+      showToast('Document analyzed and added to descriptions', 'success');
+    },
   });
 
   // Register the panel handle so external flows (Randy's MAP PDF) can
@@ -2255,231 +2300,13 @@ export async function openOppModal(opp, container, onSaved) {
 }
 
 // ============================================
-// Descriptions Panel (versioned, like Call Transcripts)
+// Description Editor Dialog (opportunity details modal)
 // ============================================
-
-/**
- * Normalize a timestamp to YYYY-MM-DD (local date portion only).
- */
-function toISODateOnly(value) {
-  if (!value) return '';
-  const str = String(value);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) return str.split('T')[0];
-  const d = new Date(str);
-  if (isNaN(d.getTime())) return '';
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-/**
- * True if a working description has no visible text content.
- * Treats both missing text and Quill's empty-state markup
- * (e.g. "<p><br></p>") as empty.
- */
-function isDescriptionEmpty(desc) {
-  return stripHtml(desc.description_text || '').trim() === '';
-}
-
-/**
- * Among the working descriptions (ignoring ones flagged for delete or
- * left empty), return the HTML text of the one with the newest
- * description_date. Excluding empties matches the save-time filters so
- * an unfilled new card can never overwrite the opp-row description.
- */
-function pickLatestDescriptionText(workingDescriptions) {
-  const live = workingDescriptions.filter(d => !d._deleted && !isDescriptionEmpty(d));
-  if (live.length === 0) return '';
-  const sorted = [...live].sort((a, b) =>
-    new Date(b.description_date || b.created_at || 0) -
-    new Date(a.description_date || a.created_at || 0)
-  );
-  return sorted[0].description_text || '';
-}
-
-function getDescriptionKey(desc) {
-  return desc.description_id || desc._tempId;
-}
-
-function buildDescriptionsPanel(workingDescriptions) {
-  const list = el('div', { class: 'descriptions-list' });
-
-  const countBadge = el('span', { class: 'descriptions-panel__count' }, '0');
-
-  function liveDescriptions() {
-    return workingDescriptions.filter(d => !d._deleted);
-  }
-
-  function rebuildList() {
-    list.innerHTML = '';
-    const live = liveDescriptions().sort((a, b) =>
-      new Date(b.description_date || b.created_at || 0) -
-      new Date(a.description_date || a.created_at || 0)
-    );
-    countBadge.textContent = String(live.length);
-
-    if (live.length === 0) {
-      list.appendChild(
-        el('div', { class: 'empty-state', style: { padding: 'var(--space-6) var(--space-2)' } },
-          el('div', { class: 'empty-state__title' }, 'No descriptions yet'),
-          el('div', { class: 'empty-state__description' }, 'Click "Add Description" to capture details for this opportunity.')
-        )
-      );
-      return;
-    }
-
-    live.forEach(desc => {
-      list.appendChild(descriptionCard(desc, rebuildList));
-    });
-  }
-
-  const addBtn = el('button', {
-    class: 'btn btn--primary btn--sm',
-    onClick: () => {
-      const newDesc = {
-        _tempId: `tmp_${uuid('dsc')}`,
-        _isNew: true,
-        _startInEdit: true,
-        description_date: todayISO(),
-        description_text: '',
-        created_at: nowISO(),
-      };
-      workingDescriptions.push(newDesc);
-      rebuildList();
-      // Focus the newly-added card's editor on the next frame.
-      requestAnimationFrame(() => {
-        const card = list.querySelector(`[data-desc-key="${getDescriptionKey(newDesc)}"]`);
-        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      });
-    },
-  },
-    el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-    'Add Description'
-  );
-
-  const panel = el('div', { class: 'descriptions-panel' },
-    el('div', { class: 'descriptions-panel__header' },
-      el('div', { class: 'descriptions-panel__title-group' },
-        el('h3', { class: 'descriptions-panel__title' }, 'Descriptions'),
-        countBadge,
-      ),
-      el('div', { class: 'descriptions-panel__actions' }, addBtn),
-    ),
-    list,
-  );
-
-  rebuildList();
-  return { panel, refresh: rebuildList };
-}
-
-/**
- * Builds the date + Quill editor + Save/Cancel form body for a description.
- * Shared between descriptionCard (deferred save via onListChanged) and
- * openDescriptionEditorDialog (immediate persistence).
- *
- * @param {Object} desc       - Description object. Mutated in-place on save, reverted on cancel.
- * @param {Object} opts
- * @param {string} opts.key   - Unique key for the date <input> id.
- * @param {Function} [opts.onTextChange] - Quill text-change callback (omit for dialog context).
- * @param {Function} opts.onSave   - async; called after desc is updated; handles persistence/UI.
- * @param {Function} opts.onCancel - called with { snapshot } after desc is reverted.
- * @returns {HTMLElement}
- */
-function buildDescriptionEditorForm(desc, { key, onTextChange, onSave, onCancel }) {
-  const snapshot = {
-    description_date: desc.description_date,
-    description_text: desc.description_text,
-    _modified: !!desc._modified,
-  };
-
-  const dateInput = el('input', {
-    class: 'form-input',
-    type: 'date',
-    id: `desc-date-${key}`,
-  });
-  dateInput.value = desc.description_date || todayISO();
-
-  dateInput.addEventListener('change', () => {
-    const v = dateInput.value || todayISO();
-    if (v !== desc.description_date) {
-      desc.description_date = v;
-      if (!desc._isNew) desc._modified = true;
-    }
-  });
-
-  const editor = initQuillEditor({
-    placeholder: 'Write the description for this opportunity...',
-    initialHtml: desc.description_text || '',
-    title: 'Edit Description',
-    onTextChange,
-  });
-
-  let saving = false;
-  const saveBtn = el('button', {
-    class: 'btn btn--primary btn--sm',
-    onClick: async (e) => {
-      e.stopPropagation();
-      if (saving) return;
-      const newDate = dateInput.value || todayISO();
-      const newText = editor.getHtml();
-      if (editor.isEmpty()) {
-        showToast('Please enter description text', 'error');
-        return;
-      }
-      const dateChanged = newDate !== desc.description_date;
-      const textChanged = newText !== desc.description_text;
-      desc.description_date = newDate;
-      desc.description_text = newText;
-      if (!desc._isNew && (dateChanged || textChanged)) {
-        desc._modified = true;
-      }
-      saving = true;
-      saveBtn.disabled = true;
-      try {
-        await onSave({ snapshot });
-      } finally {
-        saving = false;
-        saveBtn.disabled = false;
-      }
-    },
-  }, 'Save');
-
-  const cancelBtn = el('button', {
-    class: 'btn btn--ghost btn--sm',
-    onClick: (e) => {
-      e.stopPropagation();
-      desc.description_date = snapshot.description_date;
-      desc.description_text = snapshot.description_text;
-      desc._modified = snapshot._modified;
-      onCancel({ snapshot });
-    },
-  }, 'Cancel');
-
-  const body = el('div', { class: 'transcript-card__body transcript-card__body--open' },
-    el('div', { class: 'form-group', style: { marginBottom: 'var(--space-3)' } },
-      el('label', { class: 'form-label', for: `desc-date-${key}` }, 'Date'),
-      dateInput,
-    ),
-    el('div', { class: 'form-group', style: { marginBottom: 'var(--space-3)' } },
-      el('label', { class: 'form-label' }, 'Description'),
-      editor.wrapper,
-    ),
-    el('div', { class: 'transcript-card__actions' },
-      saveBtn,
-      cancelBtn,
-    ),
-  );
-
-  requestAnimationFrame(() => editor.mount());
-  return body;
-}
 
 /**
  * Opens a focused editor dialog for a single existing description in the
  * details modal. Persists immediately on save (no deferred modal submit).
- * Uses the same date+Quill form as the edit modal.
+ * Uses the shared date+Quill form from descriptions-panel.js.
  */
 function openDescriptionEditorDialog(desc, opp, { onSaved } = {}) {
   const snapshot = {
@@ -2553,141 +2380,6 @@ function openDescriptionEditorDialog(desc, opp, { onSaved } = {}) {
   requestAnimationFrame(() => backdrop.classList.add('modal-backdrop--visible'));
 }
 
-/**
- * A single description card. Supports three UI states:
- *   - collapsed (date + preview)
- *   - expanded view (full HTML + Edit/Delete)
- *   - expanded edit (date input + Quill editor + Save/Cancel)
- *
- * Changes to the underlying `desc` object (workingDescriptions entry)
- * are applied in-place; persistence happens on the main modal submit.
- */
-function descriptionCard(desc, onListChanged) {
-  const key = getDescriptionKey(desc);
-  // Persist expand/edit state on the desc object so it survives list rebuilds
-  // that happen after an add/save/delete.
-  if (desc._startInEdit) {
-    desc._uiOpen = true;
-    desc._uiEditing = true;
-    delete desc._startInEdit;
-  }
-  let isOpen = !!desc._uiOpen;
-  let isEditing = !!desc._uiEditing;
-
-  const card = el('div', { class: 'transcript-card', 'data-desc-key': key });
-
-  function syncState() {
-    desc._uiOpen = isOpen;
-    desc._uiEditing = isEditing;
-  }
-
-  function rebuild() {
-    syncState();
-    card.innerHTML = '';
-    card.appendChild(renderHeader());
-    const body = renderBody();
-    if (body) card.appendChild(body);
-  }
-
-  function renderHeader() {
-    const plainText = stripHtml(desc.description_text || '');
-    const preview = plainText
-      ? plainText.slice(0, 120) + (plainText.length > 120 ? '...' : '')
-      : (desc._isNew ? 'New description (unsaved)' : 'Empty');
-    const dateStr = desc.description_date ? formatDate(desc.description_date) : '—';
-
-    const toggleIcon = el('span', {
-      class: 'transcript-card__toggle' + (isOpen ? ' transcript-card__toggle--open' : ''),
-      html: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    });
-
-    return el('div', {
-      class: 'transcript-card__header',
-      onClick: () => {
-        if (isEditing) return; // don't collapse while editing
-        isOpen = !isOpen;
-        rebuild();
-      },
-    },
-      el('span', { class: 'transcript-card__date' }, dateStr),
-      el('span', { class: 'transcript-card__preview' }, preview),
-      toggleIcon
-    );
-  }
-
-  function renderBody() {
-    if (!isOpen) return null;
-    return isEditing ? renderEditBody() : renderViewBody();
-  }
-
-  function renderViewBody() {
-    return el('div', { class: 'transcript-card__body transcript-card__body--open' },
-      el('div', { class: 'transcript-card__text', html: ensureHtml(desc.description_text || '') }),
-      el('div', { class: 'transcript-card__actions' },
-        el('button', {
-          class: 'btn btn--ghost btn--sm',
-          onClick: (e) => {
-            e.stopPropagation();
-            isEditing = true;
-            rebuild();
-          },
-        }, 'Edit'),
-        el('button', {
-          class: 'btn btn--ghost btn--sm',
-          style: { color: 'var(--color-danger)' },
-          onClick: async (e) => {
-            e.stopPropagation();
-            const confirmed = await confirmDialog(
-              'Delete Description',
-              'Are you sure you want to remove this description version? This will take effect when you save the opportunity.'
-            );
-            if (!confirmed) return;
-            desc._deleted = true;
-            onListChanged();
-          },
-        }, 'Delete'),
-      )
-    );
-  }
-
-  function renderEditBody() {
-    // Delegates to the shared buildDescriptionEditorForm helper.
-    // onTextChange mirrors Quill content to `desc` on every keystroke so
-    // the main modal's "Save Changes" button persists even if the card-local
-    // Save is never clicked.
-    return buildDescriptionEditorForm(desc, {
-      key,
-      onTextChange: (quill) => {
-        const html = quill.root.innerHTML.trim();
-        if (html !== desc.description_text) {
-          desc.description_text = html;
-          if (!desc._isNew) desc._modified = true;
-        }
-      },
-      onSave: async () => {
-        isEditing = false;
-        isOpen = true;
-        syncState();
-        onListChanged();
-      },
-      onCancel: ({ snapshot }) => {
-        if (desc._isNew && !snapshot.description_text) {
-          // Brand-new card that was never populated → drop it entirely.
-          desc._deleted = true;
-          syncState();
-          onListChanged();
-        } else {
-          isEditing = false;
-          rebuild();
-        }
-      },
-    });
-  }
-
-  rebuild();
-  return card;
-}
-
 async function handleDelete(opp) {
   const confirmed = await confirmDialog(
     'Delete Opportunity',
@@ -2719,10 +2411,8 @@ export function cleanup() {
 }
 
 // ============================================
-// Documents Panel (Google Drive uploads)
+// File API + small helper exports
 // ============================================
-
-const ALLOWED_FILE_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.pptx', '.png', '.jpg', '.jpeg'];
 
 /**
  * POST to the Apps Script file endpoint.
@@ -2788,37 +2478,6 @@ export const __inlineRowActionsInternals = {
     },
 };
 
-async function listOpportunityDocuments(opportunityId) {
-  if (!opportunityId) return [];
-  const data = await fileApiRequest({ action: 'listFiles', opportunityId });
-  return Array.isArray(data.files) ? data.files : [];
-}
-
-/**
- * Read a File as base64 (strips the data:<mime>;base64, prefix).
- */
-function readFileAsBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result || '');
-      const commaIdx = result.indexOf(',');
-      resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
-    };
-    reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
-    reader.readAsDataURL(file);
-  });
-}
-
-function isAllowedFile(file) {
-  const name = (file.name || '').toLowerCase();
-  return ALLOWED_FILE_EXTENSIONS.some(ext => name.endsWith(ext));
-}
-
-function fileIconSvg() {
-  return '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 1.5H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5.5L9 1.5z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M9 1.5V5.5H13" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/></svg>';
-}
-
 function pencilIconSvg() {
   return '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M11.5 2.5a1.41 1.41 0 0 1 2 2L5 13l-3 .75L2.75 11l8.75-8.5Z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 }
@@ -2836,276 +2495,3 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-function buildDocumentsPanel({ opportunityId, getCustomerName, getDealName, initialFiles, workingDescriptions, refreshDescriptions }) {
-  const files = [...(initialFiles || [])];
-  const list = el('div', { class: 'documents-list' });
-  const countBadge = el('span', { class: 'descriptions-panel__count' }, '0');
-
-  function rebuildList() {
-    list.innerHTML = '';
-    countBadge.textContent = String(files.length);
-
-    if (files.length === 0) {
-      list.appendChild(
-        el('div', { class: 'empty-state', style: { padding: 'var(--space-5) var(--space-2)' } },
-          el('div', { class: 'empty-state__title' }, 'No documents yet'),
-          el('div', { class: 'empty-state__description' }, 'Drop a file below to attach it to this opportunity.')
-        )
-      );
-      return;
-    }
-
-    files.forEach(f => list.appendChild(documentRow(f)));
-  }
-
-  function isAnalyzed(file) {
-    return String(file.analyzed || '').toUpperCase() === 'TRUE';
-  }
-
-  function documentRow(file) {
-    const removeLink = el('a', {
-      href: '#',
-      class: 'document-row__remove',
-      onClick: async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const confirmed = await confirmDialog(
-          'Remove Document',
-          `Are you sure you want to remove "${file.file_name || 'this file'}"? This cannot be undone.`,
-        );
-        if (!confirmed) return;
-        try {
-          await fileApiRequest({ action: 'deleteFile', docId: file.doc_id });
-          const idx = files.findIndex(f => f.doc_id === file.doc_id);
-          if (idx >= 0) files.splice(idx, 1);
-          rebuildList();
-          showToast('File removed', 'success');
-        } catch (err) {
-          showToast(err.message || 'Failed to remove file', 'error');
-        }
-      },
-    }, 'Remove');
-
-    const nameLink = el('a', {
-      href: file.drive_url || '#',
-      target: '_blank',
-      rel: 'noopener',
-      class: 'document-row__name',
-    }, file.file_name || 'Untitled');
-
-    const analyzeEl = isAnalyzed(file)
-      ? el('span', { class: 'document-row__analyzed', title: 'Already analyzed' }, '✓ Analyzed')
-      : buildAnalyzeLink(file);
-
-    return el('div', { class: 'document-row' },
-      el('span', { class: 'document-row__icon', html: fileIconSvg() }),
-      nameLink,
-      el('span', { class: 'document-row__date' }, file.date_added ? formatDate(file.date_added) : ''),
-      analyzeEl,
-      removeLink,
-    );
-  }
-
-  function buildAnalyzeLink(file) {
-    const link = el('a', {
-      href: '#',
-      class: 'document-row__analyze',
-    }, 'Analyze');
-    link.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      handleAnalyze(file, link);
-    });
-    return link;
-  }
-
-  async function handleAnalyze(file, link) {
-    if (link.classList.contains('document-row__analyze--loading')) return;
-    link.classList.add('document-row__analyze--loading');
-    link.textContent = 'Analyzing...';
-
-    try {
-      const data = await fileApiRequest({
-        action: 'analyzeDocument',
-        docId: file.doc_id,
-        driveUrl: file.drive_url,
-      });
-
-      const fileName = data.fileName || file.file_name || 'Document';
-      const dateISO = todayISO();
-      const dateLabel = formatDate(dateISO);
-      const descriptionHtml =
-        `<h4>📄 ${escapeHtml(fileName)} — Analyzed ${escapeHtml(dateLabel)}</h4>` +
-        ensureHtml(data.html || '');
-
-      const descriptionId = uuid('dsc');
-      const createdAt = nowISO();
-      const dealName = (getDealName && getDealName()) || '';
-      const values = [descriptionId, opportunityId, dealName, dateISO, descriptionHtml, createdAt];
-      if (isConfigured()) {
-        await appendRow(CONFIG.SHEET_OPP_DESCRIPTIONS, values);
-      } else {
-        addDemoRow(CONFIG.SHEET_OPP_DESCRIPTIONS, values);
-      }
-
-      if (Array.isArray(workingDescriptions)) {
-        workingDescriptions.push({
-          description_id: descriptionId,
-          opportunity_id: opportunityId,
-          deal_name: dealName,
-          description_date: dateISO,
-          description_text: descriptionHtml,
-          created_at: createdAt,
-        });
-      }
-
-      file.analyzed = 'TRUE';
-      rebuildList();
-      if (typeof refreshDescriptions === 'function') refreshDescriptions();
-      showToast('Document analyzed and added to descriptions', 'success');
-    } catch (err) {
-      link.classList.remove('document-row__analyze--loading');
-      link.textContent = 'Analyze';
-      showToast(err.message || 'Failed to analyze document', 'error');
-    }
-  }
-
-  // Drop zone
-  const dropzoneLabel = el('span', { class: 'document-dropzone__label' },
-    'Drag files here or click to browse'
-  );
-  const dropzoneHint = el('span', { class: 'document-dropzone__hint' },
-    'PDF, Word, Excel, PowerPoint, or images'
-  );
-
-  const fileInput = el('input', {
-    type: 'file',
-    multiple: true,
-    accept: ALLOWED_FILE_EXTENSIONS.join(','),
-    style: { display: 'none' },
-    onChange: (e) => {
-      const selected = Array.from(e.target.files || []);
-      if (selected.length) uploadFiles(selected);
-      e.target.value = '';
-    },
-  });
-
-  const dropzone = el('div', {
-    class: 'document-dropzone',
-    onClick: () => fileInput.click(),
-  }, dropzoneLabel, dropzoneHint, fileInput);
-
-  function setDropzoneMessage(message) {
-    dropzoneLabel.textContent = message;
-    dropzoneHint.style.display = 'none';
-  }
-  function resetDropzone() {
-    dropzoneLabel.textContent = 'Drag files here or click to browse';
-    dropzoneHint.style.display = '';
-  }
-
-  dropzone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropzone.classList.add('document-dropzone--dragover');
-  });
-  dropzone.addEventListener('dragleave', () => {
-    dropzone.classList.remove('document-dropzone--dragover');
-  });
-  dropzone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropzone.classList.remove('document-dropzone--dragover');
-    const dropped = Array.from(e.dataTransfer?.files || []);
-    if (dropped.length) uploadFiles(dropped);
-  });
-
-  async function uploadFiles(selected) {
-    const customerName = (getCustomerName() || '').trim();
-    if (!customerName) {
-      showToast('Set a customer name before uploading files', 'error');
-      return;
-    }
-
-    for (const file of selected) {
-      if (!isAllowedFile(file)) {
-        showToast(`Unsupported file type: ${file.name}`, 'error');
-        continue;
-      }
-
-      setDropzoneMessage(`Uploading ${file.name}...`);
-      try {
-        const fileData = await readFileAsBase64(file);
-        const data = await fileApiRequest({
-          action: 'uploadFile',
-          opportunityId,
-          customerName,
-          fileName: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          fileData,
-        });
-        const newFile = data.file || {
-          doc_id: data.doc_id,
-          file_name: data.file_name || file.name,
-          drive_url: data.drive_url,
-          date_added: data.date_added || nowISO(),
-        };
-        files.unshift(newFile);
-        rebuildList();
-        showToast('File uploaded', 'success');
-      } catch (err) {
-        showToast(err.message || `Failed to upload ${file.name}`, 'error');
-      } finally {
-        resetDropzone();
-      }
-    }
-  }
-
-  const panel = el('div', { class: 'descriptions-panel documents-panel' },
-    el('div', { class: 'descriptions-panel__header' },
-      el('div', { class: 'descriptions-panel__title-group' },
-        el('h3', { class: 'descriptions-panel__title' }, 'Documents'),
-        countBadge,
-      ),
-    ),
-    list,
-  );
-
-  if (opportunityId) {
-    panel.appendChild(dropzone);
-  } else {
-    panel.appendChild(
-      el('div', { class: 'document-dropzone document-dropzone--disabled' },
-        el('span', { class: 'document-dropzone__label' },
-          'Save this opportunity first to attach documents'
-        )
-      )
-    );
-  }
-
-  rebuildList();
-
-  // Handle for external code (Randy's MAP PDF flow) to inject a
-  // freshly uploaded file or to reload the list from the server.
-  function addFile(file) {
-    if (!file) return;
-    files.unshift(file);
-    rebuildList();
-    // Subtle highlight on the newest row so the user notices it.
-    const firstRow = list.querySelector('.document-row');
-    if (firstRow) {
-      firstRow.classList.add('document-row--just-added');
-      setTimeout(() => firstRow.classList.remove('document-row--just-added'), 1500);
-    }
-  }
-  async function refresh() {
-    if (!opportunityId) return;
-    try {
-      const fresh = await listOpportunityDocuments(opportunityId);
-      files.splice(0, files.length, ...fresh);
-      rebuildList();
-    } catch (err) {
-      console.warn('documents panel refresh failed', err);
-    }
-  }
-
-  return { panel, addFile, refresh, opportunityId };
-}
