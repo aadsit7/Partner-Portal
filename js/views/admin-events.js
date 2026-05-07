@@ -864,17 +864,17 @@ function getStatusBadge(status) {
 export async function openEventModal(event, container, onSaved) {
   const isEdit = !!event;
 
-  // Ensure partners are loaded (modal may be opened from other views like dashboard)
-  if (!cachedPartners) {
-    const partners = await readSheetAsObjects(CONFIG.SHEET_PARTNERS);
-    cachedPartners = partners.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
+  // Always refresh the opportunities list so the "Sourced Opportunities"
+  // rollup picks up any opps that were tagged to this event since the
+  // page was last rendered. Partners are loaded only when missing.
+  const [partnersFresh, oppsFresh] = await Promise.all([
+    cachedPartners ? Promise.resolve(null) : readSheetAsObjects(CONFIG.SHEET_PARTNERS),
+    readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES),
+  ]);
+  if (partnersFresh) {
+    cachedPartners = partnersFresh.filter(p => String(p.is_admin).toUpperCase() !== 'TRUE');
   }
-
-  // Ensure opportunities are loaded so we can show the sourced-opportunities
-  // rollup at the top of the modal (modal may be opened from other views).
-  if (!cachedOpps) {
-    cachedOpps = await readSheetAsObjects(CONFIG.SHEET_OPPORTUNITIES);
-  }
+  cachedOpps = oppsFresh;
 
   // Compute opportunities sourced from this event (lead_source links opp → event_id).
   const linkedOpps = isEdit
@@ -1003,7 +1003,13 @@ export async function openEventModal(event, container, onSaved) {
   });
   checklistSection.appendChild(checklistWidget);
 
+  // Guard against rapid double-clicks dispatching two submit events
+  // before the first appendRow / updateRow resolves. Without this a fast
+  // user could create the same event twice on a slow connection.
+  let saving = false;
   const form = buildForm(fields, async (data) => {
+    if (saving) return;
+    saving = true;
     try {
       const user = getCurrentUser();
       const checklistJson = JSON.stringify(checklistItems);
@@ -1102,6 +1108,8 @@ export async function openEventModal(event, container, onSaved) {
       if (onSaved) { onSaved(); } else { reRender(); }
     } catch (err) {
       showToast(err.message || 'Failed to save event', 'error');
+    } finally {
+      saving = false;
     }
   }, initialValues);
 
