@@ -77,22 +77,44 @@ const STAGE_WIN_PROBABILITY = {
 
 // ---- Eligibility classification ----
 
+function isRenewalOpp(opp) {
+  // The Opportunities sheet has no dedicated renewal flag, so we infer from
+  // the deal name. Reps already use the convention "Renewal" / "Renew" in
+  // deal titles. Anything matching is excluded from the RidgePoint flat
+  // commission per the plan: "5% flat commission rate on net ARR invoiced
+  // through RidgePoint outside of renewal transactions."
+  const dealName = String(opp.deal_name || '').toLowerCase();
+  // Matches: renew, renews, renewal, renewals (as standalone words).
+  // Doesn't match: renewing, renewed, renewable.
+  return /\brenew(?:s|als?)?\b/i.test(dealName);
+}
+
 function classifyOpp(opp, partners, plan) {
   const partner = partners.find(p => p.partner_id === opp.partner_id);
   const partnerName = (partner?.display_name || '').trim();
+  const partnerNameLc = partnerName.toLowerCase();
+
+  // Substring match (case-insensitive) so partner names like "Microsoft
+  // Corporation" or "RidgePoint Inc" still classify correctly.
   const isExcluded = plan.excludedPartnerNames.some(name =>
-    partnerName.toLowerCase() === name.toLowerCase()
+    partnerNameLc.includes(name.toLowerCase())
   );
-  const isFlatCommission = plan.flatCommissionPartnerNames.some(name =>
-    partnerName.toLowerCase() === name.toLowerCase()
+  const isFlatPartner = plan.flatCommissionPartnerNames.some(name =>
+    partnerNameLc.includes(name.toLowerCase())
   );
+  const isRenewal = isRenewalOpp(opp);
 
   let eligibility;
-  if (isExcluded) eligibility = 'excluded';
-  else if (isFlatCommission) eligibility = 'flat';
-  else eligibility = 'quota';
+  if (isExcluded) {
+    eligibility = 'excluded';
+  } else if (isFlatPartner) {
+    // RidgePoint renewals earn no commission (excluded from flat per plan).
+    eligibility = isRenewal ? 'excluded' : 'flat';
+  } else {
+    eligibility = 'quota';
+  }
 
-  return { partner, partnerName, eligibility };
+  return { partner, partnerName, eligibility, isRenewal };
 }
 
 // ---- Commission math ----
@@ -143,16 +165,21 @@ function commissionOnQuotaSlice(sliceArr, priorQuotaArr, plan) {
  */
 function computeCompModel(opps, partners, plan) {
   const enriched = opps.map(opp => {
-    const { partnerName, eligibility } = classifyOpp(opp, partners, plan);
+    const { partnerName, eligibility, isRenewal } = classifyOpp(opp, partners, plan);
     const value = parseFloat(opp.deal_value) || 0;
     const stage = opp.stage || 'Prospect';
     const status = opp.status || '';
     const isWon = status === 'Won';
     const isLost = status === 'Lost';
     const isOpen = !isWon && !isLost;
-    const probability = STAGE_WIN_PROBABILITY[stage] ?? 0.25;
+    // Closed-stage open deals shouldn't really exist in the data (status
+    // would be Won or Lost), so cap probability at 90% rather than 100%
+    // to avoid over-stating projection if such a row ever appears.
+    let probability = STAGE_WIN_PROBABILITY[stage] ?? 0.25;
+    if (isOpen && stage === 'Closed') probability = 0.9;
     return {
-      opp, partnerName, eligibility, value, stage, status,
+      opp, partnerName, eligibility, isRenewal,
+      value, stage, status,
       isWon, isLost, isOpen, probability,
     };
   });
@@ -786,7 +813,7 @@ function buildOppsTable(rows, plan) {
         el('td', {}, el('span', { class: 'comp-table__stage' }, e.stage)),
         el('td', {}, el('span', { class: `badge badge--${statusClass}` }, e.status || '—')),
         el('td', { class: 'comp-table__num' }, formatCurrency(e.value)),
-        el('td', {}, eligibilityBadge(e.eligibility)),
+        el('td', {}, eligibilityBadge(e.eligibility, e.isRenewal)),
         el('td', { class: 'comp-table__num' }, e.isWon ? formatCurrency(earned) : '—'),
         el('td', { class: 'comp-table__num' }, e.isOpen ? formatCurrency(ifWon) : '—'),
         el('td', { class: 'comp-table__num' }, e.isOpen
@@ -823,11 +850,14 @@ function buildOppsTable(rows, plan) {
   );
 }
 
-function eligibilityBadge(elig) {
+function eligibilityBadge(elig, isRenewal) {
   const map = {
     quota: { label: 'Quota', cls: 'comp-eligibility--quota' },
     flat: { label: 'Flat 5%', cls: 'comp-eligibility--flat' },
-    excluded: { label: 'Excluded', cls: 'comp-eligibility--excluded' },
+    excluded: {
+      label: isRenewal ? 'Excluded (Renewal)' : 'Excluded',
+      cls: 'comp-eligibility--excluded',
+    },
   };
   const m = map[elig] || map.quota;
   return el('span', { class: `comp-eligibility ${m.cls}` }, m.label);
