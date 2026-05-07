@@ -10,6 +10,38 @@ import { el, $, mount } from '../utils/dom.js';
 // OAuth token client for requesting Sheets API access token
 let tokenClient = null;
 
+/**
+ * Initialize just the OAuth token client (no UI). Safe to call on any page
+ * for returning admin sessions so the token can be refreshed without showing
+ * the login screen.
+ */
+export function initTokenClient() {
+  const clientId = CONFIG.GOOGLE_CLIENT_ID;
+  if (!clientId || clientId === 'YOUR_GOOGLE_CLIENT_ID_HERE') return;
+
+  const tryInit = () => {
+    if (window.google?.accounts?.oauth2 && !tokenClient) {
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: CONFIG.OAUTH_SCOPES,
+        callback: () => {},
+      });
+    }
+  };
+
+  if (window.google?.accounts?.oauth2) {
+    tryInit();
+  } else {
+    const check = setInterval(() => {
+      if (window.google?.accounts?.oauth2) {
+        clearInterval(check);
+        tryInit();
+      }
+    }, 100);
+    setTimeout(() => clearInterval(check), 8000);
+  }
+}
+
 export const title = 'Login';
 
 export async function render(container) {
@@ -178,7 +210,7 @@ function initGoogleSSO() {
       google.accounts.id.initialize({
         client_id: clientId,
         callback: handleGoogleCredential,
-        auto_select: false,
+        auto_select: true,
       });
 
       // Render the official Google button as a hidden element,
@@ -316,6 +348,15 @@ async function handleGoogleCredential(response) {
 
     // Step 2: Authenticate with the Google ID token + store the access token
     await loginWithGoogle(response, accessToken);
+
+    // Silently sync sheet headers in the background so the admin never has
+    // to visit Setup → Sync Headers manually after each login.
+    if (accessToken) {
+      import('../sheets.js').then(({ syncHeaders }) => {
+        syncHeaders().catch(() => {});
+      });
+    }
+
     navigate('/admin/dashboard');
   } catch (err) {
     if (errorEl) errorEl.textContent = err.message || 'Google sign-in failed';
