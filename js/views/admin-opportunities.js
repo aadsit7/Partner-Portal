@@ -156,15 +156,10 @@ function computeLeadSourceOptions(partnerId) {
   const options = [{ value: 'salesperson', label: 'Salesperson Created' }];
   if (!cachedEvents || !partnerId) return options;
 
-  const today = new Date().toISOString().split('T')[0];
   const relevantEvents = cachedEvents.filter(evt => {
     if (evt.partner_id && evt.partner_id !== partnerId) return false;
-    if (evt.status === 'Completed') return true;
     if (evt.status === 'Cancelled') return false;
-    const endDate = evt.end_date || evt.event_date;
-    if (endDate && endDate < today) return true;
-    if (evt.status === 'In Progress') return true;
-    return false;
+    return true;
   });
 
   relevantEvents
