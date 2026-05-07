@@ -13,17 +13,38 @@ html {
   -moz-text-size-adjust: 100%;
   text-size-adjust: 100%;
   font-size: 16px;
+}
+
+html, body, button, input, select, textarea {
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 body {
-  font-family: var(--font-sans);
-  font-size: var(--text-base);
-  line-height: var(--leading-normal);
-  color: var(--color-text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  color: #1A1A2E;
   background-color: var(--color-bg);
   overflow: hidden;
+}
+
+h1, h2, h3, h4 {
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.eyebrow, .label, thead th {
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
 }
 
 img, svg {

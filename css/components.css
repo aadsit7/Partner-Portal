@@ -256,7 +256,6 @@
   border: 1px solid #d1d5db;
   border-radius: 8px;
   font-size: 12px;
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   color: #1a1a2e;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
@@ -286,7 +285,6 @@
   border: 1px solid #d1d5db;
   border-radius: 8px;
   font-size: 12px;
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   color: #1a1a2e;
   cursor: pointer;
   appearance: none;
@@ -310,7 +308,6 @@
   border: 1px solid #d1d5db;
   border-radius: 8px;
   font-size: 12px;
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   color: #1a1a2e;
   resize: vertical;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
@@ -675,7 +672,6 @@
   border: 1px solid #e4e4ee;
   border-radius: 7px;
   font-size: 12px;
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   color: #1a1a2e;
   transition: all var(--transition-fast);
 }
@@ -1519,7 +1515,6 @@
   padding: 7px 14px;
   font-size: 13px;
   font-weight: 600;
-  font-family: inherit;
   cursor: pointer;
   line-height: 1;
   transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
@@ -1559,7 +1554,6 @@
   padding: 10px 32px;
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
-  font-family: inherit;
   color: #3a3f55;
   cursor: pointer;
   transition: background 150ms ease, border-color 150ms ease;
@@ -1737,7 +1731,6 @@
 
 .quill-editor .ql-container {
   border: none;
-  font-family: var(--font-sans);
   font-size: var(--text-sm);
 }
 
@@ -2311,7 +2304,6 @@
 .shortcut-kbd {
   display: inline-block;
   padding: 2px 8px;
-  font-family: monospace;
   font-size: var(--text-xs);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
@@ -4270,7 +4262,6 @@
   outline: none;
   padding: 0;
   background: transparent;
-  font-family: inherit;
   line-height: 1.4;
 }
 
@@ -5084,7 +5075,6 @@
   --recast-warn-amber:  #CC8800;
   --recast-warn-bg:     #FFF5E0;
 
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   border-radius: 0;
   border: 1px solid var(--recast-divider);
   box-shadow: 0 20px 60px rgba(26, 26, 46, 0.18);
@@ -5247,7 +5237,6 @@
 /* "+" decorator marks scattered on the blue surface (rule #5) */
 .modal--details .details-hero__plus {
   position: absolute;
-  font-family: inherit;
   font-weight: 700;
   color: var(--recast-decorator-blue);
   user-select: none;

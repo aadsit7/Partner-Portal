@@ -391,7 +391,7 @@ export async function render(container) {
       class: 'form-input',
       placeholder: 'Describe how Randy should behave when this preset is active...',
       rows: '4',
-      style: { resize: 'vertical', fontFamily: 'inherit' },
+      style: { resize: 'vertical' },
     }, preset.instructions || '');
 
     const savePresetBtn = el('button', {

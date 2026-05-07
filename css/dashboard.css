@@ -11,7 +11,6 @@
 .dashboard-top,
 #dashboard-activity-view,
 #dashboard-partners-view {
-  font-family: var(--font-sans);
   color: var(--color-text-secondary);
 }
 
