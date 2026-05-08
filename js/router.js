@@ -46,8 +46,12 @@ export function getQueryParams() {
  * Initialize the router.
  */
 export function initRouter() {
-  window.addEventListener('hashchange', handleRoute);
-  handleRoute();
+  window.addEventListener('hashchange', () => { handleRoute().catch(onRouteError); });
+  handleRoute().catch(onRouteError);
+}
+
+function onRouteError(err) {
+  console.error('Route render failed:', err);
 }
 
 /**

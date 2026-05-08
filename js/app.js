@@ -241,7 +241,9 @@ function scheduleTokenRefresh() {
         storeAccessToken(newToken);
         scheduleTokenRefresh(); // schedule the next cycle
       }
-    } catch {}
+    } catch (err) {
+      console.warn('Silent token refresh failed:', err);
+    }
   }, delay);
 }
 
@@ -265,7 +267,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (newToken) {
           storeAccessToken(newToken);
         }
-      } catch {}
+      } catch (err) {
+        console.warn('Initial silent token refresh failed:', err);
+      }
       scheduleTokenRefresh();
     }, 2000);
   }

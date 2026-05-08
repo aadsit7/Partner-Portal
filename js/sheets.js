@@ -27,6 +27,21 @@ function getBaseUrl() {
 }
 
 /**
+ * Convert a 1-based column count to A1 notation (1→A, 26→Z, 27→AA, …).
+ * Required because String.fromCharCode(64 + n) only works for n ≤ 26.
+ */
+function columnLetter(count) {
+  let n = count;
+  let s = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s || 'A';
+}
+
+/**
  * Build fetch headers — includes Bearer token when an OAuth access token is available.
  */
 function getAuthHeaders() {
@@ -239,7 +254,7 @@ export async function updateRow(sheetName, rowIndex, values) {
   }
 
   const base = getBaseUrl();
-  const range = `${sheetName}!A${rowIndex}:${String.fromCharCode(64 + values.length)}${rowIndex}`;
+  const range = `${sheetName}!A${rowIndex}:${columnLetter(values.length)}${rowIndex}`;
   const authParam = getAuthParam();
   const url = `${base}/values/${encodeURIComponent(range)}`
     + `?valueInputOption=USER_ENTERED${authParam ? '&' + authParam : ''}`;
@@ -323,6 +338,8 @@ const SHEET_HEADERS = {
   [CONFIG.SHEET_EVENT_DESCRIPTIONS]: ['description_id', 'event_id', 'title', 'description_date', 'description_text', 'created_at'],
   [CONFIG.SHEET_PARTNER_DOCUMENTS]: ['document_id', 'partner_id', 'partner_name', 'title', 'doc_type', 'html_content', 'status', 'created_at', 'updated_at'],
   [CONFIG.SHEET_CUSTOM_PROMPTS]: ['prompt_id', 'label', 'icon', 'instructions', 'created_at'],
+  [CONFIG.SHEET_AI_CONVERSATIONS]: ['conversation_id', 'username', 'started_at', 'title', 'messages', 'status'],
+  [CONFIG.SHEET_MEETING_INDEX]: ['meeting_id', 'transcript_id', 'partner_id', 'partner_name', 'meeting_date', 'meeting_title', 'attendees', 'summary', 'key_decisions', 'topics_discussed'],
 };
 
 /**
