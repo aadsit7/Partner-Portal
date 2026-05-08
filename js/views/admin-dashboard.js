@@ -6,8 +6,7 @@ import { readSheetAsObjects } from '../sheets.js';
 import { CONFIG } from '../config.js';
 import { el, mount, formatCurrency, debounce } from '../utils/dom.js';
 import { navigate } from '../router.js';
-import { statCard } from '../components/card.js';
-import { setTopbarTitle } from '../components/sidebar.js';
+import { setTopbar, setTopbarTitle } from '../components/sidebar.js';
 import { tierSlug, TIER_COLORS, TIER_ICONS } from '../utils/tiers.js';
 import { formatDate } from '../utils/date.js';
 import { openEventModal } from './admin-events.js';
@@ -56,7 +55,9 @@ const HQ_COORDINATES = {
 // Demand Gen Dashboard Helpers
 // ============================================
 
-const PARTNER_COLORS = ['#0000CC', '#0F7A3F', '#CC8800', '#8B5CF6', '#0891B2', '#CC2222'];
+// Single brand-cyan fill for all bars per the Recast brief —
+// consistent hue, no off-brand colors (was a 6-color rainbow palette).
+const CHART_BAR_COLOR = '#00BFFF';
 
 function computePartnerSourceData(opportunities, partners) {
   const byPartner = {};
@@ -80,49 +81,48 @@ function buildPartnerSourceChart(opportunities, partners, onBarClick) {
   const data = computePartnerSourceData(opportunities, partners);
 
   if (data.length === 0) {
-    return el('div', { class: 'demandgen-chart' },
-      el('div', { class: 'demandgen-chart__title' }, 'Opportunity Source by Partner'),
-      el('div', { class: 'demandgen-chart__subtitle' }, 'No opportunity data available')
+    return el('div', { class: 'dashboard-page__chart-card' },
+      el('div', { class: 'dashboard-page__chart-title' }, 'Opportunity Source by Partner'),
+      el('div', { class: 'dashboard-page__chart-subtitle' }, 'No opportunity data available')
     );
   }
 
   const maxVal = Math.max(...data.map(d => d.total));
 
-  const rows = data.map((d, i) => {
+  const rows = data.map(d => {
     const pct = maxVal > 0 ? (d.total / maxVal) * 100 : 0;
-    const color = PARTNER_COLORS[i % PARTNER_COLORS.length];
 
     return el('div', {
-      class: 'demandgen-bar-row' + (onBarClick ? ' demandgen-bar-row--clickable' : ''),
+      class: 'dashboard-page__bar-row' + (onBarClick ? ' dashboard-page__bar-row--clickable' : ''),
       dataset: { partnerName: d.name },
       onClick: onBarClick ? () => onBarClick(d.name) : undefined,
     },
-      el('div', { class: 'demandgen-bar-row__label', title: d.name }, d.name),
-      el('div', { class: 'demandgen-bar-row__bar' },
+      el('div', { class: 'dashboard-page__bar-row__label', title: d.name }, d.name),
+      el('div', { class: 'dashboard-page__bar-row__bar' },
         pct > 0 ? el('div', {
-          class: 'demandgen-bar-row__segment',
-          style: { width: pct + '%', background: color, borderRadius: 'var(--radius-sm)' },
+          class: 'dashboard-page__bar-row__segment',
+          style: { width: pct + '%', background: CHART_BAR_COLOR },
           title: formatCurrency(d.total),
         }) : null,
       ),
-      el('div', { class: 'demandgen-bar-row__value' }, formatCurrency(d.total)),
+      el('div', { class: 'dashboard-page__bar-row__value' }, formatCurrency(d.total)),
     );
   });
 
-  const legend = el('div', { class: 'demandgen-legend', style: { marginTop: 'var(--space-4)' } },
-    ...data.map((d, i) =>
-      el('div', { class: 'demandgen-legend__item' },
-        el('span', { class: 'demandgen-legend__dot', style: { background: PARTNER_COLORS[i % PARTNER_COLORS.length] } }),
-        d.name
-      )
-    )
+  return el('div', { class: 'dashboard-page__chart-card' },
+    el('div', { class: 'dashboard-page__chart-title' }, 'Opportunity Source by Partner'),
+    el('div', { class: 'dashboard-page__chart-subtitle' }, 'Top partners by deal value'),
+    el('div', { class: 'dashboard-page__bar-list' }, ...rows),
   );
+}
 
-  return el('div', { class: 'demandgen-chart' },
-    el('div', { class: 'demandgen-chart__title' }, 'Opportunity Source by Partner'),
-    el('div', { class: 'demandgen-chart__subtitle' }, 'Top partners by deal value'),
-    el('div', { class: 'demandgen-bar-list' }, ...rows),
-    legend,
+function buildDashboardStatCell(label, value, onClick) {
+  return el('div', {
+    class: 'dashboard-page__stat-cell dashboard-page__stat-cell--clickable',
+    onClick,
+  },
+    el('div', { class: 'dashboard-page__stat-label' }, label),
+    el('div', { class: 'dashboard-page__stat-value' }, String(value)),
   );
 }
 
@@ -239,8 +239,8 @@ function renderDashboard(container, partners, opportunities, events) {
   let activeStatKey = '';
   function toggleStat(key) {
     if (activeStatKey === key) { activeStatKey = ''; } else { activeStatKey = key; }
-    document.querySelectorAll('.stats-grid .stat-card').forEach(card => {
-      card.classList.remove('stat-card--active');
+    document.querySelectorAll('.dashboard-page__stat-strip .dashboard-page__stat-cell').forEach(cell => {
+      cell.classList.remove('dashboard-page__stat-cell--active');
     });
     if (activeStatKey === 'partners') { switchTab('partners'); }
     else if (activeStatKey === 'pipeline') { switchTab('activity'); }
@@ -253,8 +253,8 @@ function renderDashboard(container, partners, opportunities, events) {
     }
     if (activeStatKey) {
       const keyMap = { partners: 0, pipeline: 1, won: 2, events: 3 };
-      const cards = document.querySelectorAll('.stats-grid .stat-card');
-      if (cards[keyMap[activeStatKey]]) cards[keyMap[activeStatKey]].classList.add('stat-card--active');
+      const cells = document.querySelectorAll('.dashboard-page__stat-strip .dashboard-page__stat-cell');
+      if (cells[keyMap[activeStatKey]]) cells[keyMap[activeStatKey]].classList.add('dashboard-page__stat-cell--active');
     }
   }
 
@@ -262,8 +262,8 @@ function renderDashboard(container, partners, opportunities, events) {
   let activeBarPartner = null;
   function onBarClick(partnerName) {
     if (activeBarPartner === partnerName) { activeBarPartner = null; } else { activeBarPartner = partnerName; }
-    document.querySelectorAll('.demandgen-bar-row--clickable').forEach(row => {
-      row.classList.toggle('demandgen-bar-row--active', row.dataset.partnerName === activeBarPartner);
+    document.querySelectorAll('.dashboard-page__bar-row--clickable').forEach(row => {
+      row.classList.toggle('dashboard-page__bar-row--active', row.dataset.partnerName === activeBarPartner);
     });
     switchTab('activity');
     const activityCards = activityView.querySelectorAll('.activity-card');
@@ -277,37 +277,25 @@ function renderDashboard(container, partners, opportunities, events) {
     });
   }
 
-  const content = el('div', {},
-    // Type filter bar (above KPI cards, below heading)
-    typeFilterBar,
+  // Topbar header: eyebrow title + meta + type-filter chips
+  const partnersLabel = tfPartners.length === 1 ? '1 partner' : `${tfPartners.length} partners`;
+  const meta = `· ${partnersLabel} · ${formatCurrency(tfTotalPipeline)} pipeline · ${formatCurrency(tfWonValue)} won`;
+  setTopbar({
+    title: 'Dashboard',
+    meta,
+    chips: typeFilterBar,
+  });
 
-    // Top zone: 2×2 stat cards on left, Opportunity Source chart on right
-    el('div', { class: 'dashboard-top' },
-      el('div', { class: 'dashboard-top__stats stagger' },
-        statCard('Total Partners', tfPartners.length, {
-          accentColor: 'var(--color-primary-lighter)',
-          icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="7.5" cy="6" r="2.5" stroke="currentColor" stroke-width="1.5"/><path d="M2 17c0-3 2.5-5 5.5-5s5.5 2 5.5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="14" cy="6.5" r="2" stroke="currentColor" stroke-width="1.5"/><path d="M13 12c2 0 4.5 1 4.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
-          onClick: () => toggleStat('partners'),
-        }),
-        statCard('Total Pipeline', formatCurrency(tfTotalPipeline), {
-          accentColor: 'var(--color-accent)',
-          icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 14l4-5 3 3 3.5-5L17 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 5h3v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-          onClick: () => toggleStat('pipeline'),
-        }),
-        statCard('Revenue Won', formatCurrency(tfWonValue), {
-          accentColor: 'var(--color-status-won)',
-          icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2l2.2 4.4 4.9.72-3.55 3.46.84 4.88L10 13.27l-4.4 2.23.84-4.88L2.9 7.12l4.9-.72L10 2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>',
-          onClick: () => toggleStat('won'),
-        }),
-        statCard('Upcoming Events', tfUpcoming.length, {
-          accentColor: 'var(--color-status-registered)',
-          icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M3 9h14" stroke="currentColor" stroke-width="1.5"/><path d="M7 2v4M13 2v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M7 13h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
-          onClick: () => toggleStat('events'),
-        }),
+  const content = el('div', { class: 'dashboard-page' },
+    // Top zone: 4-cell KPI strip + flat Opportunity Source chart card
+    el('div', { class: 'dashboard-page__top' },
+      el('div', { class: 'dashboard-page__stat-strip stagger' },
+        buildDashboardStatCell('Total Partners', tfPartners.length, () => toggleStat('partners')),
+        buildDashboardStatCell('Total Pipeline', formatCurrency(tfTotalPipeline), () => toggleStat('pipeline')),
+        buildDashboardStatCell('Revenue Won', formatCurrency(tfWonValue), () => toggleStat('won')),
+        buildDashboardStatCell('Upcoming Events', tfUpcoming.length, () => toggleStat('events')),
       ),
-      el('div', { class: 'dashboard-top__chart' },
-        buildPartnerSourceChart(tfOpps, tfPartners, onBarClick),
-      ),
+      buildPartnerSourceChart(tfOpps, tfPartners, onBarClick),
     ),
 
     // Tabs + views (full width below)
