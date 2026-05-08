@@ -7,12 +7,12 @@ import { CONFIG } from '../config.js';
 import { el, mount, formatCurrency, uuid } from '../utils/dom.js';
 import { formatDate, todayISO, nowISO } from '../utils/date.js';
 import { navigate } from '../router.js';
-import { tierSlug, TIER_ICONS } from '../utils/tiers.js';
-import { dealCard, statCard } from '../components/card.js';
+import { tierSlug } from '../utils/tiers.js';
+import { dealCard } from '../components/card.js';
 import { openModal, closeModal, confirmDialog } from '../components/modal.js';
 import { openEventModal } from './admin-events.js';
 import { openOppModal } from './admin-opportunities.js';
-import { setTopbarTitle } from '../components/sidebar.js';
+import { setTopbar, setTopbarTitle } from '../components/sidebar.js';
 import { showToast } from '../components/toast.js';
 import { filterOpportunities, filterEvents } from '../utils/filters.js';
 import { stripHtml, ensureHtml, initQuillEditor } from '../components/quill-editor.js';
@@ -75,84 +75,103 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
   const totalValue = pipelineValue + wonValue;
   const sortedEvents = [...partnerEvents].sort((a, b) => new Date(b.event_date) - new Date(a.event_date));
 
-  const content = el('div', {},
-    // Back button
-    el('a', {
-      class: 'back-link',
+  // Topbar header: eyebrow "PARTNER" + meta carrying name, tier, type, region
+  const metaParts = [partner.display_name, partner.tier, partner.partner_type, partner.region].filter(Boolean);
+  setTopbar({
+    title: 'Partner',
+    meta: '· ' + metaParts.join(' · '),
+    actions: el('a', {
+      class: 'partner-detail-page__section-cta partner-detail-page__section-cta--secondary',
       href: '#/admin/dashboard',
-      onClick: (e) => { e.preventDefault(); navigate('/admin/dashboard'); }
+      onClick: (e) => { e.preventDefault(); navigate('/admin/dashboard'); },
     },
-      el('span', { html: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
-      'Dashboard'
+      el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 3L5 7l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
+      'Dashboard',
     ),
+  });
 
-    // Partner header — split screen layout
-    el('div', { class: 'detail-header-wrapper' },
-      el('div', { class: 'detail-header' },
-        el('div', { class: `partner-avatar partner-avatar--${tierClass}` },
-          (partner.display_name || '').split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || '?'
-        ),
-        el('div', { class: 'detail-header__info' },
-          el('div', { style: { display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-2)' } },
-            el('h2', { class: 'detail-header__name' }, partner.display_name),
-            el('span', { class: `badge badge--${tierClass}` },
-              el('span', { class: 'badge__icon', html: TIER_ICONS[tierClass] || '' }),
+  const initials = (partner.display_name || '').split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || '?';
+
+  const content = el('div', { class: 'partner-detail-page' },
+    // Hero: condensed metadata strip + flat Revenue chart card
+    el('div', { class: 'partner-detail-page__hero' },
+      el('div', { class: 'partner-detail-page__hero-strip' },
+        el('div', { class: 'partner-detail-page__hero-info' },
+          el('div', {
+            class: `partner-detail-page__hero-avatar partner-detail-page__hero-avatar--${tierClass}`,
+          }, initials),
+          el('div', { class: 'partner-detail-page__hero-text' },
+            el('div', { class: 'partner-detail-page__hero-name-row' },
+              el('h2', { class: 'partner-detail-page__hero-name' }, partner.display_name),
               partner.tier
-            )
+                ? el('span', { class: 'partner-detail-page__hero-tier' }, partner.tier)
+                : null,
+            ),
+            metaParts.length > 1
+              ? el('div', { class: 'partner-detail-page__hero-meta' },
+                  partner.partner_type
+                    ? el('span', { class: 'partner-detail-page__hero-meta-item' }, partner.partner_type)
+                    : null,
+                  partner.region
+                    ? el('span', { class: 'partner-detail-page__hero-meta-item' }, partner.region)
+                    : null,
+                  partner.hq_location
+                    ? el('span', { class: 'partner-detail-page__hero-meta-item' }, partner.hq_location)
+                    : null,
+                )
+              : null,
           ),
-          el('div', { class: 'detail-header__meta' },
-            partner.partner_type ? el('span', { class: 'detail-header__meta-item' }, partner.partner_type) : null,
-            partner.region ? el('span', { class: 'detail-header__meta-item' }, partner.region) : null,
-            partner.hq_location ? el('span', { class: 'detail-header__meta-item' }, partner.hq_location) : null
-          )
         ),
-        el('div', { class: 'detail-header__stats' },
-          el('div', { class: 'detail-header__stat' },
-            el('div', { class: 'detail-header__stat-value' }, String(opportunities.length)),
-            el('div', { class: 'detail-header__stat-label' }, 'Deals')
+        el('div', { class: 'partner-detail-page__hero-stats' },
+          el('div', { class: 'partner-detail-page__hero-cell' },
+            el('div', { class: 'partner-detail-page__hero-label' }, 'Deals'),
+            el('div', { class: 'partner-detail-page__hero-value' }, String(opportunities.length)),
           ),
-          el('div', { class: 'detail-header__stat' },
-            el('div', { class: 'detail-header__stat-value' }, formatCurrency(pipelineValue)),
-            el('div', { class: 'detail-header__stat-label' }, 'Pipeline')
+          el('div', { class: 'partner-detail-page__hero-cell' },
+            el('div', { class: 'partner-detail-page__hero-label' }, 'Pipeline'),
+            el('div', { class: 'partner-detail-page__hero-value' }, formatCurrency(pipelineValue)),
           ),
-          el('div', { class: 'detail-header__stat' },
-            el('div', { class: 'detail-header__stat-value' }, formatCurrency(wonValue)),
-            el('div', { class: 'detail-header__stat-label' }, 'Won')
+          el('div', { class: 'partner-detail-page__hero-cell' },
+            el('div', { class: 'partner-detail-page__hero-label' }, 'Won'),
+            el('div', { class: 'partner-detail-page__hero-value' }, formatCurrency(wonValue)),
           ),
-        )
+        ),
       ),
-      el('div', { class: 'detail-header-chart' },
-        buildPartnerRevenueByEvent(partnerEvents, opportunities)
-      )
+      buildPartnerRevenueByEvent(partnerEvents, opportunities),
     ),
 
-    // Section 1: Upcoming Joint Events — compact consolidated view
+    // Section 1: Upcoming Joint Events
     buildUpcomingEventsSection(sortedEvents, partner, container),
 
-    // Section 2: Opportunities
-    el('div', { class: 'detail-section' },
-      el('div', { class: 'detail-section__header' },
-        el('h3', { class: 'detail-section__title' }, `Opportunities (${opportunities.length})`),
-        el('button', {
-          class: 'btn btn--primary btn--sm',
-          onClick: () => {
-            openOppModal(null, null, () => reRender(partner.partner_id));
-            setTimeout(() => {
-              const sel = document.querySelector('#field-partner_id');
-              if (sel) { sel.value = partner.partner_id; }
-            }, 50);
+    // Section 2: Opportunities — eyebrow header + 4-cell stat strip + deal cards
+    el('div', { class: 'partner-detail-page__section' },
+      el('div', { class: 'partner-detail-page__section-header' },
+        el('div', { class: 'partner-detail-page__section-title' },
+          'Opportunities',
+          el('span', { class: 'partner-detail-page__section-count' }, String(opportunities.length)),
+        ),
+        el('div', { class: 'partner-detail-page__section-actions' },
+          el('button', {
+            class: 'partner-detail-page__section-cta',
+            onClick: () => {
+              openOppModal(null, null, () => reRender(partner.partner_id));
+              setTimeout(() => {
+                const sel = document.querySelector('#field-partner_id');
+                if (sel) { sel.value = partner.partner_id; }
+              }, 50);
+            },
           },
-        },
-          el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-          'New Opportunity'
-        )
+            el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2.5v9M2.5 7h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>' }),
+            'New Opportunity',
+          ),
+        ),
       ),
 
-      el('div', { class: 'stats-grid stagger', style: { marginBottom: 'var(--space-6)' } },
-        statCard('Total Deals', opportunities.length),
-        statCard('Active Pipeline', formatCurrency(totalValue)),
-        statCard('Deals Won', wonDeals.length),
-        statCard('Revenue Won', formatCurrency(wonValue))
+      el('div', { class: 'partner-detail-page__stat-strip stagger' },
+        buildPartnerStatCell('Total Deals', String(opportunities.length)),
+        buildPartnerStatCell('Active Pipeline', formatCurrency(totalValue)),
+        buildPartnerStatCell('Deals Won', String(wonDeals.length)),
+        buildPartnerStatCell('Revenue Won', formatCurrency(wonValue)),
       ),
 
       opportunities.length > 0
@@ -168,12 +187,19 @@ function renderDetail(container, partner, opportunities, partnerEvents, transcri
     ),
 
     // Section 3: Call Transcripts
-    el('div', { class: 'detail-section' },
+    el('div', { class: 'partner-detail-page__section' },
       buildTranscriptsPanel(partner, transcripts),
     ),
   );
 
   mount(container, content);
+}
+
+function buildPartnerStatCell(label, value) {
+  return el('div', { class: 'partner-detail-page__stat-cell' },
+    el('div', { class: 'partner-detail-page__stat-label' }, label),
+    el('div', { class: 'partner-detail-page__stat-value' }, value),
+  );
 }
 
 // ============================================
@@ -456,19 +482,19 @@ function copyAllTranscripts(partner, transcripts) {
 // ============================================
 
 function buildTranscriptsPanel(partner, transcripts) {
-  const actions = el('div', { class: 'partner-bottom-panel__actions' },
+  const actions = el('div', { class: 'partner-detail-page__section-actions' },
     transcripts.length > 0
       ? el('button', {
-          class: 'btn btn--secondary btn--sm',
+          class: 'partner-detail-page__section-cta partner-detail-page__section-cta--secondary',
           onClick: () => copyAllTranscripts(partner, transcripts),
         }, 'Copy All')
       : null,
     el('button', {
-      class: 'btn btn--primary btn--sm',
+      class: 'partner-detail-page__section-cta',
       onClick: () => openTranscriptModal(partner, null, transcripts, () => reRender(partner.partner_id)),
     },
-      el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-      'Add Transcript'
+      el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2.5v9M2.5 7h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>' }),
+      'Add Transcript',
     ),
   );
 
@@ -481,15 +507,15 @@ function buildTranscriptsPanel(partner, transcripts) {
         el('div', { class: 'empty-state__description' }, 'Click "Add Transcript" to log a call with this partner.')
       );
 
-  return el('div', { class: 'partner-bottom-panel' },
-    el('div', { class: 'partner-bottom-panel__header' },
-      el('div', { class: 'partner-bottom-panel__title-group' },
-        el('h3', { class: 'partner-bottom-panel__title' }, 'Call Transcripts'),
-        el('span', { class: 'partner-bottom-panel__count' }, String(transcripts.length)),
+  return el('div', {},
+    el('div', { class: 'partner-detail-page__section-header' },
+      el('div', { class: 'partner-detail-page__section-title' },
+        'Call Transcripts',
+        el('span', { class: 'partner-detail-page__section-count' }, String(transcripts.length)),
       ),
       actions,
     ),
-    el('div', { class: 'partner-bottom-panel__body' }, body),
+    body,
   );
 }
 
@@ -506,6 +532,11 @@ const EVENT_TYPE_COLORS = {
 // Revenue by Event Chart (Partner-scoped)
 // ============================================
 
+// Single brand-cyan fill for chart bars per the Recast brief — replaces
+// the previous near-black/per-event-type rainbow that read as "off-brand"
+// in the screenshot review.
+const PARTNER_CHART_BAR_COLOR = '#00BFFF';
+
 function buildPartnerRevenueByEvent(partnerEvents, opportunities) {
   const eventRevenue = {};
   for (const opp of opportunities) {
@@ -520,15 +551,14 @@ function buildPartnerRevenueByEvent(partnerEvents, opportunities) {
   for (const [eventId, rev] of Object.entries(eventRevenue)) {
     const evt = partnerEvents.find(e => e.event_id === eventId);
     const title = evt ? evt.title : eventId;
-    const type = evt ? evt.event_type : 'Other';
-    data.push({ title, type, total: rev.total });
+    data.push({ title, total: rev.total });
   }
   data.sort((a, b) => b.total - a.total);
 
   if (data.length === 0) {
-    return el('div', { class: 'demandgen-chart' },
-      el('div', { class: 'demandgen-chart__title' }, 'Revenue by Event'),
-      el('div', { class: 'demandgen-chart__subtitle', style: { color: 'var(--color-text-muted)' } }, 'No event-sourced revenue yet')
+    return el('div', { class: 'partner-detail-page__chart-card' },
+      el('div', { class: 'partner-detail-page__chart-title' }, 'Revenue by Event'),
+      el('div', { class: 'partner-detail-page__chart-empty' }, 'No event-sourced revenue yet'),
     );
   }
 
@@ -536,35 +566,24 @@ function buildPartnerRevenueByEvent(partnerEvents, opportunities) {
 
   const rows = data.map(d => {
     const pct = maxVal > 0 ? (d.total / maxVal) * 100 : 0;
-    const color = EVENT_TYPE_COLORS[d.type] || EVENT_TYPE_COLORS['Other'];
 
-    return el('div', { class: 'demandgen-bar-row' },
-      el('div', { class: 'demandgen-bar-row__label', title: d.title }, d.title),
-      el('div', { class: 'demandgen-bar-row__bar' },
-        el('div', {
-          class: 'demandgen-bar-row__segment',
-          style: { width: pct + '%', background: color, borderRadius: 'var(--radius-sm)' },
-        })
+    return el('div', { class: 'partner-detail-page__bar-row' },
+      el('div', { class: 'partner-detail-page__bar-row__label', title: d.title }, d.title),
+      el('div', { class: 'partner-detail-page__bar-row__bar' },
+        pct > 0 ? el('div', {
+          class: 'partner-detail-page__bar-row__segment',
+          style: { width: pct + '%', background: PARTNER_CHART_BAR_COLOR },
+          title: formatCurrency(d.total),
+        }) : null,
       ),
-      el('div', { class: 'demandgen-bar-row__value' }, formatCurrency(d.total)),
+      el('div', { class: 'partner-detail-page__bar-row__value' }, formatCurrency(d.total)),
     );
   });
 
-  const usedTypes = [...new Set(data.map(d => d.type))];
-  const legend = el('div', { class: 'demandgen-legend', style: { marginTop: 'var(--space-3)' } },
-    ...usedTypes.map(type =>
-      el('div', { class: 'demandgen-legend__item' },
-        el('span', { class: 'demandgen-legend__dot', style: { background: EVENT_TYPE_COLORS[type] || EVENT_TYPE_COLORS['Other'] } }),
-        type
-      )
-    )
-  );
-
-  return el('div', { class: 'demandgen-chart' },
-    el('div', { class: 'demandgen-chart__title' }, 'Revenue by Event'),
-    el('div', { class: 'demandgen-chart__subtitle' }, 'Pipeline from demand gen events'),
-    el('div', { class: 'demandgen-bar-list' }, ...rows),
-    legend,
+  return el('div', { class: 'partner-detail-page__chart-card' },
+    el('div', { class: 'partner-detail-page__chart-title' }, 'Revenue by Event'),
+    el('div', { class: 'partner-detail-page__chart-subtitle' }, 'Pipeline from demand gen events'),
+    el('div', { class: 'partner-detail-page__bar-list' }, ...rows),
   );
 }
 
@@ -575,21 +594,21 @@ function buildUpcomingEventsSection(allEvents, partner, container) {
 
   const completedCount = allEvents.filter(e => e.status === 'Completed').length;
 
-  return el('div', { class: 'detail-section' },
-    el('div', { class: 'detail-section__header' },
-      el('div', {},
-        el('h3', { class: 'detail-section__title' }, 'Upcoming Joint Events'),
-        el('p', { style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0' } },
-          `${upcomingEvents.length} upcoming \u00B7 ${completedCount} completed \u00B7 ${allEvents.length} total`
-        )
+  return el('div', { class: 'partner-detail-page__section' },
+    el('div', { class: 'partner-detail-page__section-header' },
+      el('div', { class: 'partner-detail-page__section-title' },
+        'Upcoming Joint Events',
+        el('span', { class: 'partner-detail-page__section-subtitle' },
+          `${upcomingEvents.length} upcoming \u00B7 ${completedCount} completed \u00B7 ${allEvents.length} total`,
+        ),
       ),
-      el('div', { style: { display: 'flex', gap: 'var(--space-2)' } },
+      el('div', { class: 'partner-detail-page__section-actions' },
         el('button', {
-          class: 'btn btn--secondary btn--sm',
+          class: 'partner-detail-page__section-cta partner-detail-page__section-cta--secondary',
           onClick: () => navigate('/admin/events'),
         }, 'View All Events'),
         el('button', {
-          class: 'btn btn--primary btn--sm',
+          class: 'partner-detail-page__section-cta',
           onClick: () => {
             openEventModal(null, container, () => reRender(partner.partner_id));
             setTimeout(() => {
@@ -598,10 +617,10 @@ function buildUpcomingEventsSection(allEvents, partner, container) {
             }, 50);
           },
         },
-          el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-          'New Event'
+          el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2.5v9M2.5 7h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>' }),
+          'New Event',
         ),
-      )
+      ),
     ),
     upcomingEvents.length > 0
       ? el('div', { class: 'upcoming-events-list' },
