@@ -765,6 +765,18 @@ function createDayCell(dayNum, isOtherMonth, dayEvents, isToday) {
 function renderList(events) {
   const sorted = [...events].sort((a, b) => new Date(b.event_date) - new Date(a.event_date));
 
+  // Pre-aggregate opps per event so each row is O(1). Salesperson-sourced
+  // opps aren't tied to a demand-gen event, so they're excluded from the
+  // per-event Opportunities/Revenue rollup.
+  const oppMetrics = {};
+  for (const opp of (cachedOpps || [])) {
+    const src = opp.lead_source;
+    if (!src || src === 'salesperson') continue;
+    if (!oppMetrics[src]) oppMetrics[src] = { count: 0, revenue: 0 };
+    oppMetrics[src].count += 1;
+    oppMetrics[src].revenue += parseFloat(opp.deal_value) || 0;
+  }
+
   if (sorted.length === 0) {
     return el('div', { class: 'empty-state', style: { marginTop: 'var(--space-8)' } },
       el('div', { class: 'empty-state__title' }, 'No matching events'),
@@ -772,8 +784,12 @@ function renderList(events) {
     );
   }
 
+  const numCellClass = (val) => val > 0
+    ? 'events-page__td--num'
+    : 'events-page__td--num events-page__td--num-zero';
+
   return el('div', { class: 'events-page__table-wrapper' },
-    el('table', { class: 'events-page__table' },
+    el('table', { class: 'events-page__table events-page__table--compact' },
       el('thead', {},
         el('tr', {},
           el('th', {}, 'Event'),
@@ -782,12 +798,20 @@ function renderList(events) {
           el('th', {}, 'Status'),
           el('th', {}, 'Partner'),
           el('th', {}, 'Location'),
+          el('th', { class: 'events-page__th--num' }, 'Leads'),
+          el('th', { class: 'events-page__th--num' }, 'Opps'),
+          el('th', { class: 'events-page__th--num' }, 'Revenue'),
           el('th', {}, 'Actions')
         )
       ),
       el('tbody', {},
-        ...sorted.map(evt =>
-          el('tr', {
+        ...sorted.map(evt => {
+          const metrics = oppMetrics[evt.event_id] || { count: 0, revenue: 0 };
+          const leads = Math.max(0, parseInt(evt.lead_count, 10) || 0);
+          const oppCount = metrics.count;
+          const revenue = metrics.revenue;
+
+          return el('tr', {
             style: { cursor: 'pointer' },
             onClick: () => openEventModal(evt, document.getElementById('view-container')),
           },
@@ -806,6 +830,9 @@ function renderList(events) {
                 : el('span', { class: 'events-page__tag--muted' }, 'All Partners'),
             ),
             el('td', {}, evt.location || el('span', { class: 'events-page__tag--muted' }, '—')),
+            el('td', { class: numCellClass(leads) }, String(leads)),
+            el('td', { class: numCellClass(oppCount) }, String(oppCount)),
+            el('td', { class: numCellClass(revenue) }, formatCurrency(revenue)),
             el('td', { class: 'events-page__td--actions' },
               el('div', { class: 'events-page__actions' },
                 el('button', {
@@ -818,8 +845,8 @@ function renderList(events) {
                 }, 'Delete')
               )
             )
-          )
-        )
+          );
+        })
       )
     )
   );

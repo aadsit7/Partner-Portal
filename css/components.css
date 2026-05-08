@@ -6961,6 +6961,38 @@
   text-align: right;
 }
 
+/* Compact mode trims horizontal padding so the 10-column List view
+   (Event, Date, Type, Status, Partner, Location, Leads, Opps, Revenue,
+   Actions) fits without horizontal scroll. */
+.events-page__table--compact thead th,
+.events-page__table--compact tbody td {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.events-page__table--compact .events-page__row-subtitle {
+  max-width: 220px;
+}
+
+/* Numeric columns: Leads / Opps / Revenue. Right-aligned with tabular
+   numerics so digits line up vertically across rows. */
+.events-page__table .events-page__th--num {
+  text-align: right;
+}
+
+.events-page__table tbody td.events-page__td--num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+  width: 1%;
+}
+
+.events-page__table tbody td.events-page__td--num-zero {
+  color: #B0B0BC;
+  font-weight: 500;
+}
+
 @media (max-width: 720px) {
   .events-page__stat-strip {
     grid-template-columns: repeat(2, 1fr);
