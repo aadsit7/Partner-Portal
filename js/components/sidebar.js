@@ -175,9 +175,63 @@ function closeMobileSidebar() {
 }
 
 /**
- * Update the topbar title.
+ * Update the topbar with rich content.
+ *
+ * Plain-text title pages use `setTopbarTitle(title)` which delegates here
+ * with just the title. Pages that need an eyebrow + meta line, filter
+ * chips, or action buttons in the topbar should call this directly.
+ *
+ * Always clears `#topbar-actions` so a previous view's chips/buttons
+ * don't bleed across navigation.
+ */
+export function setTopbar({ title, meta, chips, actions } = {}) {
+  const titleEl = $('#topbar-title');
+  const actionsEl = $('#topbar-actions');
+  if (!titleEl) return;
+
+  // Reset both zones each call.
+  titleEl.textContent = '';
+  titleEl.className = 'topbar__title';
+  if (actionsEl) actionsEl.innerHTML = '';
+
+  if (meta || chips) {
+    titleEl.classList.add('topbar__title--rich');
+    const titleZone = el('div', { class: 'topbar__title-zone' },
+      title ? el('span', { class: 'topbar__eyebrow' }, title) : null,
+      meta ? el('span', { class: 'topbar__meta' }, meta) : null,
+    );
+    titleEl.appendChild(titleZone);
+  } else if (title) {
+    titleEl.textContent = title;
+  }
+
+  if (!actionsEl) return;
+
+  if (chips) {
+    const chipsZone = el('div', { class: 'topbar__chips' });
+    appendChildren(chipsZone, chips);
+    actionsEl.appendChild(chipsZone);
+  }
+
+  if (actions) {
+    appendChildren(actionsEl, actions);
+  }
+}
+
+function appendChildren(parent, value) {
+  if (!value) return;
+  if (Array.isArray(value)) {
+    value.forEach(item => appendChildren(parent, item));
+    return;
+  }
+  if (value instanceof Node) {
+    parent.appendChild(value);
+  }
+}
+
+/**
+ * Update the topbar title (backward-compatible plain-title API).
  */
 export function setTopbarTitle(title) {
-  const titleEl = $('#topbar-title');
-  if (titleEl) titleEl.textContent = title;
+  setTopbar({ title });
 }

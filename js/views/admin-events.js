@@ -10,8 +10,7 @@ import { nowISO, formatDate, todayISO, parseDate, isDateInRange } from '../utils
 import { openModal, closeModal, confirmDialog } from '../components/modal.js';
 import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
-import { setTopbarTitle } from '../components/sidebar.js';
-import { statCard } from '../components/card.js';
+import { setTopbar, setTopbarTitle } from '../components/sidebar.js';
 import { parseChecklist, renderChecklist } from '../components/checklist.js';
 import { filterPartners, filterEvents } from '../utils/filters.js';
 import { loadTypeFilter, computeTypeData, buildTypeFilterBar, applyTypeFilter } from '../components/type-filter.js';
@@ -64,7 +63,7 @@ const TYPE_CHIP_COLORS = {
 };
 
 export async function render(container) {
-  setTopbarTitle('Demand Gen Events');
+  setTopbarTitle('Events / JLG');
   mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
 
   try {
@@ -236,10 +235,10 @@ function renderView(container, events, opportunities, filterBar) {
   }
 
   function updateStatCardStates() {
-    const cards = document.querySelectorAll('.dashboard-top__stats .stat-card');
+    const cells = document.querySelectorAll('.events-page__stat-strip .events-page__stat-cell');
     const filterMap = ['', 'Upcoming', 'In Progress', 'Completed'];
-    cards.forEach((card, i) => {
-      card.classList.toggle('stat-card--active', filterMap[i] === activeStatFilter && activeStatFilter !== '');
+    cells.forEach((cell, i) => {
+      cell.classList.toggle('events-page__stat-cell--active', filterMap[i] === activeStatFilter && activeStatFilter !== '');
     });
   }
 
@@ -330,16 +329,16 @@ function renderView(container, events, opportunities, filterBar) {
     });
   }
 
-  // Filter controls
+  // Filter controls — sharp-cornered Recast chrome
   const searchInput = el('input', {
-    class: 'search-bar__input',
+    class: 'events-page__search',
     type: 'text',
     placeholder: 'Search events...',
     onInput: debounce((e) => { filters.search = e.target.value; refreshContent(); }, 200),
   });
 
   const typeSelect = el('select', {
-    class: 'form-select filter-bar__select',
+    class: 'events-page__select',
     onChange: (e) => { filters.type = e.target.value; refreshContent(); },
   },
     el('option', { value: '' }, 'All Types'),
@@ -347,73 +346,62 @@ function renderView(container, events, opportunities, filterBar) {
   );
 
   const statusSelect = el('select', {
-    class: 'form-select filter-bar__select',
+    class: 'events-page__select',
     onChange: (e) => { filters.status = e.target.value; activeStatFilter = e.target.value; updateStatCardStates(); refreshContent(); },
   },
     el('option', { value: '' }, 'All Statuses'),
     ...EVENT_STATUSES.map(s => el('option', { value: s }, s))
   );
 
-  // View toggle buttons
-  const boardBtn = el('button', { class: 'btn btn--secondary btn--sm', onClick: () => switchView('board') }, 'Board');
-  const calendarBtn = el('button', { class: 'btn btn--secondary btn--sm', onClick: () => switchView('calendar') }, 'Calendar');
-  const listBtn = el('button', { class: 'btn btn--primary btn--sm', onClick: () => switchView('list') }, 'List');
+  // 3-segment view toggle: Board | Calendar | List
+  const boardBtn = el('button', { class: 'events-page__view-btn', onClick: () => switchView('board') }, 'Board');
+  const calendarBtn = el('button', { class: 'events-page__view-btn', onClick: () => switchView('calendar') }, 'Calendar');
+  const listBtn = el('button', { class: 'events-page__view-btn events-page__view-btn--active', onClick: () => switchView('list') }, 'List');
 
   const viewContainer = el('div', { id: 'events-view-container' });
 
-  const content = el('div', {},
-    filterBar,
-    el('div', { class: 'section-header' },
-      el('div', {},
-        el('h2', { class: 'section-header__title' }, 'Demand Gen Events'),
-        el('p', { class: 'section-header__subtitle' }, `${events.length} events`)
-      ),
-      el('button', {
-        class: 'btn btn--primary',
-        onClick: () => openEventModal(null, container),
-      },
-        el('span', { html: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-        'New Event'
-      ),
-    ),
+  // 4-cell stat strip — replaces the old 4 colored-border cards
+  const statStrip = el('div', { class: 'events-page__stat-strip' },
+    buildStatCell('Total Events', events.length, () => toggleStatFilter('')),
+    buildStatCell('Upcoming', upcoming, () => toggleStatFilter('Upcoming')),
+    buildStatCell('In Progress', inProgress, () => toggleStatFilter('In Progress')),
+    buildStatCell('Completed', completed, () => toggleStatFilter('Completed')),
+  );
 
-    // Dashboard top: 2×2 stat cards left, Revenue by Event chart right
-    el('div', { class: 'dashboard-top' },
-      el('div', { class: 'dashboard-top__stats stagger' },
-        statCard('Total Events', events.length, {
-          accentColor: 'var(--color-primary-lighter)',
-          onClick: () => toggleStatFilter(''),
-        }),
-        statCard('Upcoming', upcoming, {
-          accentColor: 'var(--color-status-registered)',
-          onClick: () => toggleStatFilter('Upcoming'),
-        }),
-        statCard('In Progress', inProgress, {
-          accentColor: 'var(--color-status-in-progress)',
-          onClick: () => toggleStatFilter('In Progress'),
-        }),
-        statCard('Completed', completed, {
-          accentColor: 'var(--color-status-won)',
-          onClick: () => toggleStatFilter('Completed'),
-        }),
-      ),
-      el('div', { class: 'dashboard-top__chart' },
-        buildEventRevenueChart(events, opportunities),
-      ),
-    ),
+  // Topbar header: eyebrow title + meta + type-filter chips + + New Event CTA
+  const totalSourcedPipeline = opportunities
+    .filter(o => o.lead_source && o.lead_source !== 'salesperson')
+    .reduce((s, o) => s + (parseFloat(o.deal_value) || 0), 0);
+  const eventsLabel = events.length === 1 ? '1 event' : `${events.length} events`;
+  const meta = `· ${eventsLabel} · ${formatCurrency(totalSourcedPipeline)} sourced pipeline`;
 
-    // Partner chip filters
+  const newEventBtn = el('button', {
+    class: 'topbar__cta',
+    onClick: () => openEventModal(null, container),
+  },
+    el('span', { html: '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2.5v9M2.5 7h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>' }),
+    'New Event',
+  );
+
+  setTopbar({
+    title: 'Events / JLG',
+    meta,
+    chips: filterBar,
+    actions: newEventBtn,
+  });
+
+  const content = el('div', { class: 'events-page' },
+    statStrip,
+
+    // Partner chip filters (kept as-is; restyle is in Chunk 2)
     chipContainer,
 
-    // Filters + view toggle
-    el('div', { class: 'filter-bar' },
-      el('div', { class: 'filter-bar__search' },
-        el('span', { class: 'search-bar__icon', html: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M12.5 12.5L16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
-        searchInput
-      ),
+    // Single filter row above the table — sharp inputs + 3-segment toggle on the right
+    el('div', { class: 'events-page__filter-row' },
+      searchInput,
       typeSelect,
       statusSelect,
-      el('div', { class: 'view-toggle', style: { marginBottom: '0' } }, boardBtn, calendarBtn, listBtn),
+      el('div', { class: 'events-page__view-toggle' }, boardBtn, calendarBtn, listBtn),
     ),
 
     viewContainer,
@@ -423,10 +411,10 @@ function renderView(container, events, opportunities, filterBar) {
 
   function switchView(view) {
     activeView = view;
-    [boardBtn, calendarBtn, listBtn].forEach(btn => btn.className = 'btn btn--secondary btn--sm');
-    if (view === 'board') boardBtn.className = 'btn btn--primary btn--sm';
-    else if (view === 'calendar') calendarBtn.className = 'btn btn--primary btn--sm';
-    else listBtn.className = 'btn btn--primary btn--sm';
+    [boardBtn, calendarBtn, listBtn].forEach(btn => btn.classList.remove('events-page__view-btn--active'));
+    if (view === 'board') boardBtn.classList.add('events-page__view-btn--active');
+    else if (view === 'calendar') calendarBtn.classList.add('events-page__view-btn--active');
+    else listBtn.classList.add('events-page__view-btn--active');
     refreshContent();
   }
 
@@ -784,8 +772,8 @@ function renderList(events) {
     );
   }
 
-  return el('div', { class: 'table-wrapper' },
-    el('table', { class: 'table' },
+  return el('div', { class: 'events-page__table-wrapper' },
+    el('table', { class: 'events-page__table' },
       el('thead', {},
         el('tr', {},
           el('th', {}, 'Event'),
@@ -804,34 +792,28 @@ function renderList(events) {
             onClick: () => openEventModal(evt, document.getElementById('view-container')),
           },
             el('td', {},
-              el('div', { style: { fontWeight: 'var(--font-semibold)' } }, evt.title),
-              el('div', {
-                style: { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
-              }, evt.description)
+              el('div', { class: 'events-page__name' }, evt.title),
+              evt.description
+                ? el('div', { class: 'events-page__row-subtitle' }, evt.description)
+                : null,
             ),
-            el('td', {},
-              formatDate(evt.event_date),
-              evt.end_date && evt.end_date !== evt.event_date
-                ? el('span', { style: { color: 'var(--color-text-muted)' } }, ` — ${formatDate(evt.end_date)}`)
-                : null
-            ),
-            el('td', {}, el('span', { class: `badge badge--${getTypeBadge(evt.event_type)}` }, evt.event_type)),
-            el('td', {}, el('span', { class: `badge badge--${getStatusBadge(evt.status)}` }, evt.status || 'Upcoming')),
+            el('td', { class: 'events-page__date' }, formatEventDateRange(evt.event_date, evt.end_date)),
+            el('td', {}, el('span', { class: 'events-page__tag' }, evt.event_type || 'Other')),
+            el('td', {}, buildStatusPill(evt.status || 'Upcoming')),
             el('td', {},
               evt.partner_id
-                ? el('span', { class: 'badge badge--admin' }, getPartnerName(evt.partner_id) || evt.partner_id)
-                : el('span', { style: { color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)' } }, 'All Partners')
+                ? el('span', { class: 'events-page__tag' }, getPartnerName(evt.partner_id) || evt.partner_id)
+                : el('span', { class: 'events-page__tag--muted' }, 'All Partners'),
             ),
-            el('td', {}, evt.location || '—'),
-            el('td', {},
-              el('div', { class: 'table__actions' },
+            el('td', {}, evt.location || el('span', { class: 'events-page__tag--muted' }, '—')),
+            el('td', { class: 'events-page__td--actions' },
+              el('div', { class: 'events-page__actions' },
                 el('button', {
-                  class: 'btn btn--ghost btn--sm',
+                  class: 'events-page__action-link',
                   onClick: (e) => { e.stopPropagation(); openEventModal(evt, document.getElementById('view-container')); },
                 }, 'Edit'),
                 el('button', {
-                  class: 'btn btn--ghost btn--sm',
-                  style: { color: 'var(--color-danger)' },
+                  class: 'events-page__action-link events-page__action-link--danger',
                   onClick: (e) => { e.stopPropagation(); handleDelete(evt); },
                 }, 'Delete')
               )
@@ -843,9 +825,38 @@ function renderList(events) {
   );
 }
 
+function formatEventDateRange(start, end) {
+  if (!start) return '—';
+  if (!end || end === start) return formatDate(start);
+  const s = parseDate(start);
+  const e = parseDate(end);
+  // "Mar 15 – Mar 18, 2027" when both within same year, else show full each.
+  if (s && e && s.getFullYear() === e.getFullYear()) {
+    const sShort = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const eFull = e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return `${sShort} – ${eFull}`;
+  }
+  return `${formatDate(start)} – ${formatDate(end)}`;
+}
+
+function buildStatusPill(status) {
+  const slug = (status || '').toLowerCase().replace(/\s+/g, '-');
+  return el('span', { class: `events-page__status events-page__status--${slug}` }, status);
+}
+
 // ============================================
 // Helpers
 // ============================================
+
+function buildStatCell(label, value, onClick) {
+  return el('div', {
+    class: 'events-page__stat-cell events-page__stat-cell--clickable',
+    onClick,
+  },
+    el('div', { class: 'events-page__stat-label' }, label),
+    el('div', { class: 'events-page__stat-value' }, String(value)),
+  );
+}
 
 function getTypeBadge(type) {
   const map = { Webinar: 'registered', Workshop: 'won', Conference: 'admin', Campaign: 'in-progress', Other: 'silver' };
