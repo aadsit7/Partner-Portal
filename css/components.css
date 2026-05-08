@@ -6975,3 +6975,434 @@
     margin-left: 0;
   }
 }
+
+/* ============================================
+   Recast Partner Detail — hero strip, chart card, opps strip,
+   eyebrow section headers, CTA
+   ============================================
+   All scoped under .partner-detail-page so other views are untouched.
+   The legacy .detail-header* and .detail-section* rules above remain
+   harmless once the markup switches to the new classes. */
+
+.partner-detail-page__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+/* Condensed metadata strip — replaces the tall rounded white card */
+.partner-detail-page__hero-strip {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: #F6F8FF;
+  border: 1px solid #DDDDEE;
+  border-left: 3px solid #00BFFF;
+  border-radius: 0;
+  padding: 0;
+  min-height: 64px;
+}
+
+.partner-detail-page__hero-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 20px;
+  flex: 1;
+  min-width: 0;
+}
+
+.partner-detail-page__hero-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #FFFFFF;
+  background: #0000CC;
+  flex-shrink: 0;
+}
+
+.partner-detail-page__hero-avatar--premier-strategic {
+  background: #0000CC;
+}
+
+.partner-detail-page__hero-avatar--value-preferred {
+  background: #00BFFF;
+  color: #0000CC;
+}
+
+.partner-detail-page__hero-avatar--tier-registered {
+  background: #4A4A5A;
+}
+
+.partner-detail-page__hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.partner-detail-page__hero-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.partner-detail-page__hero-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1A1A2E;
+  letter-spacing: -0.01em;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.partner-detail-page__hero-tier {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 0;
+  background: #FFFFFF;
+  border: 1px solid #DDDDEE;
+  color: #0000CC;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.partner-detail-page__hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: #4A4A5A;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.partner-detail-page__hero-meta-item {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.partner-detail-page__hero-meta-item + .partner-detail-page__hero-meta-item::before {
+  content: '·';
+  margin-right: 12px;
+  color: #AABBEE;
+}
+
+.partner-detail-page__hero-stats {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+}
+
+.partner-detail-page__hero-cell {
+  padding: 12px 20px;
+  border-left: 1px solid #DDDDEE;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 110px;
+  justify-content: center;
+}
+
+.partner-detail-page__hero-label {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: #0000CC;
+  line-height: 1.2;
+}
+
+.partner-detail-page__hero-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1A1A2E;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+/* Revenue by Event chart — flat sharp white card, single brand-cyan bars */
+.partner-detail-page__chart-card {
+  background: #FFFFFF;
+  border: 1px solid #DDDDEE;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 14px 18px 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.partner-detail-page__chart-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1A1A2E;
+  margin: 0;
+  letter-spacing: -0.005em;
+}
+
+.partner-detail-page__chart-subtitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: #4A4A5A;
+  margin: 2px 0 12px;
+}
+
+.partner-detail-page__bar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.partner-detail-page__bar-row {
+  display: grid;
+  grid-template-columns: 160px 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.partner-detail-page__bar-row__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1A1A2E;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.partner-detail-page__bar-row__bar {
+  height: 12px;
+  background: #F0F0F6;
+  border-radius: 0;
+  overflow: hidden;
+  display: flex;
+  min-width: 0;
+}
+
+.partner-detail-page__bar-row__segment {
+  height: 100%;
+  border-radius: 0;
+  transition: filter var(--transition-fast), width var(--transition-normal);
+  min-width: 0;
+}
+
+.partner-detail-page__bar-row__value {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1A1A2E;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+  min-width: 80px;
+}
+
+.partner-detail-page__chart-empty {
+  font-size: 13px;
+  color: #4A4A5A;
+  padding: 6px 0;
+}
+
+/* 4-cell stat strip for the Opportunities section */
+.partner-detail-page__stat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  background: #FFFFFF;
+  border: 1px solid #DDDDEE;
+  border-radius: 0;
+  box-shadow: none;
+  margin-bottom: 18px;
+}
+
+.partner-detail-page__stat-cell {
+  padding: 12px 24px;
+  border-right: 1px solid #F0F0F6;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+}
+
+.partner-detail-page__stat-cell:last-child {
+  border-right: 0;
+}
+
+.partner-detail-page__stat-label {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: #0000CC;
+  line-height: 1.2;
+}
+
+.partner-detail-page__stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1A1A2E;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+/* Eyebrow section header — uppercase blue label + count chip + CTA on the right */
+.partner-detail-page__section {
+  margin-bottom: 28px;
+}
+
+.partner-detail-page__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid #DDDDEE;
+}
+
+.partner-detail-page__section-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #0000CC;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.partner-detail-page__section-count {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #4A4A5A;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.partner-detail-page__section-subtitle {
+  font-size: 11px;
+  font-weight: 500;
+  color: #4A4A5A;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.partner-detail-page__section-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Filled-blue uppercase sharp CTA — matches the topbar __cta from PR #107 */
+.partner-detail-page__section-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 14px;
+  background: #0000CC;
+  color: #FFFFFF;
+  border: 0;
+  border-radius: 0;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.partner-detail-page__section-cta:hover {
+  background: #0000A8;
+}
+
+.partner-detail-page__section-cta svg {
+  flex-shrink: 0;
+}
+
+.partner-detail-page__section-cta--secondary {
+  background: #FFFFFF;
+  color: #0000CC;
+  border: 1px solid #0000CC;
+  height: 30px;
+}
+
+.partner-detail-page__section-cta--secondary:hover {
+  background: #F6F8FF;
+  color: #0000CC;
+}
+
+@media (max-width: 1024px) {
+  .partner-detail-page__hero {
+    grid-template-columns: 1fr;
+  }
+  .partner-detail-page__hero-strip {
+    flex-wrap: wrap;
+  }
+  .partner-detail-page__hero-stats {
+    flex: 1 1 100%;
+    border-top: 1px solid #DDDDEE;
+  }
+  .partner-detail-page__hero-cell:first-child {
+    border-left: 0;
+  }
+  .partner-detail-page__stat-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .partner-detail-page__stat-cell:nth-child(2) {
+    border-right: 0;
+  }
+  .partner-detail-page__stat-cell:nth-child(-n+2) {
+    border-bottom: 1px solid #F0F0F6;
+  }
+}
+
+@media (max-width: 560px) {
+  .partner-detail-page__hero-stats {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .partner-detail-page__hero-cell {
+    border-left: 0;
+    border-top: 1px solid #DDDDEE;
+  }
+  .partner-detail-page__stat-strip {
+    grid-template-columns: 1fr;
+  }
+  .partner-detail-page__stat-cell {
+    border-right: 0;
+    border-bottom: 1px solid #F0F0F6;
+  }
+  .partner-detail-page__stat-cell:last-child {
+    border-bottom: 0;
+  }
+  .partner-detail-page__bar-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .partner-detail-page__bar-row__label,
+  .partner-detail-page__bar-row__value {
+    text-align: left;
+  }
+}
