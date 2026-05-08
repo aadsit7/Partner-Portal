@@ -6486,3 +6486,492 @@
 .comp-table__goal-marker {
   margin-right: var(--space-1);
 }
+
+/* ============================================
+   Recast page header — eyebrow title + meta
+   ============================================
+   Used by views that opt in via setTopbar({ title, meta, chips, actions }).
+   Plain setTopbarTitle('X') still renders as before. */
+
+.topbar__title--rich {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  letter-spacing: normal;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.topbar__title-zone {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  min-width: 0;
+}
+
+.topbar__eyebrow {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #0000CC;
+  white-space: nowrap;
+}
+
+.topbar__meta {
+  font-size: 12px;
+  font-weight: 500;
+  color: #4A4A5A;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar__chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.topbar__chips::-webkit-scrollbar {
+  display: none;
+}
+
+/* Topbar-scoped restyle of the type-filter chip buttons.
+   Keeps the global .btn / .btn--primary visuals untouched. */
+.topbar__chips .type-filter-bar {
+  display: inline-flex;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  margin: 0;
+  gap: 6px;
+}
+
+.topbar__chips .type-filter-bar .btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  flex-direction: row;
+  gap: 6px;
+  line-height: 1;
+  background: #FFFFFF;
+  color: #4A4A5A;
+  border: 1px solid #DDDDEE;
+  box-shadow: none;
+}
+
+.topbar__chips .type-filter-bar .btn:hover {
+  border-color: #0000CC;
+  color: #0000CC;
+}
+
+.topbar__chips .type-filter-bar .btn--primary {
+  background: #0000CC;
+  color: #FFFFFF;
+  border-color: #0000CC;
+}
+
+.topbar__chips .type-filter-bar .btn--primary:hover {
+  background: #0000A8;
+  border-color: #0000A8;
+  color: #FFFFFF;
+}
+
+.topbar__chips .type-filter-bar .type-filter-pipeline {
+  font-size: 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+.topbar__chips .type-filter-bar .btn--primary .type-filter-pipeline {
+  color: #AABBEE;
+}
+
+/* Filled blue primary CTA pinned to the right of the topbar (per brief
+   "+ New Event" sample). Scoped so other pages keep their existing
+   button chrome. */
+.topbar__actions .topbar__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  background: #0000CC;
+  color: #FFFFFF;
+  border: 0;
+  border-radius: 0;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  white-space: nowrap;
+}
+
+.topbar__actions .topbar__cta:hover {
+  background: #0000A8;
+}
+
+.topbar__actions .topbar__cta svg {
+  flex-shrink: 0;
+}
+
+/* ============================================
+   Recast Events page — stat strip, filter row, table chrome
+   ============================================
+   All scoped under .events-page so other views keep their current look. */
+
+.events-page__stat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  background: #FFFFFF;
+  border: 1px solid #DDDDEE;
+  border-radius: 0;
+  margin-bottom: 20px;
+}
+
+.events-page__stat-cell {
+  padding: 12px 24px;
+  border-right: 1px solid #F0F0F6;
+  cursor: default;
+  transition: background var(--transition-fast);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+}
+
+.events-page__stat-cell:last-child {
+  border-right: 0;
+}
+
+.events-page__stat-cell--clickable {
+  cursor: pointer;
+}
+
+.events-page__stat-cell--clickable:hover {
+  background: #FAFAFE;
+}
+
+.events-page__stat-cell--active {
+  background: #F6F8FF;
+  box-shadow: inset 0 2px 0 0 #00BFFF;
+}
+
+.events-page__stat-cell--active .events-page__stat-value {
+  color: #0000CC;
+}
+
+.events-page__stat-label {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: #0000CC;
+  line-height: 1.2;
+}
+
+.events-page__stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1A1A2E;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+/* Filter row above the table — sharp chrome, no leading magnifier */
+.events-page__filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.events-page__filter-row .events-page__search {
+  flex: 1;
+  min-width: 200px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #DDDDEE;
+  border-radius: 0;
+  background: #FFFFFF;
+  font-size: 13px;
+  font-family: inherit;
+  color: #1A1A2E;
+}
+
+.events-page__filter-row .events-page__search::placeholder {
+  color: #AABBEE;
+}
+
+.events-page__filter-row .events-page__search:focus {
+  outline: 2px solid rgba(0, 191, 255, 0.25);
+  outline-offset: 0;
+  border-color: #00BFFF;
+}
+
+.events-page__filter-row .events-page__select {
+  height: 32px;
+  min-width: 150px;
+  padding: 0 28px 0 12px;
+  border: 1px solid #DDDDEE;
+  border-radius: 0;
+  background: #FFFFFF;
+  font-size: 13px;
+  font-family: inherit;
+  color: #1A1A2E;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'><path d='M3 4.5l3 3 3-3' stroke='%230000CC' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.events-page__filter-row .events-page__select:focus {
+  outline: 2px solid rgba(0, 191, 255, 0.25);
+  outline-offset: 0;
+  border-color: #00BFFF;
+}
+
+/* 3-segment view toggle: Board | Calendar | List */
+.events-page__view-toggle {
+  display: inline-flex;
+  margin: 0;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid #DDDDEE;
+  border-radius: 0;
+  background: #FFFFFF;
+  height: 32px;
+  overflow: hidden;
+}
+
+.events-page__view-toggle .events-page__view-btn {
+  height: 100%;
+  padding: 0 14px;
+  border: 0;
+  border-right: 1px solid #DDDDEE;
+  background: #FFFFFF;
+  color: #4A4A5A;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.events-page__view-toggle .events-page__view-btn:last-child {
+  border-right: 0;
+}
+
+.events-page__view-toggle .events-page__view-btn:hover {
+  background: #FAFAFE;
+  color: #0000CC;
+}
+
+.events-page__view-toggle .events-page__view-btn--active,
+.events-page__view-toggle .events-page__view-btn--active:hover {
+  background: #0000CC;
+  color: #FFFFFF;
+}
+
+/* Events table — Recast chrome */
+.events-page__table-wrapper {
+  background: #FFFFFF;
+  border: 1px solid #DDDDEE;
+  border-radius: 0;
+  overflow: hidden;
+  box-shadow: none;
+}
+
+.events-page__table {
+  width: 100%;
+  text-align: left;
+  border-collapse: collapse;
+}
+
+.events-page__table thead th {
+  padding: 10px 16px;
+  background: #F0F0F6;
+  color: #0000CC;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  border: 0;
+  white-space: nowrap;
+}
+
+.events-page__table tbody td {
+  padding: 14px 16px;
+  font-size: 13px;
+  color: #1A1A2E;
+  border-bottom: 1px solid #F0F0F6;
+  vertical-align: middle;
+}
+
+.events-page__table tbody tr:hover td {
+  background: #FAFAFE;
+}
+
+.events-page__table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.events-page__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0000CC;
+  line-height: 1.3;
+}
+
+.events-page__row-subtitle {
+  font-size: 11px;
+  color: #4A4A5A;
+  margin-top: 2px;
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.events-page__date {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Sharp-cornered tag chip used for Type and Partner columns */
+.events-page__tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  background: #F0F0F6;
+  color: #0000CC;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-radius: 0;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.events-page__tag--muted {
+  background: transparent;
+  color: #4A4A5A;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 0;
+  font-size: 11px;
+}
+
+/* Status pill — rounded with leading semantic dot (per brief) */
+.events-page__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.events-page__status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.events-page__status--upcoming {
+  background: #EEF1FB;
+  color: #0000CC;
+}
+
+.events-page__status--in-progress {
+  background: #E6F8FF;
+  color: #0066A3;
+}
+
+.events-page__status--completed {
+  background: #E8F5EE;
+  color: #0F7A3F;
+}
+
+.events-page__status--cancelled {
+  background: #FBE9E9;
+  color: #CC2222;
+}
+
+/* Action links in the events table — pure text links, underline on hover */
+.events-page__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.events-page__action-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #0000CC;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.events-page__action-link:hover {
+  text-decoration: underline;
+}
+
+.events-page__action-link--danger {
+  color: #CC2222;
+}
+
+.events-page__table tbody td.events-page__td--actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+@media (max-width: 720px) {
+  .events-page__stat-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .events-page__stat-cell:nth-child(2) {
+    border-right: 0;
+  }
+  .events-page__stat-cell:nth-child(-n+2) {
+    border-bottom: 1px solid #F0F0F6;
+  }
+  .events-page__view-toggle {
+    margin-left: 0;
+  }
+}
