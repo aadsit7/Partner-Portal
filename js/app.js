@@ -2,7 +2,7 @@
 // Partner Portal — App Entry Point
 // ============================================
 
-import { getCurrentUser, storeAccessToken } from './auth.js';
+import { getCurrentUser, getAccessToken, storeAccessToken } from './auth.js';
 import { addRoute, initRouter, navigate } from './router.js';
 import { renderSidebar, setupMobileSidebar } from './components/sidebar.js';
 
@@ -254,23 +254,31 @@ document.addEventListener('DOMContentLoaded', () => {
   initRouter();
 
   // For returning admin sessions (already in localStorage), re-initialize
-  // the OAuth token client and refresh the access token silently so the admin
-  // never has to sign in again or visit Setup to resync.
+  // the OAuth token client. Skip the silent refresh on load if the stored
+  // access token is still valid — otherwise Google's chooser popup can
+  // appear on every page refresh, even though the session is fine.
   const user = getCurrentUser();
   if (user?.is_admin) {
     loginView.initTokenClient();
 
-    // Give the Google GSI library ~2 s to load, then do a silent token refresh.
-    setTimeout(async () => {
-      try {
-        const newToken = await loginView.refreshAccessToken();
-        if (newToken) {
-          storeAccessToken(newToken);
-        }
-      } catch (err) {
-        console.warn('Initial silent token refresh failed:', err);
-      }
+    if (getAccessToken()) {
+      // Existing token still valid (>5 min buffer). Reuse it as-is and
+      // let scheduleTokenRefresh handle renewal near expiry.
       scheduleTokenRefresh();
-    }, 2000);
+    } else {
+      // Token missing/expired — give the Google GSI library ~2 s to load,
+      // then attempt a silent refresh (prompt: 'none' inside refreshAccessToken).
+      setTimeout(async () => {
+        try {
+          const newToken = await loginView.refreshAccessToken();
+          if (newToken) {
+            storeAccessToken(newToken);
+          }
+        } catch (err) {
+          console.warn('Initial silent token refresh failed:', err);
+        }
+        scheduleTokenRefresh();
+      }, 2000);
+    }
   }
 });

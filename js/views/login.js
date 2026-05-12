@@ -415,6 +415,11 @@ function requestSheetsAccessToken() {
 
 /**
  * Refresh the access token silently (exported for use by sheets.js on 401).
+ * Uses prompt: 'none' so Google never shows the account chooser here — if
+ * interaction would be required, the call fails and we resolve null. The
+ * caller (page-load init, scheduled refresh, or sheets.js 401 retry) treats
+ * null as "stay logged in but operate without a fresh token" rather than
+ * popping a chooser on the user.
  */
 export function refreshAccessToken() {
   return new Promise((resolve) => {
@@ -430,7 +435,11 @@ export function refreshAccessToken() {
         resolve(null);
       }
     };
-    tokenClient.requestAccessToken({ prompt: '' });
+    try {
+      tokenClient.requestAccessToken({ prompt: 'none' });
+    } catch {
+      resolve(null);
+    }
   });
 }
 
