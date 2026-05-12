@@ -72,7 +72,7 @@ The full database contents are included in each message under DATA CONTEXT. Use 
 DATABASE SCHEMA & FIELD NOTES:
 
 PARTNERS — Master list of partner organizations
-- partner_id (PK), display_name, partner_type, tier, region, status (active/inactive), hq_location
+- partner_id (PK), display_name, partner_type, tier, region, status (engaged/active/inactive — engaged partners cannot log in), hq_location
 - password_hash → NEVER SURFACE THIS FIELD
 - Default: only show active partners unless asked
 

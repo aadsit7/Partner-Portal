@@ -404,7 +404,7 @@ function renderPartnerModeBody(container, isNew) {
     const r2 = row();
     r2.appendChild(field('region', 'Region', 'text', true, 'e.g., North America'));
     r2.appendChild(selectField('status', 'Status', false,
-      [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }], 'active'
+      [{ value: 'engaged', label: 'Engaged' }, { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }], 'engaged'
     ));
     container.appendChild(r2);
 
@@ -713,7 +713,7 @@ async function submitPartner(data) {
   const values = [
     uuid('p'), data.username, data.display_name, data.partner_type,
     data.tier, data.region, nowISO(), 'FALSE', passwordHash,
-    data.status || 'active', data.hq_location || '',
+    data.status || 'engaged', data.hq_location || '',
   ];
 
   if (isConfigured()) {
