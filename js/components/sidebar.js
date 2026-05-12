@@ -16,9 +16,9 @@ const PARTNER_NAV = [
 const ADMIN_NAV = [
   { path: '/admin/dashboard', label: 'Dashboard', icon: 'dashboard' },
   { path: '/admin/opportunities', label: 'Opportunities', icon: 'opportunities' },
-  { path: '/admin/leadcheck', label: 'Accounts', icon: 'leadcheck' },
   { path: '/admin/partners', label: 'Partners', icon: 'partners' },
   { path: '/admin/events', label: 'Events / JLG', icon: 'events' },
+  { path: '/admin/leadcheck', label: 'Accounts', icon: 'leadcheck' },
   { label: 'Pricing', icon: 'pricing', externalUrl: 'https://aadsit7.github.io/Partner-Calculator/' },
   { path: '/admin/comp', label: 'Comp', icon: 'comp' },
   { path: '/admin/setup', label: 'Setup', icon: 'setup' },
@@ -77,13 +77,7 @@ export function renderSidebar() {
             href: item.externalUrl,
             target: '_blank',
             rel: 'noopener noreferrer',
-            onClick: (e) => {
-              e.preventDefault();
-              window.open(
-                item.externalUrl,
-                'pricingPopup',
-                'popup=yes,width=1200,height=800,noopener,noreferrer'
-              );
+            onClick: () => {
               closeMobileSidebar();
             }
           },
