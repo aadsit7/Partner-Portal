@@ -370,8 +370,8 @@ function openPartnerModal(partner) {
     { name: 'region', label: 'Region', required: true, placeholder: 'e.g., North America' },
     {
       name: 'status', label: 'Status', type: 'select',
-      default: 'active',
-      options: ['active', 'inactive'],
+      default: 'engaged',
+      options: ['engaged', 'active', 'inactive'],
     },
     { type: 'row-end' },
     { name: 'hq_location', label: 'HQ Location', placeholder: 'e.g., Chicago, Illinois, USA' },
@@ -423,7 +423,7 @@ function openPartnerModal(partner) {
           nowISO(),
           'FALSE',
           passwordHash,
-          data.status || 'active',
+          data.status || 'engaged',
           data.hq_location || '',
         ];
 
