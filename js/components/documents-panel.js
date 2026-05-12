@@ -91,7 +91,17 @@ export function buildDocumentsPanel({
   const countBadge = el('span', { class: 'descriptions-panel__count' }, '0');
   let isLoading = !!loading;
 
+  // Sort files by date_added descending so newest appears first.
+  function sortFilesByDateDesc() {
+    files.sort((a, b) => {
+      const at = Date.parse(a.date_added || '') || 0;
+      const bt = Date.parse(b.date_added || '') || 0;
+      return bt - at;
+    });
+  }
+
   function rebuildList() {
+    sortFilesByDateDesc();
     list.innerHTML = '';
     countBadge.textContent = isLoading ? '…' : String(files.length);
 

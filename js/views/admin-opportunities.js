@@ -1404,6 +1404,13 @@ function buildDetailsDocumentsSection(files) {
     return list;
   }
 
+  // Sort by date_added descending so the most recent document is at the top.
+  files.sort((a, b) => {
+    const at = Date.parse(a.date_added || '') || 0;
+    const bt = Date.parse(b.date_added || '') || 0;
+    return bt - at;
+  });
+
   files.forEach(file => {
     const ext = fileExtensionOf(file.file_name);
     const kind = fileKindLabel(ext);
