@@ -480,7 +480,6 @@ function renderView(container, opportunities, filterBar) {
     el('div', { class: 'filter-section' },
       el('div', { class: 'filter-bar filter-bar--wrap' },
         el('div', { class: 'filter-bar__search' },
-          el('span', { class: 'search-bar__icon', html: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M12.5 12.5L16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' }),
           searchInput
         ),
         partnerSelect,
