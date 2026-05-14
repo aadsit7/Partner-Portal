@@ -121,7 +121,7 @@ function openNewDealModal(user, container) {
     {
       name: 'stage', label: 'Stage', type: 'select', required: true,
       placeholder: 'Select stage...',
-      options: ['Prospect', 'Qualified', 'Proposal', 'Negotiation'],
+      options: ['Prospect', 'Qualified', 'Develop', 'Proposal', 'Negotiation'],
     },
     {
       name: 'status', label: 'Status', type: 'select',

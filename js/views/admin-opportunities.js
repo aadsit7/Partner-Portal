@@ -79,7 +79,7 @@ export function addFileToActiveDocsPanel(opportunityId, file) {
   }
 }
 
-const OPP_STAGES = ['Prospect', 'Qualified', 'Proposal', 'Negotiation', 'Closed'];
+const OPP_STAGES = ['Prospect', 'Qualified', 'Develop', 'Proposal', 'Negotiation', 'Closed'];
 const OPP_STATUSES = ['Registered', 'In Progress', 'Won', 'Lost'];
 
 let allBasePartners = null;
