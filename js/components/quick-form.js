@@ -17,7 +17,7 @@ import { sha256 } from '../utils/hash.js';
 import { TIER_OPTIONS } from '../utils/tiers.js';
 import { initQuillEditor } from './quill-editor.js';
 
-const OPP_STAGES    = ['Prospect', 'Qualified', 'Proposal', 'Negotiation', 'Closed'];
+const OPP_STAGES    = ['Prospect', 'Qualified', 'Develop', 'Proposal', 'Negotiation', 'Closed'];
 const OPP_STATUSES  = ['Registered', 'In Progress', 'Won', 'Lost'];
 const PARTNER_TYPES = ['Technology', 'MSP/SI', 'OEM', 'MENA Regional Distributor'];
 const EVENT_TYPES   = ['Webinar', 'Workshop', 'Conference', 'Campaign', 'Other'];

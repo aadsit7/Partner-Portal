@@ -69,7 +69,7 @@ function savePlan(plan) {
 let cachedOpps = null;
 let cachedPartners = null;
 
-const STAGE_ORDER = ['Prospect', 'Qualified', 'Proposal', 'Negotiation', 'Closed'];
+const STAGE_ORDER = ['Prospect', 'Qualified', 'Develop', 'Proposal', 'Negotiation', 'Closed'];
 
 const STAGE_WIN_PROBABILITY = {
   'Prospect': 0.10,
