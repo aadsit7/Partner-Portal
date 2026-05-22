@@ -87,8 +87,10 @@ export async function loginWithGoogle(credentialResponse, accessToken = null) {
     google_picture: payload.picture || null,
     tier: 'Admin',
     status: 'active',
-    access_token: accessToken || null,
-    access_token_expires: accessToken ? Date.now() + 3600 * 1000 : null,
+    access_token: accessToken?.token || accessToken || null,
+    access_token_expires: accessToken
+      ? Date.now() + ((Number(accessToken?.expiresIn) > 0 ? Number(accessToken.expiresIn) : 3600) * 1000)
+      : null,
   };
 
   localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(session));
@@ -183,12 +185,16 @@ export function getAccessToken() {
 
 /**
  * Update the stored access token (e.g., after a silent refresh).
+ * Accepts optional expiresInSec from Google's tokenResponse so the
+ * stored expiry matches what Google actually issued, not a hard-coded
+ * assumption. Falls back to 3600 s (Google's default) when omitted.
  */
-export function storeAccessToken(token) {
+export function storeAccessToken(token, expiresInSec) {
   const user = getCurrentUser();
   if (!user) return;
+  const lifetimeMs = (Number(expiresInSec) > 0 ? Number(expiresInSec) : 3600) * 1000;
   user.access_token = token;
-  user.access_token_expires = Date.now() + 3600 * 1000;
+  user.access_token_expires = Date.now() + lifetimeMs;
   localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(user));
 }
 
