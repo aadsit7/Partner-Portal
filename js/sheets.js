@@ -3,7 +3,7 @@
 // ============================================
 
 import { CONFIG, getRuntimeConfig } from './config.js';
-import { getAccessToken } from './auth.js';
+import { getAccessToken, getCurrentUser } from './auth.js';
 
 /**
  * Get the effective Spreadsheet ID (runtime override or hardcoded).
@@ -136,10 +136,8 @@ export async function readSheet(sheetName) {
       // Try a silent token refresh then retry the request once before giving up.
       try {
         const { refreshAccessToken } = await import('./views/login.js');
-        const { storeAccessToken } = await import('./auth.js');
         const newToken = await refreshAccessToken();
         if (newToken) {
-          storeAccessToken(newToken);
           const retryRes = await fetch(url, { headers: { 'Authorization': `Bearer ${newToken}` } });
           if (retryRes.ok) {
             const retryData = await retryRes.json();
@@ -147,6 +145,15 @@ export async function readSheet(sheetName) {
           }
         }
       } catch {}
+      // For logged-in admins, swallowing this into demo data masks the
+      // real issue and makes the app appear "logged out." Keep the
+      // session intact and surface the auth error so the caller can
+      // show a clear message. Demo fallback only when truly unauth'd.
+      if (getCurrentUser()?.is_admin) {
+        const err = await res.clone().json().catch(() => ({}));
+        throw new Error(err.error?.message
+          || `Sheets API auth failed (${res.status}). Please refresh the page or sign in again.`);
+      }
       console.warn(`Sheets API auth failed (${res.status}), using demo data for ${sheetName}`);
       return getDemoData(sheetName);
     }

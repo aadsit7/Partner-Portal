@@ -371,6 +371,8 @@ async function handleGoogleCredential(response) {
 /**
  * Request an OAuth access token for Google Sheets write access.
  * Tries silent prompt first; falls back to consent dialog on first use.
+ * Returns { token, expiresIn } so callers can store the real lifetime
+ * Google issued (instead of assuming 1 hour).
  */
 function requestSheetsAccessToken() {
   return new Promise((resolve) => {
@@ -391,7 +393,9 @@ function requestSheetsAccessToken() {
             resolve(null);
             return;
           }
-          resolve(retryResponse.access_token || null);
+          resolve(retryResponse.access_token
+            ? { token: retryResponse.access_token, expiresIn: retryResponse.expires_in }
+            : null);
         };
         try {
           tokenClient.requestAccessToken({ prompt: 'consent' });
@@ -400,7 +404,9 @@ function requestSheetsAccessToken() {
         }
         return;
       }
-      resolve(tokenResponse.access_token || null);
+      resolve(tokenResponse.access_token
+        ? { token: tokenResponse.access_token, expiresIn: tokenResponse.expires_in }
+        : null);
     };
 
     // Try silent first (works if user previously granted consent)
@@ -414,22 +420,51 @@ function requestSheetsAccessToken() {
 }
 
 /**
+ * Wait briefly for the OAuth tokenClient to initialize. Returns true if
+ * the client is ready within the timeout, false otherwise. Used by
+ * refreshAccessToken so a refresh triggered immediately after page load
+ * isn't lost just because the GIS library hasn't finished loading yet.
+ */
+function waitForTokenClient(timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    if (tokenClient) { resolve(true); return; }
+    initTokenClient();
+    const start = Date.now();
+    const check = setInterval(() => {
+      if (tokenClient) {
+        clearInterval(check);
+        resolve(true);
+      } else if (Date.now() - start > timeoutMs) {
+        clearInterval(check);
+        resolve(false);
+      }
+    }, 100);
+  });
+}
+
+/**
  * Refresh the access token silently (exported for use by sheets.js on 401).
  * Uses prompt: 'none' so Google never shows the account chooser here — if
  * interaction would be required, the call fails and we resolve null. The
  * caller (page-load init, scheduled refresh, or sheets.js 401 retry) treats
  * null as "stay logged in but operate without a fresh token" rather than
  * popping a chooser on the user.
+ *
+ * Stores the new token (with Google's actual expires_in) before resolving,
+ * so callers don't have to.
  */
-export function refreshAccessToken() {
+export async function refreshAccessToken() {
+  const ready = await waitForTokenClient();
+  if (!ready) return null;
+
   return new Promise((resolve) => {
-    if (!tokenClient) {
-      resolve(null);
-      return;
-    }
+    // Hard timeout so a stuck callback can't leave the scheduler hanging
+    const timeout = setTimeout(() => resolve(null), 10000);
+
     tokenClient.callback = (tokenResponse) => {
-      if (tokenResponse.access_token) {
-        storeAccessToken(tokenResponse.access_token);
+      clearTimeout(timeout);
+      if (tokenResponse?.access_token) {
+        storeAccessToken(tokenResponse.access_token, tokenResponse.expires_in);
         resolve(tokenResponse.access_token);
       } else {
         resolve(null);
@@ -438,6 +473,7 @@ export function refreshAccessToken() {
     try {
       tokenClient.requestAccessToken({ prompt: 'none' });
     } catch {
+      clearTimeout(timeout);
       resolve(null);
     }
   });
