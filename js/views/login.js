@@ -214,7 +214,10 @@ function initGoogleSSO() {
       google.accounts.id.initialize({
         client_id: clientId,
         callback: handleGoogleCredential,
-        auto_select: true,
+        auto_select: true,           // sign returning users back in with no click
+        itp_support: true,           // keep One Tap working on Safari / iOS (ITP)
+        use_fedcm_for_prompt: true,  // browser-native One Tap (required on Chrome)
+        cancel_on_tap_outside: false,
       });
 
       // Render Google's official "Sign in with Google" button directly into
@@ -247,6 +250,14 @@ function initGoogleSSO() {
           callback: () => {}, // Overwritten at call time
         });
       }
+
+      // Automatic sign-in for returning users. With auto_select, a device
+      // already signed in to this Google account is signed back in with no
+      // clicks — so after the first sign-in on a device you stay signed in,
+      // and even if the browser later clears the saved session (iOS does this
+      // periodically), the next visit silently restores it. The rendered
+      // button above stays as the manual fallback.
+      google.accounts.id.prompt();
     }
   }, 100);
 
