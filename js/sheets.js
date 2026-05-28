@@ -3,7 +3,7 @@
 // ============================================
 
 import { CONFIG, getRuntimeConfig } from './config.js';
-import { getAccessToken } from './auth.js';
+import { getAccessToken, getCurrentUser } from './auth.js';
 
 /**
  * Get the effective Spreadsheet ID (runtime override or hardcoded).
@@ -133,14 +133,29 @@ export async function readSheet(sheetName) {
 
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {
-      // Login/SSO was removed, so there's no OAuth token to refresh. Public
-      // reads go through the API key and normally succeed; a 401/403 here
-      // means this sheet isn't publicly readable or the request needs a
-      // signed-in account (e.g. a write). Surface a clear error rather than
-      // silently masking it as demo data.
-      const err = await res.clone().json().catch(() => ({}));
-      throw new Error(err.error?.message
-        || `Sheets API access failed (${res.status}). Saving changes requires Google sign-in, which is disabled in this build.`);
+      // Try a silent token refresh then retry the request once before giving up.
+      try {
+        const { refreshAccessToken } = await import('./views/login.js');
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          const retryRes = await fetch(url, { headers: { 'Authorization': `Bearer ${newToken}` } });
+          if (retryRes.ok) {
+            const retryData = await retryRes.json();
+            return retryData.values || [];
+          }
+        }
+      } catch {}
+      // For logged-in admins, swallowing this into demo data masks the
+      // real issue and makes the app appear "logged out." Keep the
+      // session intact and surface the auth error so the caller can
+      // show a clear message. Demo fallback only when truly unauth'd.
+      if (getCurrentUser()?.is_admin) {
+        const err = await res.clone().json().catch(() => ({}));
+        throw new Error(err.error?.message
+          || `Sheets API auth failed (${res.status}). Please refresh the page or sign in again.`);
+      }
+      console.warn(`Sheets API auth failed (${res.status}), using demo data for ${sheetName}`);
+      return getDemoData(sheetName);
     }
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error?.message || `Failed to read ${sheetName}`);
