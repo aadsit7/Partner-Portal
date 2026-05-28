@@ -2,6 +2,8 @@
 // Hash-Based SPA Router (with query param support)
 // ============================================
 
+import { getCurrentUser } from './auth.js';
+
 const routes = [];
 let currentCleanup = null;
 
@@ -25,7 +27,7 @@ export function navigate(path) {
  * Get the current hash path (without query params).
  */
 export function getCurrentPath() {
-  const full = window.location.hash.slice(1) || '/admin/dashboard';
+  const full = window.location.hash.slice(1) || '/login';
   return full.split('?')[0];
 }
 
@@ -58,10 +60,28 @@ function onRouteError(err) {
 async function handleRoute() {
   const path = getCurrentPath();
   const params = getQueryParams();
+  const user = getCurrentUser();
 
-  // Login was removed — the portal runs as admin with no sign-in. Send the
-  // old login path and any partner routes to the admin dashboard.
-  if (path === '/login' || path.startsWith('/partner')) {
+  // Auth guard: redirect to login if no session
+  if (path !== '/login' && !user) {
+    navigate('/login');
+    return;
+  }
+
+  // Already logged in, redirect away from login
+  if (path === '/login' && user) {
+    navigate(user.is_admin ? '/admin/dashboard' : '/partner/opportunities');
+    return;
+  }
+
+  // Role guard: prevent partner from accessing admin routes
+  if (path.startsWith('/admin') && user && !user.is_admin) {
+    navigate('/partner/opportunities');
+    return;
+  }
+
+  // Prevent admin from accessing partner routes
+  if (path.startsWith('/partner') && user && user.is_admin) {
     navigate('/admin/dashboard');
     return;
   }
@@ -70,7 +90,12 @@ async function handleRoute() {
   const route = routes.find(r => r.path === path);
 
   if (!route) {
-    navigate('/admin/dashboard');
+    // Default fallback
+    if (user) {
+      navigate(user.is_admin ? '/admin/dashboard' : '/partner/opportunities');
+    } else {
+      navigate('/login');
+    }
     return;
   }
 
