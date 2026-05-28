@@ -27,7 +27,6 @@
   <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <!-- jsPDF + autotable — eager loaded, jsPDF first so autotable can
        attach itself to jsPDF.API during script execution. NOT deferred:
        keeping these synchronous at parse time makes the libraries
@@ -46,7 +45,7 @@
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
-  <div id="app" class="app-shell--login">
+  <div id="app" class="app-shell--app">
     <!-- Sidebar (hidden on login, shown after auth) -->
     <aside id="sidebar" class="sidebar" aria-label="Navigation"></aside>
 
