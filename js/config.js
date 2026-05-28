@@ -51,13 +51,8 @@ export const CONFIG = {
   // Google OAuth (for Admin SSO login)
   GOOGLE_CLIENT_ID: '206815760499-ip5cgia4j8fk9nb5qq83fdv3cfd95lvp.apps.googleusercontent.com',
 
-  // OAuth scopes requested when an admin signs in with Google.
-  // - userinfo.email / userinfo.profile let us read the signed-in admin's
-  //   email (to authorize against ADMIN_EMAILS) and name/picture from the
-  //   userinfo endpoint, without a separate ID-token flow.
-  // - spreadsheets grants Sheets read/write.
-  // All are granted together in a single consent screen.
-  OAUTH_SCOPES: 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/spreadsheets',
+  // OAuth scope for Google Sheets read/write access
+  OAUTH_SCOPES: 'https://www.googleapis.com/auth/spreadsheets',
 
   // Allowed admin email(s) — only these Google accounts can log in as admin
   ADMIN_EMAILS: ['aadsit7@gmail.com', 'adsitvideo@gmail.com'],
