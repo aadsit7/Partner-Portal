@@ -52,20 +52,19 @@ export async function login(username, password) {
 
 /**
  * Handle Google SSO login for admin.
- * Called after Google Identity Services returns a credential.
- * @param {Object} credentialResponse - from Google
+ * Called after the OAuth token flow returns an access token and we've read
+ * the signed-in user's profile from Google's userinfo endpoint.
+ * @param {Object} profile - { email, name, picture } from Google userinfo
+ * @param {Object|string|null} accessToken - { token, expiresIn } or a raw token string
  * @returns {Object} user session
  * @throws on failure
  */
-export async function loginWithGoogle(credentialResponse, accessToken = null) {
-  // Decode the JWT to get user info
-  const payload = decodeJwt(credentialResponse.credential);
-
-  if (!payload || !payload.email) {
+export async function loginWithGoogle(profile, accessToken = null) {
+  if (!profile || !profile.email) {
     throw new Error('Failed to read Google account info');
   }
 
-  const email = payload.email.toLowerCase();
+  const email = profile.email.toLowerCase();
 
   // Check if this email is in the allowed admin list
   const allowedEmails = CONFIG.ADMIN_EMAILS.map(e => e.toLowerCase());
@@ -74,17 +73,17 @@ export async function loginWithGoogle(credentialResponse, accessToken = null) {
   const isDemoMode = !isConfigured();
 
   if (!isDemoMode && !allowedEmails.includes(email)) {
-    throw new Error(`${payload.email} is not authorized as an admin. Contact your administrator.`);
+    throw new Error(`${profile.email} is not authorized as an admin. Contact your administrator.`);
   }
 
   // Build admin session
   const session = {
     partner_id: 'p_admin001',
     username: 'admin',
-    display_name: payload.name || 'Admin',
+    display_name: profile.name || 'Admin',
     partner_type: '',
     is_admin: true,
-    google_picture: payload.picture || null,
+    google_picture: profile.picture || null,
     tier: 'Admin',
     status: 'active',
     access_token: accessToken?.token || accessToken || null,
@@ -95,25 +94,6 @@ export async function loginWithGoogle(credentialResponse, accessToken = null) {
 
   localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(session));
   return session;
-}
-
-/**
- * Decode a JWT token without verification (client-side only).
- * The token is already verified by Google's library.
- */
-function decodeJwt(token) {
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      atob(base64).split('').map(c =>
-        '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
-      ).join('')
-    );
-    return JSON.parse(jsonPayload);
-  } catch {
-    return null;
-  }
 }
 
 /**

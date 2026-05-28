@@ -192,6 +192,20 @@ export async function render(container) {
 
 /**
  * Initialize Google Identity Services for the SSO button.
+ *
+ * We use the OAuth 2.0 *token* flow (google.accounts.oauth2) rather than the
+ * ID-token "render a Google button" flow. The token flow is the pattern
+ * Google documents for a custom-styled button: sign-in is started by calling
+ * requestAccessToken() directly inside the button's own click handler (see
+ * handleGoogleSSO), which keeps Google's sign-in popup tied to a genuine user
+ * gesture.
+ *
+ * That distinction is what fixes mobile. Every iPhone browser — Chrome
+ * included — runs on WebKit, which blocks auth popups that aren't opened
+ * straight from a real tap. The old approach programmatically clicked a
+ * hidden, pre-rendered Google button on the user's behalf; on iOS that lost
+ * the user gesture and the popup was silently blocked, so admins could never
+ * sign in. Triggering the token flow from the tap itself avoids that.
  */
 function initGoogleSSO() {
   const clientId = CONFIG.GOOGLE_CLIENT_ID;
@@ -202,42 +216,8 @@ function initGoogleSSO() {
     return;
   }
 
-  // Wait for the Google library to load
-  const checkGoogle = setInterval(() => {
-    if (window.google?.accounts?.id) {
-      clearInterval(checkGoogle);
-
-      google.accounts.id.initialize({
-        client_id: clientId,
-        callback: handleGoogleCredential,
-        auto_select: true,
-      });
-
-      // Render the official Google button as a hidden element,
-      // and wire our custom button to trigger it
-      const hiddenDiv = document.createElement('div');
-      hiddenDiv.id = 'g_id_signin';
-      hiddenDiv.style.display = 'none';
-      document.body.appendChild(hiddenDiv);
-
-      google.accounts.id.renderButton(hiddenDiv, {
-        type: 'standard',
-        size: 'large',
-      });
-
-      // Also initialize the OAuth token client for Sheets API write access
-      if (window.google?.accounts?.oauth2) {
-        tokenClient = google.accounts.oauth2.initTokenClient({
-          client_id: clientId,
-          scope: CONFIG.OAUTH_SCOPES,
-          callback: () => {}, // Overwritten at call time
-        });
-      }
-    }
-  }, 100);
-
-  // Stop checking after 5 seconds
-  setTimeout(() => clearInterval(checkGoogle), 5000);
+  // Set up the OAuth token client (waits for the GIS library to load).
+  initTokenClient();
 }
 
 /**
@@ -313,110 +293,103 @@ async function handleAdminFallbackLogin() {
 }
 
 /**
- * Custom Google button click — trigger the hidden Google button.
+ * Custom Google button click — start the OAuth token flow directly.
+ *
+ * requestAccessToken() is called synchronously here, inside the real click
+ * handler, so Google's sign-in window opens as a user-initiated popup. This
+ * is what makes sign-in work on iOS (Safari and Chrome are both WebKit),
+ * where popups opened outside a direct user gesture are blocked. A single
+ * consent grants both identity (email/profile) and Sheets access, so there
+ * is only one popup to open.
  */
 function handleGoogleSSO() {
-  const hiddenBtn = document.querySelector('#g_id_signin div[role="button"]');
-  if (hiddenBtn) {
-    hiddenBtn.click();
-  } else {
-    // If Google library didn't load, show error
-    const errorEl = $('#google-error');
-    if (errorEl) errorEl.textContent = 'Google Sign-In is loading. Please try again.';
+  const errorEl = $('#google-error');
+  const btn = $('#google-sso-btn');
+
+  if (!tokenClient) {
+    // GIS library not ready yet — kick off init and ask the user to retry.
+    initTokenClient();
+    if (errorEl) errorEl.textContent = 'Google Sign-In is still loading. Please try again.';
+    return;
+  }
+
+  if (errorEl) errorEl.textContent = '';
+  setGoogleBtnLoading(btn, true);
+
+  // Install the callback for this sign-in attempt, then open the popup.
+  tokenClient.callback = (tokenResponse) => {
+    if (tokenResponse.error || !tokenResponse.access_token) {
+      // User dismissed the popup or denied access.
+      if (errorEl) {
+        errorEl.textContent = tokenResponse.error
+          ? 'Google sign-in was cancelled. Please try again.'
+          : 'Google sign-in failed. Please try again.';
+      }
+      setGoogleBtnLoading(btn, false);
+      return;
+    }
+    completeGoogleLogin(tokenResponse, errorEl, btn);
+  };
+
+  try {
+    tokenClient.requestAccessToken();
+  } catch {
+    if (errorEl) errorEl.textContent = 'Google Sign-In is unavailable. Please try again.';
+    setGoogleBtnLoading(btn, false);
   }
 }
 
 /**
- * Google credential callback.
+ * Finish admin sign-in once Google has granted an access token: read the
+ * account's profile, authorize it, store the session, and route to the
+ * dashboard.
  */
-async function handleGoogleCredential(response) {
-  const errorEl = $('#google-error');
-  const btn = $('#google-sso-btn');
-
-  if (btn) {
-    btn.disabled = true;
-    const textEl = btn.querySelector('.btn-google__text');
-    if (textEl) textEl.textContent = 'Signing in...';
-  }
-
+async function completeGoogleLogin(tokenResponse, errorEl, btn) {
   try {
-    // Step 1: Request an OAuth access token for Sheets API (if token client is ready)
-    let accessToken = null;
-    if (tokenClient) {
-      accessToken = await requestSheetsAccessToken();
-    }
+    const accessToken = {
+      token: tokenResponse.access_token,
+      expiresIn: tokenResponse.expires_in,
+    };
 
-    // Step 2: Authenticate with the Google ID token + store the access token
-    await loginWithGoogle(response, accessToken);
+    const profile = await fetchGoogleProfile(tokenResponse.access_token);
+    await loginWithGoogle(profile, accessToken);
 
     // Silently sync sheet headers in the background so the admin never has
     // to visit Setup → Sync Headers manually after each login.
-    if (accessToken) {
-      import('../sheets.js').then(({ syncHeaders }) => {
-        syncHeaders().catch(() => {});
-      });
-    }
+    import('../sheets.js').then(({ syncHeaders }) => {
+      syncHeaders().catch(() => {});
+    });
 
     navigate('/admin/dashboard');
   } catch (err) {
     if (errorEl) errorEl.textContent = err.message || 'Google sign-in failed';
-    if (btn) {
-      btn.disabled = false;
-      const textEl = btn.querySelector('.btn-google__text');
-      if (textEl) textEl.textContent = 'Sign in with Google';
-    }
+    setGoogleBtnLoading(btn, false);
   }
 }
 
 /**
- * Request an OAuth access token for Google Sheets write access.
- * Tries silent prompt first; falls back to consent dialog on first use.
- * Returns { token, expiresIn } so callers can store the real lifetime
- * Google issued (instead of assuming 1 hour).
+ * Read the signed-in user's email / name / picture from Google's OpenID
+ * userinfo endpoint using the granted access token. Requires the
+ * userinfo.email / userinfo.profile scopes (see CONFIG.OAUTH_SCOPES).
  */
-function requestSheetsAccessToken() {
-  return new Promise((resolve) => {
-    if (!tokenClient) {
-      resolve(null);
-      return;
-    }
-
-    // Timeout to prevent hanging forever if callback never fires
-    const timeout = setTimeout(() => resolve(null), 15000);
-
-    tokenClient.callback = (tokenResponse) => {
-      clearTimeout(timeout);
-      if (tokenResponse.error) {
-        // Any error on silent prompt — try again with consent dialog
-        tokenClient.callback = (retryResponse) => {
-          if (retryResponse.error) {
-            resolve(null);
-            return;
-          }
-          resolve(retryResponse.access_token
-            ? { token: retryResponse.access_token, expiresIn: retryResponse.expires_in }
-            : null);
-        };
-        try {
-          tokenClient.requestAccessToken({ prompt: 'consent' });
-        } catch {
-          resolve(null);
-        }
-        return;
-      }
-      resolve(tokenResponse.access_token
-        ? { token: tokenResponse.access_token, expiresIn: tokenResponse.expires_in }
-        : null);
-    };
-
-    // Try silent first (works if user previously granted consent)
-    try {
-      tokenClient.requestAccessToken({ prompt: '' });
-    } catch {
-      clearTimeout(timeout);
-      resolve(null);
-    }
+async function fetchGoogleProfile(accessToken) {
+  const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
   });
+  if (!res.ok) {
+    throw new Error('Could not read your Google account info. Please try again.');
+  }
+  return res.json();
+}
+
+/**
+ * Toggle the Google button's loading state.
+ */
+function setGoogleBtnLoading(btn, loading) {
+  if (!btn) return;
+  btn.disabled = loading;
+  const textEl = btn.querySelector('.btn-google__text');
+  if (textEl) textEl.textContent = loading ? 'Signing in...' : 'Sign in with Google';
 }
 
 /**
