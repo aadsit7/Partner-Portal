@@ -2,10 +2,18 @@
 // Login View
 // ============================================
 
-import { login, loginWithGoogle, storeAccessToken } from '../auth.js';
+import { login, beginGoogleRedirect, takeLoginError, getOAuthRedirectUri, storeAccessToken } from '../auth.js';
 import { navigate } from '../router.js';
 import { CONFIG } from '../config.js';
 import { el, $, mount } from '../utils/dom.js';
+
+// After a failed Google sign-in we force the account chooser on the next tap
+// so the admin can pick a different account.
+let forceAccountChooser = false;
+
+// Google "G" logo, inlined so the button renders instantly with no network
+// dependency (the whole reason GIS's own button was unreliable on iPhone).
+const GOOGLE_G_SVG = '<svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="#4285F4" d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.859-3.048.859-2.344 0-4.328-1.583-5.036-3.71H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.997 8.997 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.346l2.582-2.581C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>';
 
 // OAuth token client for requesting Sheets API access token
 let tokenClient = null;
@@ -144,21 +152,23 @@ export async function render(container) {
       el('div', { style: { flex: '1', height: '1px', background: 'var(--color-border)' } }),
     ),
 
-    // Google SSO for admin. Google Identity Services renders its own official
-    // "Sign in with Google" button into this container (see initGoogleSSO).
-    // We render Google's real button — instead of a custom button that
-    // forwards the click — because it's the only flow that reliably works on
-    // iPhone: every iOS browser (Chrome included) runs on WebKit, which blocks
-    // any sign-in window that isn't opened directly by Google's own button tap.
+    // Admin Google SSO. Our own button kicks off a full-page OAuth redirect
+    // (see beginGoogleRedirect). We deliberately do NOT use Google Identity
+    // Services' rendered button / One Tap here: on iPhone (where every browser
+    // is WebKit) those depend on popups and partitioned third-party storage,
+    // so the button silently failed to render and admins could not sign in. A
+    // plain button plus a top-level redirect behaves the same on desktop and
+    // iPhone, and the button — being our own HTML — always appears.
     el('div', { id: 'google-sso-section' },
-      el('div', {
-        id: 'g_id_signin',
-        style: {
-          display: 'flex',
-          justifyContent: 'center',
-          minHeight: '44px',
-        }
-      }),
+      el('button', {
+        class: 'btn-google',
+        type: 'button',
+        id: 'google-signin-btn',
+        onClick: handleGoogleSignIn,
+      },
+        el('span', { class: 'btn-google__icon', html: GOOGLE_G_SVG }),
+        el('span', { class: 'btn-google__text' }, 'Sign in with Google')
+      ),
       el('div', {
         id: 'google-error',
         style: {
@@ -190,79 +200,60 @@ export async function render(container) {
     if (usernameInput) usernameInput.focus();
   }, 100);
 
-  // Initialize Google Identity Services
-  initGoogleSSO();
+  setupGoogleSignIn();
 }
 
 /**
- * Initialize Google Identity Services for the SSO button.
+ * Wire up the admin Google sign-in button. No waiting on any external library:
+ * the button is plain HTML and sign-in is a full-page redirect, so it works
+ * even if the Google script is slow or blocked (as it effectively was on
+ * iPhone). Also kicks off the OAuth token client for silent refresh when the
+ * GIS library is present (best-effort; not on the login critical path).
  */
-function initGoogleSSO() {
+function setupGoogleSignIn() {
   const clientId = CONFIG.GOOGLE_CLIENT_ID;
 
-  // If no client ID configured, show a fallback admin login
+  // No OAuth client configured → offer admin username/password instead.
   if (!clientId || clientId === 'YOUR_GOOGLE_CLIENT_ID_HERE') {
     showAdminFallback();
     return;
   }
 
-  // Wait for the Google library to load, then render Google's official button.
-  const checkGoogle = setInterval(() => {
-    if (window.google?.accounts?.id) {
-      clearInterval(checkGoogle);
+  // Surface a sign-in error carried over from the redirect's return leg.
+  const pending = takeLoginError();
+  if (pending) {
+    forceAccountChooser = true; // let them pick a different account next tap
+    const errorEl = $('#google-error');
+    if (errorEl) errorEl.textContent = pending;
+  }
 
-      google.accounts.id.initialize({
-        client_id: clientId,
-        callback: handleGoogleCredential,
-        auto_select: true,           // sign returning users back in with no click
-        itp_support: true,           // keep One Tap working on Safari / iOS (ITP)
-        use_fedcm_for_prompt: true,  // browser-native One Tap (required on Chrome)
-        cancel_on_tap_outside: false,
-      });
+  // Log the exact redirect URI that must be registered under the OAuth
+  // client's "Authorized redirect URIs" — saves digging when configuring.
+  console.info('[Partner Portal] Google OAuth redirect URI to authorize:', getOAuthRedirectUri());
 
-      // Render Google's official "Sign in with Google" button directly into
-      // the visible container, so the user taps Google's own button. Tapping
-      // it is what opens the sign-in window inside a genuine user gesture —
-      // the requirement iOS/WebKit enforces for auth windows. (The previous
-      // build rendered this button hidden and clicked it from code, which iOS
-      // treated as non-user-initiated and silently blocked, so sign-in never
-      // opened on iPhone.)
-      const target = $('#g_id_signin');
-      if (target) {
-        // Size the button to the card width so it lines up with the form.
-        const width = Math.min(Math.max(Math.round(target.clientWidth) || 320, 240), 400);
-        google.accounts.id.renderButton(target, {
-          type: 'standard',
-          theme: 'outline',
-          size: 'large',
-          text: 'signin_with',
-          shape: 'rectangular',
-          logo_alignment: 'left',
-          width,
-        });
-      }
+  // Prepare the silent-refresh token client if the GIS library is available.
+  initTokenClient();
+}
 
-      // Also initialize the OAuth token client for Sheets API write access.
-      if (window.google?.accounts?.oauth2) {
-        tokenClient = google.accounts.oauth2.initTokenClient({
-          client_id: clientId,
-          scope: CONFIG.OAUTH_SCOPES,
-          callback: () => {}, // Overwritten at call time
-        });
-      }
-
-      // Automatic sign-in for returning users. With auto_select, a device
-      // already signed in to this Google account is signed back in with no
-      // clicks — so after the first sign-in on a device you stay signed in,
-      // and even if the browser later clears the saved session (iOS does this
-      // periodically), the next visit silently restores it. The rendered
-      // button above stays as the manual fallback.
-      google.accounts.id.prompt();
-    }
-  }, 100);
-
-  // Stop checking after 8 seconds
-  setTimeout(() => clearInterval(checkGoogle), 8000);
+/**
+ * Start admin sign-in: redirect the whole page to Google. The page unloads,
+ * so there's nothing to await — completeGoogleRedirect() finishes the job
+ * when Google sends the browser back.
+ */
+function handleGoogleSignIn() {
+  const errorEl = $('#google-error');
+  const btn = $('#google-signin-btn');
+  const label = btn?.querySelector('.btn-google__text');
+  try {
+    if (errorEl) errorEl.textContent = '';
+    if (btn) btn.disabled = true;
+    if (label) label.textContent = 'Redirecting to Google…';
+    beginGoogleRedirect({ target: '/admin/dashboard', chooseAccount: forceAccountChooser });
+  } catch (err) {
+    if (errorEl) errorEl.textContent = err.message || 'Google sign-in is unavailable';
+    if (btn) btn.disabled = false;
+    if (label) label.textContent = 'Sign in with Google';
+  }
 }
 
 /**
@@ -335,94 +326,6 @@ async function handleAdminFallbackLogin() {
     btn.disabled = false;
     btn.textContent = 'Sign in as Admin';
   }
-}
-
-/**
- * Google credential callback — fires when the user completes sign-in through
- * Google's rendered button.
- *
- * The identity (the JWT in `response.credential`) is all we need to log the
- * admin in, so we do that first and route to the dashboard immediately. The
- * Sheets access token is fetched in the background and must NOT block login:
- * its popup/iframe grant is unreliable on iOS, and making sign-in wait on it
- * is what made the portal feel broken on iPhone. If the token can't be
- * obtained the admin is still logged in, and sheets.js requests a fresh token
- * when a write actually needs one.
- */
-async function handleGoogleCredential(response) {
-  const errorEl = $('#google-error');
-
-  try {
-    // Step 1: authenticate with the Google identity. This logs the admin in.
-    await loginWithGoogle(response, null);
-
-    // Step 2 (background, non-blocking): obtain a Sheets access token so
-    // writes work, then sync headers. Failures here never block login.
-    if (tokenClient) {
-      requestSheetsAccessToken().then((accessToken) => {
-        if (!accessToken) return;
-        storeAccessToken(accessToken.token, accessToken.expiresIn);
-        import('../sheets.js').then(({ syncHeaders }) => {
-          syncHeaders().catch(() => {});
-        });
-      });
-    }
-
-    navigate('/admin/dashboard');
-  } catch (err) {
-    if (errorEl) errorEl.textContent = err.message || 'Google sign-in failed';
-  }
-}
-
-/**
- * Request an OAuth access token for Google Sheets write access.
- * Tries silent prompt first; falls back to consent dialog on first use.
- * Returns { token, expiresIn } so callers can store the real lifetime
- * Google issued (instead of assuming 1 hour).
- */
-function requestSheetsAccessToken() {
-  return new Promise((resolve) => {
-    if (!tokenClient) {
-      resolve(null);
-      return;
-    }
-
-    // Timeout to prevent hanging forever if callback never fires
-    const timeout = setTimeout(() => resolve(null), 15000);
-
-    tokenClient.callback = (tokenResponse) => {
-      clearTimeout(timeout);
-      if (tokenResponse.error) {
-        // Any error on silent prompt — try again with consent dialog
-        tokenClient.callback = (retryResponse) => {
-          if (retryResponse.error) {
-            resolve(null);
-            return;
-          }
-          resolve(retryResponse.access_token
-            ? { token: retryResponse.access_token, expiresIn: retryResponse.expires_in }
-            : null);
-        };
-        try {
-          tokenClient.requestAccessToken({ prompt: 'consent' });
-        } catch {
-          resolve(null);
-        }
-        return;
-      }
-      resolve(tokenResponse.access_token
-        ? { token: tokenResponse.access_token, expiresIn: tokenResponse.expires_in }
-        : null);
-    };
-
-    // Try silent first (works if user previously granted consent)
-    try {
-      tokenClient.requestAccessToken({ prompt: '' });
-    } catch {
-      clearTimeout(timeout);
-      resolve(null);
-    }
-  });
 }
 
 /**

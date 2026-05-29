@@ -13,6 +13,17 @@
 // 8. Copy the spreadsheet ID from the URL:
 //    https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit
 // 9. Paste values below
+//
+// ADMIN GOOGLE SSO (OAuth client) SETUP:
+// Admin sign-in uses a full-page Google OAuth redirect (works on iPhone/iOS,
+// where the popup-based "Sign in with Google" button silently fails to load).
+// For the redirect to come back to this site you MUST register the site URL
+// under the OAuth client's "Authorized redirect URIs" (Credentials → your
+// OAuth 2.0 Client ID → Authorized redirect URIs):
+//   https://<your-github-pages-domain>/<repo>/
+//   e.g. https://aadsit7.github.io/Partner-Portal/
+// Keep the same URL under "Authorized JavaScript origins" too. The exact value
+// to register is logged to the browser console on the login screen.
 
 const RUNTIME_CONFIG_KEY = 'pp_runtime_config';
 
@@ -51,8 +62,15 @@ export const CONFIG = {
   // Google OAuth (for Admin SSO login)
   GOOGLE_CLIENT_ID: '206815760499-ip5cgia4j8fk9nb5qq83fdv3cfd95lvp.apps.googleusercontent.com',
 
-  // OAuth scope for Google Sheets read/write access
+  // OAuth scope for Google Sheets read/write access (used by the silent
+  // token-refresh client).
   OAUTH_SCOPES: 'https://www.googleapis.com/auth/spreadsheets',
+
+  // Scopes requested by the admin sign-in redirect. Identity (openid/email/
+  // profile) authorizes the account against ADMIN_EMAILS; the spreadsheets
+  // scope returns a Sheets write token in the same sign-in, so one redirect
+  // covers both logging in and saving.
+  OAUTH_LOGIN_SCOPES: 'openid email profile https://www.googleapis.com/auth/spreadsheets',
 
   // Allowed admin email(s) — only these Google accounts can log in as admin
   ADMIN_EMAILS: ['aadsit7@gmail.com', 'adsitvideo@gmail.com'],
