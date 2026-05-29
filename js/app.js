@@ -2,7 +2,7 @@
 // Partner Portal — App Entry Point
 // ============================================
 
-import { getCurrentUser, getAccessToken, storeAccessToken } from './auth.js';
+import { getCurrentUser, getAccessToken, storeAccessToken, completeGoogleRedirect } from './auth.js';
 import { addRoute, initRouter, navigate } from './router.js';
 import { renderSidebar, setupMobileSidebar } from './components/sidebar.js';
 
@@ -327,6 +327,12 @@ function setupTokenLifecycleListeners() {
 // ---- Initialize ----
 
 document.addEventListener('DOMContentLoaded', () => {
+  // If this load is the return leg of the admin Google sign-in redirect,
+  // finish it BEFORE the router reads the URL: this stores the session and
+  // replaces the token-bearing fragment with a clean route, so initRouter
+  // then lands on the dashboard (or back on /login with an error shown).
+  completeGoogleRedirect();
+
   setupMobileSidebar();
   initRouter();
 
