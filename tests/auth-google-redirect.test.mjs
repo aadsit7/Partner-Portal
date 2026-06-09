@@ -11,7 +11,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  attemptSilentReauth,
   beginGoogleRedirect,
+  canAttemptSilentReauth,
   completeGoogleRedirect,
   getOAuthRedirectUri,
   takeLoginError,
@@ -43,9 +45,29 @@ function setupBrowser({ hash = '', pathname = '/Partner-Portal/', origin = 'http
       globalThis.window.location.hash = i >= 0 ? String(url).slice(i) : '';
     },
   };
+  // Node 21+ exposes a getter-only navigator global — defineProperty so the
+  // silent-reauth onLine guard can be driven from tests on any Node version.
+  Object.defineProperty(globalThis, 'navigator', {
+    value: { onLine: true },
+    configurable: true,
+    writable: true,
+  });
   localStorage.clear();
   takeLoginError(); // clear any error left from a previous test
   return { session, getHref: () => href };
+}
+
+/** Store an existing signed-in admin session, as a prior sign-in would have. */
+function seedAdminSession({ email = ADMIN_EMAIL, accessToken = null, expires = null } = {}) {
+  localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify({
+    partner_id: 'p_admin001',
+    username: 'admin',
+    display_name: 'Portal Admin',
+    is_admin: true,
+    email,
+    access_token: accessToken,
+    access_token_expires: expires,
+  }));
 }
 
 // Build a JWT whose payload decodes via auth.js's decodeJwt(). Google uses
@@ -188,4 +210,144 @@ test('completeGoogleRedirect surfaces a Google-returned error', () => {
   assert.equal(result.error, 'access_denied');
   assert.match(takeLoginError(), /cancelled/i);
   assert.equal(globalThis.window.location.hash, '#/login');
+});
+
+test('completeGoogleRedirect stores the admin email for future login_hint use', () => {
+  const state = 's-email';
+  const nonce = 'n-email';
+  const idToken = makeIdToken({ email: ADMIN_EMAIL.toUpperCase(), name: 'Portal Admin', nonce });
+  const { session } = setupBrowser({ hash: buildReturnHash({ idToken, state }) });
+  session.set('pp_oauth_state', state);
+  session.set('pp_oauth_nonce', nonce);
+
+  completeGoogleRedirect();
+  const stored = JSON.parse(localStorage.getItem(CONFIG.SESSION_KEY));
+  assert.equal(stored.email, ADMIN_EMAIL.toLowerCase());
+});
+
+// ---- Silent token renewal (prompt=none full-page redirect) ----
+//
+// On iPhone, GIS's popup-based requestAccessToken({prompt:'none'}) can never
+// renew the hourly Sheets token (WebKit blocks gestureless popups and
+// third-party cookies), which used to push admins back through the login
+// screen every visit. These tests lock in the redirect-based renewal: it must
+// be invisible, loop-proof, and must NEVER tear down an existing session.
+
+test('beginGoogleRedirect silent mode sends prompt=none + login_hint and marks the attempt', () => {
+  const { session, getHref } = setupBrowser();
+  beginGoogleRedirect({ target: '/admin/events', silent: true, loginHint: ADMIN_EMAIL });
+
+  const p = new URL(getHref()).searchParams;
+  assert.equal(p.get('prompt'), 'none', 'must not show any Google UI');
+  assert.equal(p.get('login_hint'), ADMIN_EMAIL, 'renews the right account');
+  assert.equal(session.get('pp_oauth_silent'), '1', 'return leg knows it was silent');
+  assert.ok(Number(session.get('pp_silent_attempt_ts')) > 0, 'attempt throttle armed');
+  assert.equal(session.get('pp_oauth_target'), '/admin/events');
+});
+
+test('silent renewal success refreshes the token and lands on the original route', () => {
+  const state = 'st-renew';
+  const nonce = 'nc-renew';
+  const idToken = makeIdToken({ email: ADMIN_EMAIL, name: 'Portal Admin', nonce });
+  const { session } = setupBrowser({ hash: buildReturnHash({ accessToken: 'FRESH', idToken, state }) });
+  seedAdminSession({ accessToken: 'STALE', expires: Date.now() - 1000 });
+  session.set('pp_oauth_state', state);
+  session.set('pp_oauth_nonce', nonce);
+  session.set('pp_oauth_target', '/admin/partners');
+  session.set('pp_oauth_silent', '1');
+  session.set('pp_silent_block_ts', String(Date.now())); // stale block from an earlier failure
+
+  const result = completeGoogleRedirect();
+  assert.deepEqual(result, { ok: true, target: '/admin/partners' });
+
+  const stored = JSON.parse(localStorage.getItem(CONFIG.SESSION_KEY));
+  assert.equal(stored.access_token, 'FRESH');
+  assert.ok(stored.access_token_expires > Date.now());
+  assert.equal(globalThis.window.location.hash, '#/admin/partners', 'back where the user was');
+  assert.equal(session.get('pp_silent_block_ts'), undefined, 'success clears the failure block');
+});
+
+test('silent renewal failure keeps the session, returns to the route, and blocks retries', () => {
+  const { session } = setupBrowser({ hash: '#error=login_required&state=st-fail' });
+  seedAdminSession();
+  session.set('pp_oauth_state', 'st-fail');
+  session.set('pp_oauth_target', '/admin/comp');
+  session.set('pp_oauth_silent', '1');
+
+  const result = completeGoogleRedirect();
+  assert.equal(result.error, 'login_required');
+  assert.equal(result.silent, true);
+
+  // The admin is STILL signed in to the portal — no logout, no error flash.
+  const stored = JSON.parse(localStorage.getItem(CONFIG.SESSION_KEY));
+  assert.equal(stored.is_admin, true);
+  assert.equal(globalThis.window.location.hash, '#/admin/comp', 'not bounced to /login');
+  assert.equal(takeLoginError(), null, 'no scary error message queued');
+  assert.ok(Number(session.get('pp_silent_block_ts')) > 0, 'further attempts blocked');
+});
+
+test('silent renewal failure without any session falls back to the login screen quietly', () => {
+  const { session } = setupBrowser({ hash: '#error=interaction_required&state=st-nosess' });
+  session.set('pp_oauth_state', 'st-nosess');
+  session.set('pp_oauth_silent', '1');
+
+  const result = completeGoogleRedirect();
+  assert.equal(result.silent, true);
+  assert.equal(globalThis.window.location.hash, '#/login');
+  assert.equal(takeLoginError(), null, 'silent attempts never surface errors');
+});
+
+test('attemptSilentReauth navigates with the current route as target', () => {
+  const { getHref } = setupBrowser({ hash: '#/admin/partner-detail?id=p_acme01' });
+  seedAdminSession();
+
+  assert.equal(attemptSilentReauth(), true);
+  const url = new URL(getHref());
+  assert.equal(url.origin, 'https://accounts.google.com');
+  assert.equal(url.searchParams.get('prompt'), 'none');
+  assert.equal(url.searchParams.get('login_hint'), ADMIN_EMAIL);
+  assert.equal(
+    globalThis.sessionStorage.getItem('pp_oauth_target'),
+    '/admin/partner-detail?id=p_acme01',
+    'returns to the exact route, query params included',
+  );
+});
+
+test('attemptSilentReauth refuses without an admin session', () => {
+  setupBrowser();
+  assert.equal(canAttemptSilentReauth(), false);
+  assert.equal(attemptSilentReauth(), false);
+
+  localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify({ username: 'partner1', is_admin: false }));
+  assert.equal(attemptSilentReauth(), false, 'partners never get Google-bounced');
+});
+
+test('attemptSilentReauth is throttled after a recent attempt', () => {
+  const { session, getHref } = setupBrowser();
+  seedAdminSession();
+  session.set('pp_silent_attempt_ts', String(Date.now() - 5000));
+
+  assert.equal(attemptSilentReauth(), false, 'attempted 5s ago → wait');
+  assert.equal(getHref(), '', 'no navigation started');
+
+  session.set('pp_silent_attempt_ts', String(Date.now() - 120000));
+  assert.equal(attemptSilentReauth(), true, 'attempt window passed → allowed');
+});
+
+test('attemptSilentReauth is blocked after Google said interaction is required', () => {
+  const { session } = setupBrowser();
+  seedAdminSession();
+  session.set('pp_silent_block_ts', String(Date.now() - 60000));
+
+  assert.equal(attemptSilentReauth(), false, 'blocked 1 min ago → still blocked');
+
+  session.set('pp_silent_block_ts', String(Date.now() - 16 * 60000));
+  assert.equal(attemptSilentReauth(), true, 'block expired after 15 min');
+});
+
+test('attemptSilentReauth refuses while offline', () => {
+  setupBrowser();
+  seedAdminSession();
+  globalThis.navigator.onLine = false;
+  assert.equal(attemptSilentReauth(), false, 'navigating to Google offline would strand the user');
 });
