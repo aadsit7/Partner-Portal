@@ -2,7 +2,7 @@
 // Authentication Module
 // ============================================
 
-import { CONFIG } from './config.js';
+import { CONFIG, getRuntimeConfig } from './config.js';
 import { sha256 } from './utils/hash.js';
 import { readSheetAsObjects, isConfigured } from './sheets.js';
 
@@ -66,11 +66,35 @@ export async function login(username, password) {
 // sign-in returns both the admin's identity (id_token, checked against
 // ADMIN_EMAILS) and a Sheets access token (for saving), with no backend to
 // exchange a code — which suits this static GitHub Pages site.
+//
+// TOKEN RENEWAL (the "sign in once" guarantee): the access token Google
+// issues lives ~1 hour, while the portal session (localStorage) lives
+// indefinitely. GIS's requestAccessToken({prompt:'none'}) cannot renew it on
+// iPhone — it needs a popup plus third-party Google cookies, both of which
+// WebKit blocks — which is why admins kept being pushed back through the
+// login screen on iOS. The fix is the same trick as sign-in: a full-page
+// redirect with prompt=none and login_hint. Google answers without showing
+// any UI and bounces straight back with a fresh token (<1s), because a
+// top-level navigation is first-party at accounts.google.com. The only time
+// an admin ever types credentials is the very first sign-in on a device (or
+// after signing out of Google itself) — exactly once per device.
 
 const OAUTH_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const OAUTH_STATE_KEY = 'pp_oauth_state';
 const OAUTH_NONCE_KEY = 'pp_oauth_nonce';
 const OAUTH_TARGET_KEY = 'pp_oauth_target';
+const OAUTH_SILENT_KEY = 'pp_oauth_silent';
+
+// Silent re-auth loop guards (sessionStorage, per-tab):
+// - attempt timestamp: at most one redirect attempt per minute, so a
+//   misbehaving return leg can never ping-pong the page to Google.
+// - block timestamp: after Google says interaction is required
+//   (login_required etc.), stop attempting for a while — the next attempt
+//   would fail identically until the user signs in to Google again.
+const SILENT_ATTEMPT_TS_KEY = 'pp_silent_attempt_ts';
+const SILENT_BLOCK_TS_KEY = 'pp_silent_block_ts';
+const SILENT_ATTEMPT_MIN_INTERVAL_MS = 60 * 1000;
+const SILENT_BLOCK_MS = 15 * 60 * 1000;
 
 // Carries a sign-in error from completeGoogleRedirect() (which runs on page
 // load) to the login view (which renders just after), within the same load.
@@ -110,6 +134,7 @@ function clearOAuthHandshake() {
     sessionStorage.removeItem(OAUTH_STATE_KEY);
     sessionStorage.removeItem(OAUTH_NONCE_KEY);
     sessionStorage.removeItem(OAUTH_TARGET_KEY);
+    sessionStorage.removeItem(OAUTH_SILENT_KEY);
   } catch { /* ignore */ }
 }
 
@@ -122,8 +147,16 @@ function clearOAuthHandshake() {
  * @param {string} [opts.target='/admin/dashboard'] - route to land on after success
  * @param {boolean} [opts.chooseAccount=false] - force Google's account chooser
  *   (used after a failed attempt so the admin can pick a different account)
+ * @param {boolean} [opts.silent=false] - prompt=none: Google must answer
+ *   without showing ANY UI. Used to renew an expired Sheets token for an
+ *   already-signed-in admin. On iPhone this is the only refresh mechanism
+ *   that works: it's a first-party top-level navigation, so WebKit's ITP
+ *   (which kills GIS's popup/iframe refresh) doesn't apply.
+ * @param {string} [opts.loginHint] - the admin's email, so Google renews the
+ *   right account without raising account_selection_required when several
+ *   Google sessions exist in the browser.
  */
-export function beginGoogleRedirect({ target = '/admin/dashboard', chooseAccount = false } = {}) {
+export function beginGoogleRedirect({ target = '/admin/dashboard', chooseAccount = false, silent = false, loginHint = null } = {}) {
   const clientId = CONFIG.GOOGLE_CLIENT_ID;
   if (!clientId || clientId === 'YOUR_GOOGLE_CLIENT_ID_HERE') {
     throw new Error('Google sign-in is not configured');
@@ -148,8 +181,84 @@ export function beginGoogleRedirect({ target = '/admin/dashboard', chooseAccount
   // active Google session is bounced straight back, signed in, with no taps.
   // After a failure we force the chooser so they can switch accounts.
   if (chooseAccount) params.set('prompt', 'select_account');
+  if (silent) {
+    params.set('prompt', 'none');
+    safeSessionSet(OAUTH_SILENT_KEY, '1');
+    safeSessionSet(SILENT_ATTEMPT_TS_KEY, String(Date.now()));
+  }
+  if (loginHint) params.set('login_hint', loginHint);
 
   window.location.href = `${OAUTH_AUTH_ENDPOINT}?${params.toString()}`;
+}
+
+/**
+ * Whether a silent (prompt=none) re-auth redirect is currently sensible.
+ * All of these must hold:
+ * - an admin session exists (partners don't use Google; nobody signed in
+ *   must see the login screen, not a surprise Google bounce)
+ * - the OAuth client and a real spreadsheet are configured (in demo mode no
+ *   token is needed, so a redirect would be pure churn)
+ * - the browser isn't known-offline (navigating to Google while offline
+ *   strands the user on a browser error page)
+ * - we haven't just attempted (60s) and Google hasn't recently told us
+ *   interaction is required (15min block)
+ */
+export function canAttemptSilentReauth() {
+  const user = getCurrentUser();
+  if (!user?.is_admin) return false;
+
+  const clientId = CONFIG.GOOGLE_CLIENT_ID;
+  if (!clientId || clientId === 'YOUR_GOOGLE_CLIENT_ID_HERE') return false;
+
+  const spreadsheetId = getRuntimeConfig('SPREADSHEET_ID') || CONFIG.SPREADSHEET_ID;
+  if (!spreadsheetId || spreadsheetId === 'YOUR_SPREADSHEET_ID_HERE') return false;
+
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+
+  const now = Date.now();
+  const lastAttempt = Number(safeSessionGet(SILENT_ATTEMPT_TS_KEY)) || 0;
+  if (now - lastAttempt < SILENT_ATTEMPT_MIN_INTERVAL_MS) return false;
+
+  const blockedAt = Number(safeSessionGet(SILENT_BLOCK_TS_KEY)) || 0;
+  if (now - blockedAt < SILENT_BLOCK_MS) return false;
+
+  return true;
+}
+
+/**
+ * Whether a silent renewal has failed in this tab (Google answered
+ * login_required etc.). Used to keep the background refresh timer from
+ * periodically bounce-redirecting a user whose Google session is genuinely
+ * gone — after a failure, only deliberate moments (app open, tab return)
+ * may retry. Cleared by the next successful sign-in.
+ */
+export function hasSilentReauthFailed() {
+  return !!safeSessionGet(SILENT_BLOCK_TS_KEY);
+}
+
+/**
+ * Renew the admin's Sheets token by silently bouncing the page through
+ * Google (prompt=none) and back to the current route. Returns true when the
+ * navigation has started (the page is unloading — stop doing work), false
+ * when guards said no (caller should fall back or do nothing).
+ */
+export function attemptSilentReauth({ target } = {}) {
+  if (!canAttemptSilentReauth()) return false;
+
+  const route = target
+    || (window.location.hash || '').replace(/^#/, '')
+    || '/admin/dashboard';
+
+  try {
+    beginGoogleRedirect({
+      target: route,
+      silent: true,
+      loginHint: getCurrentUser()?.email || undefined,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -178,6 +287,7 @@ export function completeGoogleRedirect() {
   const savedState = safeSessionGet(OAUTH_STATE_KEY);
   const savedNonce = safeSessionGet(OAUTH_NONCE_KEY);
   const target = safeSessionGet(OAUTH_TARGET_KEY) || '/admin/dashboard';
+  const wasSilent = safeSessionGet(OAUTH_SILENT_KEY) === '1';
   clearOAuthHandshake();
 
   // Strip the OAuth params out of the URL/history before doing anything else —
@@ -188,6 +298,17 @@ export function completeGoogleRedirect() {
     catch { window.location.hash = route; }
   };
   const fail = (message, code) => {
+    // A failed SILENT renewal (e.g. the Google session is gone, so Google
+    // answered login_required) must never log the admin out of the portal or
+    // flash an error: keep the existing session — reads still work — block
+    // further attempts for a while, and put the user back where they were.
+    // The next manual save will explain that a sign-in tap is needed.
+    if (wasSilent) {
+      safeSessionSet(SILENT_BLOCK_TS_KEY, String(Date.now()));
+      const existing = getCurrentUser();
+      finish(existing ? target : '/login');
+      return { error: code, silent: true };
+    }
     _pendingLoginError = message;
     finish('/login');
     return { error: code };
@@ -224,6 +345,9 @@ export function completeGoogleRedirect() {
 
   const session = buildAdminSession(payload, accessToken, params.get('expires_in'));
   localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(session));
+  // A successful sign-in clears any silent-renewal block: the Google session
+  // demonstrably works again.
+  try { sessionStorage.removeItem(SILENT_BLOCK_TS_KEY); } catch { /* ignore */ }
   finish(target);
   return { ok: true, target };
 }
@@ -239,6 +363,10 @@ function buildAdminSession(payload, accessToken, expiresInSec) {
     display_name: payload.name || 'Admin',
     partner_type: '',
     is_admin: true,
+    // Kept for login_hint on silent renewals: lets Google renew this exact
+    // account without raising account_selection_required when the browser
+    // holds several Google sessions.
+    email: payload.email ? String(payload.email).toLowerCase() : null,
     google_picture: payload.picture || null,
     tier: 'Admin',
     status: 'active',
@@ -347,6 +475,19 @@ export function storeAccessToken(token, expiresInSec) {
   const lifetimeMs = (Number(expiresInSec) > 0 ? Number(expiresInSec) : 3600) * 1000;
   user.access_token = token;
   user.access_token_expires = Date.now() + lifetimeMs;
+  localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(user));
+}
+
+/**
+ * Drop a stored access token that Google has rejected (401/403) while
+ * keeping the session itself. Subsequent reads fall back to the API key and
+ * the next app-open/focus renews the token via the silent redirect.
+ */
+export function clearAccessToken() {
+  const user = getCurrentUser();
+  if (!user) return;
+  user.access_token = null;
+  user.access_token_expires = null;
   localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(user));
 }
 

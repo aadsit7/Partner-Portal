@@ -3,7 +3,7 @@
 // ============================================
 
 import { CONFIG, getRuntimeConfig } from './config.js';
-import { getAccessToken, getCurrentUser } from './auth.js';
+import { getAccessToken, getCurrentUser, clearAccessToken } from './auth.js';
 
 /**
  * Get the effective Spreadsheet ID (runtime override or hardcoded).
@@ -39,18 +39,6 @@ function columnLetter(count) {
     n = Math.floor((n - 1) / 26);
   }
   return s || 'A';
-}
-
-/**
- * Build fetch headers — includes Bearer token when an OAuth access token is available.
- */
-function getAuthHeaders() {
-  const headers = { 'Content-Type': 'application/json' };
-  const token = getAccessToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
 }
 
 /**
@@ -119,6 +107,22 @@ export function invalidateSheetCache(sheetName) {
 }
 
 /**
+ * Try to refresh the OAuth token via the GIS popup client. Works on desktop
+ * browsers (third-party cookie path); on iPhone it always resolves null —
+ * WebKit blocks it — and renewal happens via the silent full-page redirect
+ * on the next app-open/focus instead (see auth.js attemptSilentReauth).
+ * Returns the new token or null; never throws.
+ */
+async function tryPopupTokenRefresh() {
+  try {
+    const { refreshAccessToken } = await import('./views/login.js');
+    return await refreshAccessToken();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Read all rows from a sheet.
  * Returns array of row arrays (first row = headers).
  */
@@ -126,17 +130,16 @@ export async function readSheet(sheetName) {
   if (!isConfigured()) return getDemoData(sheetName);
 
   const base = getBaseUrl();
-  const authParam = getAuthParam();
-  const url = `${base}/values/${encodeURIComponent(sheetName)}${authParam ? '?' + authParam : ''}`;
+  const valuesUrl = (auth) => `${base}/values/${encodeURIComponent(sheetName)}${auth ? '?' + auth : ''}`;
   const token = getAccessToken();
+  const url = valuesUrl(getAuthParam());
   const res = await fetch(url, token ? { headers: { 'Authorization': `Bearer ${token}` } } : undefined);
 
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {
-      // Try a silent token refresh then retry the request once before giving up.
+      // 1. Try a popup token refresh then retry the request once.
       try {
-        const { refreshAccessToken } = await import('./views/login.js');
-        const newToken = await refreshAccessToken();
+        const newToken = await tryPopupTokenRefresh();
         if (newToken) {
           const retryRes = await fetch(url, { headers: { 'Authorization': `Bearer ${newToken}` } });
           if (retryRes.ok) {
@@ -145,11 +148,26 @@ export async function readSheet(sheetName) {
           }
         }
       } catch {}
-      // For logged-in admins, swallowing this into demo data masks the
-      // real issue and makes the app appear "logged out." Keep the
-      // session intact and surface the auth error so the caller can
-      // show a clear message. Demo fallback only when truly unauth'd.
       if (getCurrentUser()?.is_admin) {
+        // 2. The Bearer token itself was rejected (revoked / expired early).
+        // Drop it and retry this read with the plain API key: the admin
+        // keeps a fully working read view while the next app-open or
+        // tab-return renews the token via the silent redirect. Only if even
+        // the key-based read fails do we surface an error — swallowing it
+        // into demo data would mask the real problem.
+        if (token) {
+          clearAccessToken();
+          const keyParam = getAuthParam(); // token gone → falls back to API key
+          if (keyParam) {
+            try {
+              const keyRes = await fetch(valuesUrl(keyParam));
+              if (keyRes.ok) {
+                const keyData = await keyRes.json();
+                return keyData.values || [];
+              }
+            } catch {}
+          }
+        }
         const err = await res.clone().json().catch(() => ({}));
         throw new Error(err.error?.message
           || `Sheets API auth failed (${res.status}). Please refresh the page or sign in again.`);
@@ -220,6 +238,53 @@ export async function readSheetAsObjects(sheetName, options = {}) {
 }
 
 /**
+ * Build write headers for a specific token (or none).
+ */
+function writeHeaders(token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
+}
+
+/**
+ * Run a Sheets write; on 401/403 refresh the token once (popup path) and
+ * retry. Returns the final Response — ok or not — for the caller to handle.
+ */
+async function writeWithAuthRetry(doFetch) {
+  let res = await doFetch(getAccessToken());
+  if (!res.ok && (res.status === 401 || res.status === 403) && getCurrentUser()?.is_admin) {
+    const fresh = await tryPopupTokenRefresh();
+    if (fresh) res = await doFetch(fresh);
+  }
+  return res;
+}
+
+/**
+ * Turn a failed write into a helpful error. A 401 on an admin session means
+ * the Google token died mid-session and could not be renewed in-place: drop
+ * it (reads then fall back to the API key) and explain the recovery, instead
+ * of surfacing Google's raw "invalid credentials" text. A 403 is a real
+ * permissions problem (account can't edit the spreadsheet / missing scope) —
+ * reloading won't fix that, so say what's actually wrong.
+ */
+async function throwWriteError(res, fallbackMessage) {
+  const err = await res.json().catch(() => ({}));
+  if (getCurrentUser()?.is_admin) {
+    if (res.status === 401) {
+      clearAccessToken();
+      throw new Error('Your Google sign-in needs a refresh, so this change was NOT saved. '
+        + 'Reload the page — it reconnects automatically — then try again. '
+        + 'If it still fails, log out and sign in with Google again.');
+    }
+    if (res.status === 403) {
+      throw new Error(err.error?.message
+        || 'Google denied access to the spreadsheet — check that your account can edit it.');
+    }
+  }
+  throw new Error(err.error?.message || fallbackMessage);
+}
+
+/**
  * Append a row to a sheet.
  */
 export async function appendRow(sheetName, values) {
@@ -233,16 +298,13 @@ export async function appendRow(sheetName, values) {
   const url = `${base}/values/${encodeURIComponent(sheetName)}:append`
     + `?valueInputOption=USER_ENTERED${authParam ? '&' + authParam : ''}`;
 
-  const res = await fetch(url, {
+  const res = await writeWithAuthRetry((token) => fetch(url, {
     method: 'POST',
-    headers: getAuthHeaders(),
+    headers: writeHeaders(token),
     body: JSON.stringify({ values: [values] }),
-  });
+  }));
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Failed to append to ${sheetName}`);
-  }
+  if (!res.ok) await throwWriteError(res, `Failed to append to ${sheetName}`);
 
   invalidateSheetCache(sheetName);
   return res.json();
@@ -266,16 +328,13 @@ export async function updateRow(sheetName, rowIndex, values) {
   const url = `${base}/values/${encodeURIComponent(range)}`
     + `?valueInputOption=USER_ENTERED${authParam ? '&' + authParam : ''}`;
 
-  const res = await fetch(url, {
+  const res = await writeWithAuthRetry((token) => fetch(url, {
     method: 'PUT',
-    headers: getAuthHeaders(),
+    headers: writeHeaders(token),
     body: JSON.stringify({ values: [values] }),
-  });
+  }));
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Failed to update ${sheetName}`);
-  }
+  if (!res.ok) await throwWriteError(res, `Failed to update ${sheetName}`);
 
   invalidateSheetCache(sheetName);
   return res.json();
@@ -293,11 +352,14 @@ export async function deleteRow(sheetName, rowIndex) {
 
   const base = getBaseUrl();
   const authParam = getAuthParam();
-  const token = getAccessToken();
 
   // First, get the sheet's numeric gid
   const metaUrl = `${base}?fields=sheets.properties${authParam ? '&' + authParam : ''}`;
-  const metaRes = await fetch(metaUrl, token ? { headers: { 'Authorization': `Bearer ${token}` } } : undefined);
+  const metaRes = await writeWithAuthRetry((token) => fetch(
+    metaUrl,
+    token ? { headers: { 'Authorization': `Bearer ${token}` } } : undefined,
+  ));
+  if (!metaRes.ok) await throwWriteError(metaRes, `Failed to read spreadsheet metadata`);
   const meta = await metaRes.json();
   const sheet = meta.sheets?.find(s => s.properties.title === sheetName);
 
@@ -306,9 +368,9 @@ export async function deleteRow(sheetName, rowIndex) {
   const sheetId = sheet.properties.sheetId;
   const url = `${base}:batchUpdate${authParam ? '?' + authParam : ''}`;
 
-  const res = await fetch(url, {
+  const res = await writeWithAuthRetry((token) => fetch(url, {
     method: 'POST',
-    headers: getAuthHeaders(),
+    headers: writeHeaders(token),
     body: JSON.stringify({
       requests: [{
         deleteDimension: {
@@ -321,12 +383,9 @@ export async function deleteRow(sheetName, rowIndex) {
         }
       }]
     }),
-  });
+  }));
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Failed to delete from ${sheetName}`);
-  }
+  if (!res.ok) await throwWriteError(res, `Failed to delete from ${sheetName}`);
 
   invalidateSheetCache(sheetName);
   return res.json();
