@@ -118,12 +118,18 @@ html {
     justify-content: center;
   }
 
-  /* ---------- 4. Safe-area insets (notch, home indicator) ---------- */
+  /* ---------- 4. Safe-area insets (notch, home indicator) ----------
+     height → min-height + wrap: pages that put filter chips / CTAs in the
+     topbar (#topbar-actions) get a second, full-width topbar row on phones
+     instead of overflowing the fixed-height bar onto the content. */
   .topbar {
     padding-top: var(--safe-top);
     padding-left: calc(var(--space-4) + var(--safe-left));
     padding-right: calc(var(--space-4) + var(--safe-right));
-    height: calc(var(--header-height) + var(--safe-top));
+    height: auto;
+    min-height: calc(var(--header-height) + var(--safe-top));
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
   }
 
   .sidebar {
@@ -210,14 +216,198 @@ html {
     transition: transform 80ms ease;
   }
 
-  /* ---------- 8. Table tightening inside scroll containers ---------- */
-  .table td,
-  .table th {
-    padding: var(--space-2) var(--space-3);
-    font-size: 13px;
+  /* ---------- 8. Topbar title must shrink, not push actions off-screen ----
+     .topbar is flex; the title block had no min-width:0, so a rich title
+     ("DASHBOARD · 8 partners · $1,215,000 pipeline …") could not shrink:
+     the meta clipped at the screen edge and any topbar CTA ("+ New Event")
+     was shoved out of the viewport entirely. Let it shrink and ellipsize. */
+  .topbar__title {
+    min-width: 0;
+    flex: 0 1 auto;
+    overflow: hidden;
   }
 
-  /* ---------- 10. Form row stacking already handled elsewhere ---------- */
+  .topbar__title:not(.topbar__title--rich) {
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .topbar__meta {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+
+  /* Chips + CTAs drop to their own full-width topbar row; the chip strip
+     scrolls horizontally (it is already nowrap + overflow-x), CTAs keep
+     their size. An empty actions zone disappears so plain-title pages
+     keep the normal single-row topbar height. */
+  .topbar__actions {
+    flex: 1 1 100%;
+    min-width: 0;
+    padding-bottom: var(--space-2);
+  }
+
+  .topbar__actions:empty {
+    display: none;
+  }
+
+  .topbar__chips {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  /* The chip strip must stay a single line so .topbar__chips' horizontal
+     scrolling works; wrapped pills collided with the pinned CTA. */
+  .topbar__chips .type-filter-bar {
+    flex-wrap: nowrap;
+  }
+
+  .topbar__actions .topbar__cta,
+  .topbar__actions .partner-detail-page__section-cta {
+    flex-shrink: 0;
+  }
+
+  /* ---------- 9. Data tables → stacked cards ----------
+     An 8-column table cannot fit a 390px screen; worse, the table wrappers
+     clip overflow (overflow: hidden), so columns were sliced mid-letter
+     with no way to scroll to them. Each row becomes a card and each cell a
+     label/value line. Labels come from data-label attributes stamped from
+     the column headers by js/utils/mobile-tables.js. */
+  .table-wrapper,
+  .events-page__table-wrapper {
+    overflow: visible;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .table,
+  .events-page__table {
+    min-width: 0;          /* responsive.css forces 600px for .table */
+    width: 100%;
+  }
+
+  .table thead,
+  .events-page__table thead {
+    display: none;
+  }
+
+  .table tbody,
+  .events-page__table tbody {
+    display: block;
+  }
+
+  .table tbody tr,
+  .events-page__table tbody tr {
+    display: block;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-3);
+  }
+
+  .table tbody td,
+  .events-page__table tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+    min-width: 0;
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--color-border-light);
+    font-size: 14px;
+    text-align: right;
+  }
+
+  .table tbody tr td:last-child,
+  .events-page__table tbody tr td:last-child {
+    border-bottom: 0;
+  }
+
+  .table tbody td::before,
+  .events-page__table tbody td::before {
+    content: attr(data-label);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    text-align: left;
+    flex-shrink: 0;
+  }
+
+  /* First cell = the card title: no label, leading alignment, larger */
+  .table tbody td:first-child,
+  .events-page__table tbody td:first-child {
+    display: block;
+    text-align: left;
+    font-size: 15px;
+    padding-top: 0;
+  }
+
+  .table tbody td:first-child::before,
+  .events-page__table tbody td:first-child::before {
+    content: none;
+  }
+
+  /* Cells the stamper skipped (no matching header) lay out plainly */
+  .table tbody td:not([data-label]),
+  .events-page__table tbody td:not([data-label]) {
+    display: block;
+    text-align: left;
+  }
+
+  .table tbody td:not([data-label])::before,
+  .events-page__table tbody td:not([data-label])::before {
+    content: none;
+  }
+
+  /* Action buttons: the buttons speak for themselves — drop the label */
+  .table tbody td[data-label="Actions"]::before,
+  .events-page__table tbody td[data-label="Actions"]::before {
+    content: none;
+  }
+
+  .table tbody td[data-label="Actions"],
+  .events-page__table tbody td[data-label="Actions"] {
+    justify-content: flex-end;
+  }
+
+  .table__actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  /* Row-hover tint reads as a misrender on touch screens */
+  .table tr:hover td,
+  .events-page__table tbody tr:hover td {
+    background: transparent;
+  }
+
+  /* ---------- 10. Partner-detail section headers wrap ----------
+     Title + "View All Events"/"New Event" CTAs sat on one non-wrapping
+     row, so the buttons ran off the right edge of the screen. */
+  .partner-detail-page__section-header {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .partner-detail-page__section-title {
+    flex-wrap: wrap;
+  }
+
+  .partner-detail-page__section-actions {
+    flex-wrap: wrap;
+  }
+
+  .partner-detail-page__section-cta {
+    min-height: 40px;
+  }
+
+  /* ---------- 11. Form row stacking already handled elsewhere ---------- */
   .form-row {
     grid-template-columns: 1fr;
     gap: var(--space-3);

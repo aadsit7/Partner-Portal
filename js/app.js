@@ -24,6 +24,7 @@ import { mountVoiceWidget } from './components/voice-widget.js';
 import { initRandy } from './components/randy.js';
 import { initHotkeys, registerHotkey } from './utils/hotkeys.js';
 import { toggleQuickForm } from './components/quick-form.js';
+import { initMobileTableLabels } from './utils/mobile-tables.js';
 
 // ---- Register Routes ----
 
@@ -392,6 +393,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   setupMobileSidebar();
+  initMobileTableLabels();
   initRouter();
 
   // For returning admin sessions (already in localStorage), re-initialize
