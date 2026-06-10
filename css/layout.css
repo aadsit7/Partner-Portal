@@ -192,13 +192,18 @@
   background: var(--color-bg);
 }
 
-/* Top bar */
+/* Top bar. min-height + wrap (not a fixed height): pages that put filter
+   chips and CTAs in the topbar (Dashboard, Events, Partner detail) can
+   exceed one row on narrower windows — a fixed height clipped the
+   overflowing pills. When everything fits, this renders identically. */
 .topbar {
-  height: var(--header-height);
+  min-height: var(--header-height);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--space-8);
+  row-gap: var(--space-1);
+  padding: var(--space-2) var(--space-8);
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border-light);
   box-shadow: 0 1px 0 var(--color-border-light), 0 2px 8px rgba(11, 22, 64, 0.04);
@@ -217,6 +222,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-width: 0;
 }
 
 .topbar__hamburger {

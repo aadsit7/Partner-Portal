@@ -21,9 +21,11 @@
   <link rel="stylesheet" href="css/randy.css">
   <link rel="stylesheet" href="css/quick-form.css">
   <link rel="stylesheet" href="css/meeting-docs.css">
-  <link rel="stylesheet" href="css/mobile.css">
   <link rel="stylesheet" href="css/dashboard.css">
   <link rel="stylesheet" href="css/hotkeys.css">
+  <!-- mobile.css is the final override layer — it MUST stay last so its
+       phone-specific rules win by source order (see its header comment). -->
+  <link rel="stylesheet" href="css/mobile.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet" />
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
