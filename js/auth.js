@@ -226,17 +226,6 @@ export function canAttemptSilentReauth() {
 }
 
 /**
- * Whether a silent renewal has failed in this tab (Google answered
- * login_required etc.). Used to keep the background refresh timer from
- * periodically bounce-redirecting a user whose Google session is genuinely
- * gone — after a failure, only deliberate moments (app open, tab return)
- * may retry. Cleared by the next successful sign-in.
- */
-export function hasSilentReauthFailed() {
-  return !!safeSessionGet(SILENT_BLOCK_TS_KEY);
-}
-
-/**
  * Renew the admin's Sheets token by silently bouncing the page through
  * Google (prompt=none) and back to the current route. Returns true when the
  * navigation has started (the page is unloading — stop doing work), false
@@ -481,7 +470,8 @@ export function storeAccessToken(token, expiresInSec) {
 /**
  * Drop a stored access token that Google has rejected (401/403) while
  * keeping the session itself. Subsequent reads fall back to the API key and
- * the next app-open/focus renews the token via the silent redirect.
+ * the next cold load (e.g. the reload a failed save prompts) renews the
+ * token via the silent redirect. The session itself is never torn down here.
  */
 export function clearAccessToken() {
   const user = getCurrentUser();

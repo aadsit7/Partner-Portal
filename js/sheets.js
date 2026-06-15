@@ -110,8 +110,9 @@ export function invalidateSheetCache(sheetName) {
  * Try to refresh the OAuth token via the GIS popup client. Works on desktop
  * browsers (third-party cookie path); on iPhone it always resolves null —
  * WebKit blocks it — and renewal happens via the silent full-page redirect
- * on the next app-open/focus instead (see auth.js attemptSilentReauth).
- * Returns the new token or null; never throws.
+ * on the next cold load instead (see auth.js attemptSilentReauth and the
+ * DOMContentLoaded handler in app.js). Returns the new token or null; never
+ * throws.
  */
 async function tryPopupTokenRefresh() {
   try {
