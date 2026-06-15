@@ -2,7 +2,7 @@
 // Partner Portal — App Entry Point
 // ============================================
 
-import { getCurrentUser, getAccessToken, storeAccessToken, completeGoogleRedirect, attemptSilentReauth, hasSilentReauthFailed } from './auth.js';
+import { getCurrentUser, getAccessToken, storeAccessToken, completeGoogleRedirect, attemptSilentReauth } from './auth.js';
 import { addRoute, initRouter, navigate } from './router.js';
 import { renderSidebar, setupMobileSidebar } from './components/sidebar.js';
 
@@ -263,21 +263,6 @@ function scheduleTokenRefresh() {
 }
 
 /**
- * True while the user is mid-something a full-page redirect would destroy:
- * an open modal or quick-form, an active Randy session, or focus inside a
- * text field. The silent re-auth bounce is invisible but it IS a navigation,
- * so unsaved in-progress edits would be lost — never fire it during these.
- */
-function isUserEditing() {
-  if (document.querySelector('.modal-backdrop')) return true;
-  if (document.querySelector('.qf-panel--visible')) return true;
-  if (document.querySelector('.randy--open')) return true;
-  const ae = document.activeElement;
-  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return true;
-  return false;
-}
-
-/**
  * Run a silent refresh now (idempotent — concurrent calls share one
  * in-flight promise). Always reschedules the next attempt afterwards.
  */
@@ -302,25 +287,18 @@ function runTokenRefresh() {
       if (succeeded) {
         // Success → next normal cycle (15 min before the new expiry).
         scheduleTokenRefresh();
-      } else if (
-        // The popup-based refresh failed (it always does on iPhone — WebKit
-        // blocks gestureless popups and third-party cookies). If the token is
-        // now actually unusable and it's safe to navigate, renew via the
-        // full-page silent redirect instead. attemptSilentReauth's guards
-        // (once a minute max, 15-min block after login_required, offline
-        // check) make this loop-proof. hasSilentReauthFailed additionally
-        // stops the TIMER from ever re-bouncing a user whose Google session
-        // is genuinely gone — only app-open and tab-return retry then.
-        !getAccessToken()
-        && document.visibilityState === 'visible'
-        && !isUserEditing()
-        && !hasSilentReauthFailed()
-        && attemptSilentReauth()
-      ) {
-        return; // page is navigating to Google and back — nothing to schedule
       } else {
-        // Couldn't redirect (hidden tab, open modal, guard window) → short
-        // retry so we recover as soon as the situation clears.
+        // The in-place GIS popup refresh failed — always the case on iPhone,
+        // where WebKit blocks the gestureless popup and the third-party
+        // Google cookies it needs. We deliberately do NOT bounce the page to
+        // Google from a background timer: once an admin has signed in on a
+        // device they must never be yanked into a sign-in round-trip just
+        // because a timer fired. The session stays put and reads keep working
+        // via the API key; the Sheets write token is renewed on the next cold
+        // load (see DOMContentLoaded) — which is exactly what a failed save
+        // prompts the user to do ("reload"). Reschedule a quiet retry so a
+        // desktop browser whose third-party cookies briefly went missing
+        // recovers on its own, with no visible effect.
         if (refreshTimer) clearTimeout(refreshTimer);
         refreshTimer = setTimeout(() => { runTokenRefresh(); }, RETRY_AFTER_FAILURE_MS);
       }
@@ -331,24 +309,24 @@ function runTokenRefresh() {
 }
 
 /**
- * Refresh the token when the user returns to the tab. Background tabs
+ * Top the token up when the user returns to the tab. Background tabs
  * throttle setTimeout to >=1 s minimum intervals (or pause entirely on
- * some platforms), so a 15-min scheduled refresh may fire late or not
- * at all. Checking on visibilitychange/focus closes that gap.
+ * some platforms), so a 15-min scheduled refresh may fire late or not at
+ * all; checking on visibilitychange/focus closes that gap on desktop.
  *
- * This is the moment that matters most on iPhone: Safari suspends the page
- * the instant the user leaves, so when they come back hours later the token
- * is long dead. Renewing right here — before they touch anything — is what
- * keeps every save working without ever showing a login screen.
+ * Returning to the app must NEVER bounce the page to Google. Once an admin
+ * has signed in on a device they stay signed in, and switching back to the
+ * tab should simply show the app — not kick off a sign-in round-trip. So we
+ * only ever attempt an invisible, in-place top-up here (the GIS popup path):
+ * it renews the Sheets token silently on desktop and is a harmless no-op on
+ * iPhone. A token that can't be renewed in place waits for the next cold
+ * load rather than hijacking this return.
  */
 function refreshOnReturn() {
   const user = getCurrentUser();
   if (!user?.is_admin) return;
 
-  // Token fully expired/missing → the popup path can't help (no user
-  // gesture); bounce through Google silently while nothing is in progress.
   if (!getAccessToken()) {
-    if (!isUserEditing() && attemptSilentReauth()) return;
     runTokenRefresh();
     return;
   }
@@ -380,13 +358,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const user = getCurrentUser();
 
-  // Returning admin whose Sheets token has expired (any visit more than an
-  // hour after the last sign-in — the normal case on iPhone, where Safari
-  // suspends the page immediately). Renew it NOW via the silent full-page
-  // redirect, before rendering: Google bounces back in under a second with
-  // a fresh token and the router then loads the intended route. If a guard
-  // says no (offline, just failed, demo mode), fall through and run the app
-  // — reads still work via the API key.
+  // A returning admin is ALREADY signed in: their identity lives in
+  // localStorage and never expires, and reads keep working via the API key.
+  // Only the short-lived Google Sheets *write* token lapses (about an hour
+  // after the last sign-in — immediately on iPhone, where Safari suspends
+  // the page). Top it back up with a silent, prompt=none redirect that
+  // bounces through Google and back in well under a second, then loads the
+  // intended route.
+  //
+  // This is the ONLY place that auto-redirects, and only on a cold load (a
+  // deliberate launch or reload) — never on a passive tab-return, focus, or
+  // background timer. That is the whole point: once you have signed in on a
+  // device you are never bounced to Google again just for reopening or
+  // switching back to the app. If a guard says no (offline, a recent silent
+  // attempt already failed, or demo mode) we simply render the app — the
+  // admin stays signed in and the token is renewed on the next save-driven
+  // reload instead.
   if (user?.is_admin && !getAccessToken() && attemptSilentReauth()) {
     showReauthSplash();
     return; // the page is navigating to Google and straight back
