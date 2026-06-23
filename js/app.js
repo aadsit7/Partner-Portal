@@ -25,6 +25,7 @@ import { initRandy } from './components/randy.js';
 import { initHotkeys, registerHotkey } from './utils/hotkeys.js';
 import { toggleQuickForm } from './components/quick-form.js';
 import { initMobileTableLabels } from './utils/mobile-tables.js';
+import { initFieldDictation } from './utils/field-dictation.js';
 
 // ---- Register Routes ----
 
@@ -381,6 +382,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   setupMobileSidebar();
   initMobileTableLabels();
+  // Voice-to-text on every text field: focus a field and start talking.
+  // Works for all users; a graceful no-op where the browser lacks the
+  // Web Speech API. Coordinates the mic with Randy / the voice widget.
+  initFieldDictation();
   initRouter();
 
   // For returning admin sessions (already in localStorage), re-initialize

@@ -610,6 +610,9 @@ function startRecognition() {
   if (isTypeModeActive) return;
   // Pause if the existing voice widget (chat mic) is active — only one SpeechRecognition at a time
   if (isVoiceModeActive()) return;
+  // Pause while a text field is being dictated into — that feature owns the
+  // mic until the user clicks away (it calls window._randyResume when done).
+  if (window._fieldDictationActive) return;
 
   if (!recognition) recognition = initRecognition();
   if (!recognition) return;
