@@ -2,8 +2,11 @@
 // Universal Field Voice Dictation
 // ============================================
 // Focus any text field in the portal and the microphone starts
-// transcribing speech straight into it — no keyboard required. Click
-// (or tab) to another field to retarget; click anything that isn't a
+// transcribing speech straight into it — no keyboard required. Works for
+// both new and existing entries: plain <input>/<textarea> fields and the
+// rich-text Quill editors (descriptions, transcripts, notes). Transcripts
+// are inserted at the caret, so existing text can be appended to or edited.
+// Click (or tab) to another field to retarget; click anything that isn't a
 // text field to stop. The user can always still type or edit manually.
 //
 // Coordination with the other two mic consumers:
@@ -35,19 +38,20 @@ function hasSpeechSupport() {
 }
 
 // ── Eligibility ────────────────────────────────────────────────────
-// A "text box" is a plain text-bearing <input> or a <textarea> that the
-// user can actually type into. We deliberately leave out password fields
-// (privacy), numeric/date/etc. controls (dictation is unreliable there),
-// the rich-text Quill editors (their own model would fight raw inserts),
-// and the dedicated assistant inputs that already own a mic button.
+// A "text box" is a plain text-bearing <input>, a <textarea>, or a
+// rich-text contenteditable (the Quill editors used for descriptions,
+// transcripts and notes) that the user can actually type into. We leave
+// out password fields (privacy), numeric/date/etc. controls (dictation is
+// unreliable there), and the dedicated assistant inputs that already own a
+// mic button.
 const TEXT_INPUT_TYPES = new Set(['text', 'search', 'url', 'tel', 'email']);
 
 function isEligible(node) {
   if (!node || node.nodeType !== 1) return false;
   // Never steal the mic from the assistants' own inputs / widgets.
   if (node.closest('#voice-root, #randy-root, #ai-input')) return false;
-  // Explicit per-field opt-out: <input data-no-dictation>
-  if (node.hasAttribute('data-no-dictation')) return false;
+  // Explicit opt-out: <input data-no-dictation> or any ancestor with it.
+  if (node.closest('[data-no-dictation]')) return false;
 
   if (node.tagName === 'TEXTAREA') {
     return !node.disabled && !node.readOnly;
@@ -56,15 +60,44 @@ function isEligible(node) {
     const type = (node.getAttribute('type') || 'text').toLowerCase();
     return TEXT_INPUT_TYPES.has(type) && !node.disabled && !node.readOnly;
   }
+  // Rich-text editors (Quill) and any other contenteditable surface.
+  if (node.isContentEditable) return true;
   return false;
+}
+
+// Resolve the Quill instance backing a focused .ql-editor, if any. Lets us
+// insert through Quill's own model so its change/undo handlers fire exactly
+// as they do for typed input. Returns null for plain contenteditables.
+function getQuillFor(node) {
+  if (!window.Quill || !node.classList || !node.classList.contains('ql-editor')) return null;
+  const container = node.closest('.ql-container');
+  if (!container) return null;
+  const instance = window.Quill.find(container);
+  return instance && typeof instance.insertText === 'function' ? instance : null;
 }
 
 // ── Text Insertion ─────────────────────────────────────────────────
 // Insert a finalized chunk at the caret (or appended), keeping spacing
 // sensible, then fire an `input` event so the app's own change handlers
 // (validation, autosize, enable/disable of save buttons) all run exactly
-// as they would for typed input.
-function insertTranscript(field, raw) {
+// as they would for typed input. Dispatches by field kind so rich-text
+// editors go through their own model rather than raw DOM mutation.
+function commitTranscript(field, raw) {
+  if (!raw || !raw.trim()) return;
+  const quill = getQuillFor(field);
+  if (quill) { insertIntoQuill(quill, raw); return; }
+  if (field.isContentEditable) { insertIntoContentEditable(field, raw); return; }
+  insertIntoInput(field, raw);
+}
+
+// Capitalize the first letter when starting an empty field / new sentence.
+function maybeCapitalize(text, before) {
+  const trimmedBefore = before.replace(/\s+$/, '');
+  const atSentenceStart = trimmedBefore === '' || /[.!?]$/.test(trimmedBefore);
+  return atSentenceStart ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+}
+
+function insertIntoInput(field, raw) {
   let text = raw.trim();
   if (!text) return;
 
@@ -80,11 +113,7 @@ function insertTranscript(field, raw) {
   const before = usesCaret ? value.slice(0, start) : value;
   const after = usesCaret ? value.slice(end) : '';
 
-  // Capitalize the first letter when starting an empty field / sentence.
-  const trimmedBefore = before.replace(/\s+$/, '');
-  const atSentenceStart = trimmedBefore === '' || /[.!?]$/.test(trimmedBefore);
-  if (atSentenceStart) text = text.charAt(0).toUpperCase() + text.slice(1);
-
+  text = maybeCapitalize(text, before);
   const needsSpace = before.length > 0 && !/\s$/.test(before);
   const chunk = (needsSpace ? ' ' : '') + text;
 
@@ -95,6 +124,48 @@ function insertTranscript(field, raw) {
     try { field.setSelectionRange(caret, caret); } catch { /* ok */ }
   }
 
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+// Rich-text (Quill): insert through the editor API at the current
+// selection so formatting, the undo stack and text-change listeners all
+// behave as if the user typed. Falls back to end-of-document if there's
+// no live selection (e.g. the field was just focused programmatically).
+function insertIntoQuill(quill, raw) {
+  let text = raw.trim();
+  if (!text) return;
+
+  const sel = quill.getSelection();
+  const index = sel ? sel.index : quill.getLength() - 1;
+  const safeIndex = Math.max(0, index);
+  const before = quill.getText(0, safeIndex);
+
+  text = maybeCapitalize(text, before);
+  const needsSpace = before.length > 0 && !/\s$/.test(before);
+  const chunk = (needsSpace ? ' ' : '') + text;
+
+  quill.insertText(safeIndex, chunk, 'user');
+  quill.setSelection(safeIndex + chunk.length, 0, 'user');
+}
+
+// Generic contenteditable (no Quill instance): execCommand('insertText')
+// inserts at the caret, keeps the native undo stack intact, and fires the
+// element's own input event — the safest cross-browser path.
+function insertIntoContentEditable(field, raw) {
+  let text = raw.trim();
+  if (!text) return;
+
+  field.focus();
+  const before = (field.textContent || '');
+  text = maybeCapitalize(text, before);
+  const needsSpace = before.length > 0 && !/\s$/.test(before);
+  const chunk = (needsSpace ? ' ' : '') + text;
+
+  const inserted = document.execCommand('insertText', false, chunk);
+  if (!inserted) {
+    // execCommand is deprecated and may be unavailable — append as fallback.
+    field.appendChild(document.createTextNode(chunk));
+  }
   field.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
@@ -149,7 +220,7 @@ function initRecognition() {
       const result = event.results[i];
       const transcript = result[0].transcript;
       if (result.isFinal) {
-        insertTranscript(activeField, transcript);
+        commitTranscript(activeField, transcript);
       } else {
         interim += transcript;
       }
