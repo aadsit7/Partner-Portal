@@ -1,56 +1,42 @@
 /* ============================================
    Universal Field Voice Dictation
    ============================================
-   Floating "voice typing" pill that follows the focused text field while
-   the mic is transcribing into it. Positioned in JS via fixed coords. */
+   A small, discrete mic dot tucked into the top-right corner of the
+   focused text field while dictation is listening. Positioned in JS via
+   fixed coords. Deliberately minimal — no banner, no transcript overlay. */
 
 .field-dictation-indicator {
   position: fixed;
   z-index: 9000;
   display: none;
   align-items: center;
-  gap: 8px;
-  max-width: min(60vw, 360px);
-  padding: 6px 12px;
-  border-radius: 999px;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
   background: #0000CC;
   color: #fff;
-  font-family: Inter, system-ui, sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.2;
-  box-shadow: 0 4px 14px rgba(0, 0, 204, 0.28);
-  pointer-events: none; /* never intercept clicks on the field below */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  opacity: 0.85;
+  pointer-events: none; /* never intercept clicks/caret on the field below */
+  animation: field-dictation-pulse 1.6s ease-out infinite;
 }
 
 .field-dictation-indicator--visible {
   display: inline-flex;
 }
 
-.field-dictation-indicator__dot {
-  flex: 0 0 auto;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #ff5252;
-  box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.7);
-  animation: field-dictation-pulse 1.4s ease-out infinite;
-}
-
-.field-dictation-indicator__label {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.field-dictation-indicator svg {
+  width: 12px;
+  height: 12px;
 }
 
 @keyframes field-dictation-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.7); }
-  70%  { box-shadow: 0 0 0 7px rgba(255, 82, 82, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0); }
+  0%   { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25), 0 0 0 0 rgba(0, 0, 204, 0.45); }
+  70%  { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25), 0 0 0 6px rgba(0, 0, 204, 0); }
+  100% { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25), 0 0 0 0 rgba(0, 0, 204, 0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .field-dictation-indicator__dot { animation: none; }
+  .field-dictation-indicator { animation: none; }
 }
