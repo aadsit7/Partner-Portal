@@ -13,7 +13,7 @@
 // for back-compat.
 // ============================================================
 
-import { CONFIG } from '../config.js';
+import { CONFIG, setRuntimeConfig } from '../config.js';
 
 export async function fileApiRequest(payload) {
   const res = await fetch(CONFIG.FILE_API_URL, {
@@ -28,4 +28,24 @@ export async function fileApiRequest(payload) {
     throw new Error(data.error || 'File API request failed');
   }
   return data;
+}
+
+// ── AI key from Apps Script ─────────────────────────────────────────
+// The Anthropic key now lives as a Script Property (ANTHROPIC_API_KEY)
+// on the Apps Script web app instead of being pasted into the Setup
+// page. This asks the Apps Script for it (action: 'getConfig') and
+// caches it in runtime config so every existing getRuntimeConfig(
+// 'ANTHROPIC_API_KEY') caller keeps working unchanged. Fire-and-forget:
+// a failure just leaves whatever key (if any) is already stored, and the
+// manual 🔑 override in the AI Assistant still works as a fallback.
+export async function syncAiKeyFromBackend() {
+  try {
+    const data = await fileApiRequest({ action: 'getConfig' });
+    const key = (data && data.anthropicApiKey) ? String(data.anthropicApiKey).trim() : '';
+    if (key) setRuntimeConfig('ANTHROPIC_API_KEY', key);
+    return key;
+  } catch (err) {
+    console.warn('Could not load AI key from Apps Script:', err?.message);
+    return '';
+  }
 }

@@ -26,6 +26,7 @@ import { initHotkeys, registerHotkey } from './utils/hotkeys.js';
 import { toggleQuickForm } from './components/quick-form.js';
 import { initMobileTableLabels } from './utils/mobile-tables.js';
 import { initFieldDictation } from './utils/field-dictation.js';
+import { syncAiKeyFromBackend } from './utils/file-api.js';
 
 // ---- Register Routes ----
 
@@ -393,6 +394,13 @@ document.addEventListener('DOMContentLoaded', () => {
   if (user?.is_admin) {
     loginView.initTokenClient();
     setupTokenLifecycleListeners();
+
+    // Pull the Anthropic key from the Apps Script (where it's stored as a
+    // Script Property) into runtime config so the AI Assistant, Randy, and
+    // the PDF generators pick it up automatically — no manual paste on the
+    // Setup page. Fire-and-forget; the fetch is fast and the result is
+    // cached in localStorage for subsequent loads.
+    syncAiKeyFromBackend();
 
     if (getAccessToken()) {
       // Existing token still valid (>5 min buffer). Reuse it as-is and

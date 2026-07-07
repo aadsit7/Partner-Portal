@@ -7,6 +7,7 @@ import { isConfigured, testConnection, initializeSheet, seedSheetData, syncHeade
 import { el, mount } from '../utils/dom.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { showToast } from '../components/toast.js';
+import { syncAiKeyFromBackend } from '../utils/file-api.js';
 
 export const title = 'Setup';
 
@@ -31,13 +32,12 @@ export async function render(container) {
     value: hasApiKey ? apiKey : '',
   });
 
-  // --- AI Key input (pre-filled, stored in localStorage) ---
-  const aiKeyInput = el('input', {
-    class: 'form-input',
-    type: 'text',
-    placeholder: 'Paste your Anthropic API key here',
-    value: getRuntimeConfig('ANTHROPIC_API_KEY') || '',
-  });
+  // --- AI Assistant key status (auto-managed from Apps Script) ---
+  // The Anthropic key is no longer pasted here. It lives as a Script
+  // Property (ANTHROPIC_API_KEY) on the Apps Script web app and is pulled
+  // into the app automatically on load. This row just reports whether that
+  // pull succeeded so the admin can confirm the AI Assistant is powered.
+  const aiKeyStatus = el('div', { class: 'form-hint' }, 'Checking…');
 
   // --- Spreadsheet ID display ---
   const sheetIdDisplay = el('input', {
@@ -99,23 +99,12 @@ export async function render(container) {
 
       el('div', { class: 'form-group' },
         el('label', { class: 'form-label' }, 'AI Assistant API Key'),
-        el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
-          aiKeyInput,
-          el('button', {
-            class: 'btn btn--secondary',
-            title: 'Copy to clipboard',
-            style: { padding: '8px 12px', flexShrink: '0' },
-            onClick: () => {
-              const val = aiKeyInput.value.trim();
-              if (val) {
-                navigator.clipboard.writeText(val).then(() => showToast('API key copied to clipboard', 'success'));
-              }
-            }
-          }, '📋')
-        ),
+        aiKeyStatus,
         el('div', { class: 'form-hint' },
-          'Anthropic API key for the AI Assistant tab. Click 📋 to copy, then paste into the AI Assistant\'s 🔑 prompt. ',
-          'Get a key at console.anthropic.com > Settings > API keys.'
+          'Managed automatically. The Anthropic key is read from the Google Apps Script ',
+          'web app (Project Settings → Script Properties → ',
+          el('strong', {}, 'ANTHROPIC_API_KEY'),
+          '), so there is nothing to paste here. Update the key in Apps Script and it applies everywhere.'
         )
       ),
 
@@ -237,6 +226,9 @@ export async function render(container) {
   // Check connection on load
   checkStatus();
 
+  // Confirm the Anthropic key can be read from the Apps Script.
+  refreshAiKeyStatus();
+
   // Load and render existing presets
   loadCustomPrompts().then(presets => renderPresetCards(presets)).catch(() => {});
 
@@ -248,9 +240,6 @@ export async function render(container) {
 
     if (newId) setRuntimeConfig('SPREADSHEET_ID', newId);
     if (newKey) setRuntimeConfig('API_KEY', newKey);
-
-    const newAiKey = aiKeyInput.value.trim();
-    if (newAiKey) setRuntimeConfig('ANTHROPIC_API_KEY', newAiKey);
 
     showToast('Configuration saved', 'success');
     checkStatus();
@@ -316,6 +305,19 @@ export async function render(container) {
   function setStatus(state, message) {
     statusDot.className = `setup-status__dot setup-status__dot--${state}`;
     statusText.textContent = message;
+  }
+
+  async function refreshAiKeyStatus() {
+    aiKeyStatus.textContent = 'Checking…';
+    aiKeyStatus.style.color = '';
+    const key = await syncAiKeyFromBackend();
+    if (key) {
+      aiKeyStatus.textContent = `✓ Connected — key loaded from Apps Script (…${key.slice(-4)})`;
+      aiKeyStatus.style.color = '#059669';
+    } else {
+      aiKeyStatus.textContent = '✗ No key found. Add ANTHROPIC_API_KEY to the Apps Script Script Properties and redeploy.';
+      aiKeyStatus.style.color = '#dc2626';
+    }
   }
 
   function renderTabs(tabs) {
