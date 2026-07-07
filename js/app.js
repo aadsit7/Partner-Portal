@@ -20,6 +20,7 @@ import * as adminComp from './views/admin-comp.js';
 import * as adminPartnerDetail from './views/admin-partner-detail.js';
 import * as adminSetup from './views/admin-setup.js';
 import { renderAdminAIAssistant, cleanupAdminAIAssistant } from './views/admin-ai-assistant.js';
+import * as adminRandyPage from './views/admin-randy-page.js';
 import { mountVoiceWidget } from './components/voice-widget.js';
 import { initRandy } from './components/randy.js';
 import { initHotkeys, registerHotkey } from './utils/hotkeys.js';
@@ -155,6 +156,15 @@ addRoute('/admin/partner-detail', {
     await adminPartnerDetail.render(container, params);
   },
   cleanup: adminPartnerDetail.cleanup,
+});
+
+addRoute('/admin/randy', {
+  title: 'Randy',
+  render: async (container) => {
+    setupAppShell();
+    adminRandyPage.render(container);
+  },
+  cleanup: adminRandyPage.cleanup,
 });
 
 addRoute('/admin/setup', {
