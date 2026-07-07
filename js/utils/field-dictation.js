@@ -39,6 +39,15 @@ let indicator = null;       // floating "Listening…" pill
 let micButton = null;       // the clickable mic affordance
 let initialized = false;
 
+// Generalized "sink" for the finalized transcript. The built-in field flow
+// sets these to write into a plain <input>/<textarea>; external consumers
+// (e.g. the rich-text Quill editors) register their own insert callback so
+// they can reuse this single recognition instance instead of fighting it for
+// the device mic. Only one sink is ever active at a time.
+let currentInsert = null;   // fn(text) invoked for each finalized transcript
+let currentAnchor = null;   // element the "Listening…" pill positions against
+let currentOnStop = null;   // fn() invoked when this sink is torn down / replaced
+
 const STORAGE_KEY = 'pp_field_dictation'; // set to 'off' to opt out
 
 // Mic glyph — matches the assistant widgets' icon for a consistent look.
@@ -207,9 +216,9 @@ function ensureIndicator() {
 }
 
 function positionIndicator() {
-  if (!indicator || !activeField) return;
-  if (!activeField.isConnected) return;
-  const rect = activeField.getBoundingClientRect();
+  if (!indicator || !currentAnchor) return;
+  if (!currentAnchor.isConnected) return;
+  const rect = currentAnchor.getBoundingClientRect();
   const top = rect.top - 34;
   // Keep it on-screen if the field is near the top edge.
   indicator.style.top = (top < 6 ? rect.bottom + 6 : top) + 'px';
@@ -239,13 +248,13 @@ function initRecognition() {
   rec.lang = 'en-US';
 
   rec.onresult = (event) => {
-    if (!activeField) return;
+    if (!currentInsert) return;
     let interim = '';
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
       const transcript = result[0].transcript;
       if (result.isFinal) {
-        insertTranscript(activeField, transcript);
+        currentInsert(transcript);
       } else {
         interim += transcript;
       }
@@ -269,7 +278,7 @@ function initRecognition() {
   rec.onend = () => {
     // Chrome ends recognition after a stretch of silence even with
     // continuous=true. Restart automatically while we're still listening.
-    if (listening && activeField) {
+    if (listening && currentInsert) {
       try { rec.start(); } catch { /* already starting */ }
     }
   };
@@ -277,23 +286,22 @@ function initRecognition() {
   return rec;
 }
 
-function startDictation(field) {
-  if (disabled || !hasSpeechSupport() || isOptedOut()) return;
-  // Never fight an in-progress voice conversation for the mic.
-  if (isVoiceModeActive()) return;
+// Fire (and clear) the current sink's teardown callback. Used when a new sink
+// takes over, or when recognition is stopped, so any external UI (e.g. a Quill
+// mic button) can reset itself.
+function fireOnStop() {
+  if (!currentOnStop) return;
+  const cb = currentOnStop;
+  currentOnStop = null;
+  try { cb(); } catch { /* ok */ }
+}
 
-  activeField = field;
-
-  if (listening) {
-    // Already running — just retarget the field and refresh the UI.
-    showIndicator('Listening…');
-    setMicActive(true);
-    positionIndicator();
-    return;
-  }
-
+// Boot the shared recognition instance if it isn't already running. Returns
+// true when recognition is (or is now) live, false if it can't start.
+function beginRecognition() {
+  if (listening) return true;
   if (!recognition) recognition = initRecognition();
-  if (!recognition) return;
+  if (!recognition) return false;
 
   listening = true;
   window._fieldDictationActive = true;
@@ -305,13 +313,32 @@ function startDictation(field) {
   } catch {
     // start() throws if it's mid-stop; onend will restart it for us.
   }
+  return true;
+}
+
+function startDictation(field) {
+  if (disabled || !hasSpeechSupport() || isOptedOut()) return;
+  // Never fight an in-progress voice conversation for the mic.
+  if (isVoiceModeActive()) return;
+
+  // A field takes over from any external (e.g. Quill) dictation sink.
+  fireOnStop();
+  activeField = field;
+  currentInsert = (text) => insertTranscript(field, text);
+  currentAnchor = field;
+
+  if (!beginRecognition()) return;
   showIndicator('Listening…');
   setMicActive(true);
+  positionIndicator();
 }
 
 function stopDictation() {
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+  fireOnStop();
   activeField = null;
+  currentInsert = null;
+  currentAnchor = null;
   hideIndicator();
   setMicActive(false);
 
@@ -357,6 +384,9 @@ function onFocusOut() {
     hideTimer = null;
     const active = document.activeElement;
     if (isEligible(active)) return; // moved to another field; focusin handles it
+    // An external editor (e.g. a Quill mic) may have just claimed the mic —
+    // don't tear that session down, only drop the field button.
+    if (currentInsert && !activeField) { hideMicButton(); return; }
     detach();
   }, 150);
 }
@@ -382,6 +412,58 @@ export function initFieldDictation() {
   // Let the voice widget reclaim the mic from us when it starts (it can't
   // import this module without a cycle, so it calls through the window).
   window._fieldDictationStop = detach;
+}
+
+// ── External Dictation API ─────────────────────────────────────────
+// For editors that aren't plain <input>/<textarea> fields (the rich-text
+// Quill editors), which manage their own DOM/selection model. They register
+// an insert callback and reuse this module's single recognition instance and
+// all its mic-coordination logic, so we never end up with two SpeechRecognition
+// instances fighting for the device mic.
+
+// True when voice dictation can currently be offered at all (browser support,
+// not opted out, not disabled after a denied permission prompt).
+export function isDictationAvailable() {
+  return !disabled && hasSpeechSupport() && !isOptedOut();
+}
+
+// True while an external sink (not a plain field) is the one being dictated
+// into. Lets a caller reflect the live state on its own mic button.
+export function isExternalDictationActive() {
+  return listening && !!currentInsert && !activeField;
+}
+
+/**
+ * Start dictating into a custom target (e.g. a Quill editor).
+ * @param {Object} opts
+ * @param {function(string):void} opts.insert - Called with each finalized transcript chunk.
+ * @param {HTMLElement} [opts.anchor] - Element the "Listening…" pill is positioned against.
+ * @param {function():void} [opts.onStop] - Called when this sink is torn down or replaced.
+ * @returns {boolean} true if dictation started.
+ */
+export function startExternalDictation({ insert, anchor = null, onStop = null } = {}) {
+  if (typeof insert !== 'function') return false;
+  if (disabled || !hasSpeechSupport() || isOptedOut()) return false;
+  // Never fight an in-progress voice conversation for the mic.
+  if (isVoiceModeActive()) return false;
+
+  // Take over from whatever sink (field or other editor) was active.
+  fireOnStop();
+  hideMicButton();
+  activeField = null;
+  currentInsert = insert;
+  currentAnchor = anchor;
+  currentOnStop = onStop;
+
+  if (!beginRecognition()) return false;
+  showIndicator('Listening…');
+  positionIndicator();
+  return true;
+}
+
+// Stop an external dictation session (also fires its onStop callback).
+export function stopExternalDictation() {
+  stopDictation();
 }
 
 // Optional programmatic opt-out/opt-in (defaults to on).

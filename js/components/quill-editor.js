@@ -3,6 +3,20 @@
 // ============================================
 
 import { el } from '../utils/dom.js';
+import {
+  startExternalDictation,
+  stopExternalDictation,
+  isDictationAvailable,
+} from '../utils/field-dictation.js';
+
+// Mic glyph — matches the field-dictation / assistant widgets for a consistent look.
+const MIC_SVG = `
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+    <line x1="12" y1="19" x2="12" y2="23"></line>
+    <line x1="8" y1="23" x2="16" y2="23"></line>
+  </svg>`;
 
 // ---- HTML helpers ----
 
@@ -27,6 +41,86 @@ const TOOLBAR_OPTIONS = [
   ['link'],
   ['clean'],
 ];
+
+// ---- Voice dictation wiring ----
+
+/**
+ * Insert a finalized transcript chunk into the Quill editor at the caret
+ * (or appended), keeping spacing/capitalization sensible — mirrors the plain
+ * field behaviour so dictation feels identical everywhere.
+ */
+function insertDictation(quill, raw) {
+  const text = (raw || '').trim();
+  if (!quill || !text) return;
+
+  const sel = quill.getSelection();
+  // getLength() counts Quill's trailing "\n"; insert just before it when
+  // there's no live selection so text lands at the end of the content.
+  let index = sel ? sel.index : Math.max(0, quill.getLength() - 1);
+
+  // Replace any selected text, just like typing over a selection would.
+  if (sel && sel.length) {
+    quill.deleteText(index, sel.length, 'user');
+  }
+
+  const preceding = quill.getText(0, index);
+  const trimmedBefore = preceding.replace(/\s+$/, '');
+  const atSentenceStart = trimmedBefore === '' || /[.!?]$/.test(trimmedBefore);
+  let chunk = atSentenceStart ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+
+  const needsSpace = preceding.length > 0 && !/\s$/.test(preceding);
+  const out = (needsSpace ? ' ' : '') + chunk;
+
+  quill.insertText(index, out, 'user');
+  quill.setSelection(index + out.length, 0, 'user');
+}
+
+/**
+ * Attach a start/stop mic button to a Quill editor container. No-op on
+ * browsers without speech support or when dictation is opted out.
+ * @param {HTMLElement} container - the `.quill-editor` element
+ * @param {function} getQuill - returns the live Quill instance
+ */
+function setupDictation(container, getQuill) {
+  if (!isDictationAvailable()) return;
+
+  const micBtn = el('button', {
+    class: 'quill-editor-mic-btn',
+    type: 'button',
+    title: 'Dictate',
+    'aria-label': 'Dictate',
+    'aria-pressed': 'false',
+    html: MIC_SVG,
+  });
+
+  let active = false;
+  function setActive(on) {
+    active = on;
+    micBtn.classList.toggle('quill-editor-mic-btn--active', on);
+    micBtn.title = on ? 'Stop dictation' : 'Dictate';
+    micBtn.setAttribute('aria-label', on ? 'Stop dictation' : 'Dictate');
+    micBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+
+  // Keep the editor's selection when the button is pressed — without this the
+  // click would blur the editor and we'd lose the caret position.
+  micBtn.addEventListener('mousedown', (e) => e.preventDefault());
+  micBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (active) {
+      stopExternalDictation();
+      return;
+    }
+    const started = startExternalDictation({
+      insert: (text) => insertDictation(getQuill(), text),
+      anchor: container,
+      onStop: () => setActive(false),
+    });
+    if (started) setActive(true);
+  });
+
+  container.appendChild(micBtn);
+}
 
 // ---- Editor factory ----
 
@@ -90,6 +184,13 @@ export function initQuillEditor({ placeholder = '', initialHtml = '', title = 'E
       if (onTextChange) {
         quill.on('text-change', () => onTextChange(quill));
       }
+
+      // ---- Voice dictation (voice-to-text) ----
+      // A mic button anchored to the editor lets the user dictate straight
+      // into the rich-text field, matching every other typeable input in the
+      // portal. It reuses the shared recognition instance from field-dictation
+      // so it never fights the other mic consumers for the device mic.
+      setupDictation(editorContainer, () => quill);
 
       // ---- Fullscreen toggle ----
       let isFullscreen = false;

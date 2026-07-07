@@ -13,7 +13,7 @@ let voiceHistory = [];
 let voiceState = 'idle'; // idle | listening | processing | speaking
 let stopping = false;
 let recognition = null;
-let synth = window.speechSynthesis;
+let synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
 let currentUtterance = null;
 let abortController = null;
 let mounted = false;
