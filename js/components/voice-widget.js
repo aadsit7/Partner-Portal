@@ -271,8 +271,10 @@ export function activateVoiceMode() {
   stopping = false;
   voiceHistory = [];
   localStorage.setItem(STORAGE_KEY, 'true');
-  // Yield the mic to this widget — Randy will resume when we're done
+  // Yield the mic to this widget — Randy will resume when we're done,
+  // and any in-progress field dictation stops so the mics don't overlap.
   window._randyPause?.();
+  window._fieldDictationStop?.();
   showWidget();
   startListening();
 }
