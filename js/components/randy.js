@@ -2365,6 +2365,50 @@ function updateWindowUI() {
   }
 }
 
+// ── Docked (dedicated-page) mode ──────────────────────────────────
+// The dedicated Randy page (see views/admin-randy-page.js) reuses the
+// SAME singleton widget the floating assistant uses — never a second
+// instance, which would fight over the module-level state machine,
+// recognition object, and speech synth. dockRandy() relocates the one
+// #randy-widget node into a host element on the page and forces it
+// open (full-view). undockRandy() moves it back to #randy-root and
+// collapses it to the floating avatar, exactly as it was before.
+//
+// Because every Randy function looks its elements up by id via
+// document.getElementById, moving the node leaves all wiring intact —
+// listeners ride along with the element and ids stay unique.
+export function dockRandy(hostEl) {
+  const widget = document.getElementById('randy-widget');
+  if (!widget || !hostEl) return false;
+
+  hostEl.appendChild(widget);
+  widget.classList.add('randy--docked');
+
+  // Bring the assistant live (wake-word listening) and open the window.
+  // setWindowState('open') also lazy-loads the mode presets the first time.
+  if (currentState === STATES.OFF) transition(STATES.PASSIVE);
+  setWindowState('open');
+  if (conversationHistory.length === 0) showWelcome();
+  updateVoiceButton();
+  return true;
+}
+
+export function undockRandy() {
+  const widget = document.getElementById('randy-widget');
+  if (!widget) return;
+  widget.classList.remove('randy--docked');
+  const root = document.getElementById('randy-root');
+  if (root) root.appendChild(widget);
+  // Collapse back to the floating avatar; the mic keeps listening in the
+  // background just like before the page was opened.
+  setWindowState('collapsed');
+}
+
+function isDocked() {
+  const widget = document.getElementById('randy-widget');
+  return !!(widget && widget.classList.contains('randy--docked'));
+}
+
 // ── Combined UI Update (called by transition()) ───────────────────
 function updateWidgetUI() {
   const widget = document.getElementById('randy-widget');
@@ -2895,11 +2939,13 @@ function initDragging() {
 
   // Double-click to toggle fullscreen
   titlebar.addEventListener('dblclick', () => {
+    if (isDocked()) return; // docked page owns the layout — no fullscreen toggle
     setWindowState(windowState === 'fullscreen' ? 'open' : 'fullscreen');
   });
 
   titlebar.addEventListener('mousedown', (e) => {
     if (e.target.closest('.randy-window__ctrl')) return;
+    if (isDocked()) return; // no dragging while docked into the page
     if (windowState === 'fullscreen') return;
     if (window.innerWidth <= 768) return; // No drag on mobile
 
@@ -2960,6 +3006,7 @@ function initResizing() {
   let resizeDir = '';
 
   function onStart(e) {
+    if (isDocked()) return; // resize handles are hidden while docked
     if (windowState === 'fullscreen') return;
     if (window.innerWidth <= 768) return;
 

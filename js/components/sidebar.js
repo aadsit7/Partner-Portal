@@ -21,6 +21,7 @@ const ADMIN_NAV = [
   { path: '/admin/leadcheck', label: 'Accounts', icon: 'leadcheck' },
   { label: 'Pricing', icon: 'pricing', externalUrl: 'https://aadsit7.github.io/Partner-Calculator/' },
   { path: '/admin/comp', label: 'Comp', icon: 'comp' },
+  { path: '/admin/randy', label: 'Randy', icon: 'ai' },
   { path: '/admin/setup', label: 'Setup', icon: 'setup' },
 ];
 
