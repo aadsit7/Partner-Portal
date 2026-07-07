@@ -1437,10 +1437,21 @@
    where they must override inline styles left by drag/resize.
    ============================================================ */
 
-/* Page host — a full-height card in the main content area. */
+/* Page host — a full-height row split into two equal columns:
+   Randy on the left, the Quick Add form on the right. */
 .randy-page {
   position: relative;
   height: 100%;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
+}
+
+/* Each column is its own card. */
+.randy-page__pane {
+  position: relative;
+  flex: 1 1 50%;
+  min-width: 0;
   min-height: 0;
   display: flex;
   border-radius: 14px;
@@ -1448,6 +1459,25 @@
   border: 1px solid var(--color-border-light, #e5e7eb);
   box-shadow: 0 4px 24px rgba(11, 22, 64, 0.06);
   background: #fff;
+}
+
+/* The form column scrolls internally; the embedded panel owns its own
+   header/body/footer layout. */
+.randy-page__pane--form {
+  background: #fff;
+}
+
+/* Stack the columns on narrow viewports. */
+@media (max-width: 900px) {
+  .randy-page {
+    flex-direction: column;
+    height: auto;
+    min-height: 100%;
+  }
+  .randy-page__pane {
+    flex: 1 1 auto;
+    min-height: 480px;
+  }
 }
 
 /* Fallback shown when the browser has no Web Speech support and the
@@ -1515,11 +1545,17 @@
   border-radius: 0;
 }
 
-/* Give the chat column a comfortable reading width on very wide pages
-   while keeping the input/mode row full width and centered. */
+/* Comfortable but compact padding — the chat now lives in a half-width
+   column, so keep the horizontal inset modest. */
 .randy--docked .randy-window__chat {
-  padding: 20px clamp(16px, 6vw, 80px);
+  padding: 18px clamp(14px, 3vw, 40px);
 }
 .randy--docked .randy-window__bottom {
   padding-bottom: 22px;
+}
+
+/* Hide a control-row button wrap (used for the redundant Add button on
+   the split page, where the form is always visible). */
+.randy-btn-wrap--hidden {
+  display: none !important;
 }

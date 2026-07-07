@@ -31,6 +31,7 @@ const modeIsNew = { partner: false, opportunity: false };
 let panelEl             = null;
 let backdropEl          = null;
 let isVisible           = false;
+let isEmbedded          = false;   // true when mounted inline on the Randy page
 let activeType          = 'opportunity';
 let cachedPartners      = null;
 let cachedOpportunities = null;
@@ -59,6 +60,50 @@ export function isQuickFormVisible() {
   return isVisible;
 }
 
+// ── Embedded (dedicated-page) mode ────────────────────────────────
+// The dedicated Randy page shows the Quick Add form inline in its right
+// column rather than as a floating overlay. mountQuickFormInline()
+// relocates the SAME panel into a host element and pins it open;
+// unmountQuickFormInline() returns it to the body so the floating Randy
+// "Add" button toggle keeps working everywhere else. It's the same
+// singleton panel — never a second copy — so form state stays coherent.
+export function mountQuickFormInline(hostEl) {
+  if (!hostEl) return false;
+  initQuickForm();
+  if (!panelEl) return false;
+
+  isEmbedded = true;
+  hostEl.appendChild(panelEl);
+  panelEl.classList.add('qf-panel--embedded');
+  panelEl.classList.remove('qf-panel--visible');
+  // Drop any inline positioning/size left by the floating path.
+  panelEl.style.top = panelEl.style.left = panelEl.style.right = panelEl.style.bottom = '';
+  panelEl.style.height = panelEl.style.maxHeight = '';
+  panelEl.style.opacity = '';
+  panelEl.style.transform = '';
+  panelEl.style.display = 'flex';
+  isVisible = true;
+
+  if (!panelEl.dataset.bound) {
+    panelEl.dataset.bound = '1';
+    bindEvents();
+  }
+
+  Promise.all([loadPartners(), loadOpportunities()])
+    .then(() => renderTypeForm(activeType))
+    .catch(() => {});
+  return true;
+}
+
+export function unmountQuickFormInline() {
+  isEmbedded = false;
+  if (!panelEl) return;
+  panelEl.classList.remove('qf-panel--embedded');
+  isVisible = false;
+  panelEl.style.display = 'none';
+  document.body.appendChild(panelEl);
+}
+
 // ── Panel lifecycle ───────────────────────────────────────────────
 
 function showPanel() {
@@ -82,6 +127,9 @@ function showPanel() {
 
 export function hidePanel() {
   if (!panelEl) return;
+  // While embedded on the Randy page the form is always shown — ignore
+  // dismissals (Escape, Cancel, close X, or a stray Add-button toggle).
+  if (isEmbedded) return;
   panelEl.classList.remove('qf-panel--visible');
   isVisible = false;
   if (backdropEl) backdropEl.classList.remove('qf-backdrop--visible');

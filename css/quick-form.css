@@ -498,3 +498,35 @@
     border-radius: 10px;
   }
 }
+
+/* ── Embedded mode (dedicated Randy page, right column) ──────────────
+   The Quick Add form is mounted inline via mountQuickFormInline() and
+   fills its column instead of floating. Higher/!important rules beat
+   the floating + mobile positioning above regardless of source order. */
+.qf-panel--embedded {
+  position: static !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+  display: flex !important;
+  z-index: auto !important;
+}
+
+/* No dismiss affordances while embedded — the form is always present. */
+.qf-panel--embedded .qf-close,
+.qf-panel--embedded #qf-cancel-btn {
+  display: none !important;
+}
+
+/* Single remaining footer button spans the row. */
+.qf-panel--embedded .qf-footer {
+  justify-content: stretch;
+}
+.qf-panel--embedded .qf-footer .qf-btn--primary {
+  flex: 1;
+}
