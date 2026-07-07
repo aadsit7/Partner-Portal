@@ -660,8 +660,11 @@ function handleTranscript(transcript) {
   if (currentState === STATES.ACTIVE_LISTENING) {
     // Check for deactivation
     if (isDeactivationPhrase(lower)) {
+      // Verbal dismissal turns Randy fully OFF (mic closed) rather than
+      // lingering in wake-word listening — consistent with "not on unless
+      // the user activates it."
       speakText("Alright, I'm out. Hit me up whenever.", () => {
-        transition(STATES.PASSIVE, true);
+        transition(STATES.OFF, true);
       });
       return;
     }
@@ -2384,9 +2387,10 @@ export function dockRandy(hostEl) {
   hostEl.appendChild(widget);
   widget.classList.add('randy--docked');
 
-  // Bring the assistant live (wake-word listening) and open the window.
-  // setWindowState('open') also lazy-loads the mode presets the first time.
-  if (currentState === STATES.OFF) transition(STATES.PASSIVE);
+  // Open the window (this also lazy-loads the mode presets the first time)
+  // but do NOT start the microphone — visiting the page is not the same as
+  // activating voice. The user clicks Voice or types to begin. This keeps
+  // Randy off unless explicitly activated.
   setWindowState('open');
   if (conversationHistory.length === 0) showWelcome();
   updateVoiceButton();
@@ -2641,7 +2645,8 @@ function createWidget() {
   document.getElementById('randy-btn').addEventListener('click', () => {
     hideError();
     if (windowState === 'collapsed') {
-      if (currentState === STATES.OFF) transition(STATES.PASSIVE);
+      // Open the chat window WITHOUT starting the mic — the user activates
+      // voice explicitly via the Voice button (or types). Opening ≠ listening.
       setWindowState('open');
       if (conversationHistory.length === 0) showWelcome();
       updateVoiceButton();
@@ -3131,23 +3136,14 @@ export function initRandy() {
     synth.onvoiceschanged = selectVoice;
   }
 
-  // Default to PASSIVE (wake-word listening) unless user explicitly turned off
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved !== 'off') {
-    currentState = STATES.PASSIVE;
-    updateWidgetUI();
-    // Try to start mic for wake word — may fail on first visit (no user gesture yet)
-    try { startRecognition(); } catch { /* will retry on first user click */ }
-  }
-
-  // Fallback: if mic didn't start (no user gesture yet), retry on first click
-  const onFirstGesture = () => {
-    document.removeEventListener('click', onFirstGesture, true);
-    if (currentState === STATES.PASSIVE) {
-      startRecognition();
-    }
-  };
-  document.addEventListener('click', onFirstGesture, true);
+  // Randy starts fully OFF — the microphone is NOT opened on load, so there
+  // is no always-on recording indicator and no contention with the chat
+  // voice widget or field dictation. Randy only begins listening when the
+  // user explicitly activates it: the Voice button, the Alt+Z shortcut, or
+  // saying "Hey Randy" after voice has been turned on. Wake-word listening
+  // is therefore opt-in per session rather than a background default.
+  currentState = STATES.OFF;
+  updateWidgetUI();
 
   // Restore mute state
   if (localStorage.getItem('pp_randy_muted') === '1') {
