@@ -7,6 +7,11 @@
 import { SYSTEM_PROMPT, loadSheetData, callClaudeStream, warmSheetData, getOpportunityDescription, requestMapPdfJson } from '../utils/ai.js';
 import { parseActions, executeAction } from '../utils/ai-actions.js';
 import { detectMapPdfIntent } from '../utils/map-pdf-intent.js';
+import {
+  detectOpenItemIntent, matchDocuments, resolveDescriptionTarget,
+  parseOrdinalPick, parseSpokenDate, stripOpportunityTokens, contentTokens,
+  formatSpokenDate, hintMentionsName,
+} from '../utils/open-item-intent.js';
 import { buildMapPdf, mapFilename, blobToBase64 } from '../utils/map-pdf-builder.js';
 import { requestTimelineJsonPdf } from '../utils/timeline-pdf-client.js';
 import { buildTimelinePdf, timelineFilename } from '../utils/timeline-pdf-builder.js';
@@ -15,7 +20,7 @@ import { CONFIG } from '../config.js';
 import { getCurrentUser } from '../auth.js';
 import { appendRow, updateRow, readSheetAsObjects, loadCustomPrompts } from '../sheets.js';
 import { isVoiceModeActive } from './voice-widget.js';
-import { openOppModal, fileApiRequest, addFileToActiveDocsPanel } from '../views/admin-opportunities.js';
+import { openOppModal, openOppDetailsModal, fileApiRequest, addFileToActiveDocsPanel } from '../views/admin-opportunities.js';
 import { initQuickForm, toggleQuickForm } from './quick-form.js';
 
 // ── Randy Personality Prompt ──────────────────────────────────────
@@ -74,7 +79,17 @@ When the user asks you to open, show, go to, or navigate to something in the por
 Action types:
 - "navigate" — go to a portal page. Target is the route path.
 - "open_detail" — open a specific record. Target format is "type:name" (e.g. "partner:Nerdio" or "opportunity:Greenshield").
+- "open_document" — open a file attached to an opportunity (Drive document). Target is "opportunity:<name>". Add an "item" field with the exact words the user used to describe the document (e.g. "pricing pdf", "signed contract", "latest map").
+- "open_note" — open a description note on an opportunity in the portal. Target is "opportunity:<name>". Add an "item" field with the note descriptor: "latest", a date ("April 22"), a category ("meeting recap"), or content keywords.
 - "click" — trigger a UI element (reserved for future use).
+
+Document/note examples:
+- 'Open the pricing PDF for ANICO' → {"action": "open_document", "target": "opportunity:ANICO", "item": "pricing pdf"}
+- 'Pull up the signed contract on Greenshield' → {"action": "open_document", "target": "opportunity:Greenshield", "item": "signed contract"}
+- 'Open the latest description note for Nerdio' → {"action": "open_note", "target": "opportunity:Nerdio", "item": "latest"}
+- 'Show me the note from April 22 on ANICO' → {"action": "open_note", "target": "opportunity:ANICO", "item": "April 22"}
+
+For open_document and open_note, NEVER invent document names or note dates — copy the user's own descriptor words into "item" and the portal resolves them against the real records. If the user names no opportunity, emit the block with target "opportunity:" and the portal will ask them which one.
 
 Route mapping:
 - 'Open the dashboard' → action: navigate, target: /admin/dashboard
@@ -257,6 +272,13 @@ let pendingMapIntent = null;
 
 // Timeline PDF follow-up state — same shape as pendingMapIntent.
 let pendingTimelineIntent = null;
+
+// Open-item (document / description note) follow-up state. Shapes:
+//   { awaiting: 'opportunity', itemType, itemHint }        — which opp?
+//   { awaiting: 'document', files, opp }                   — which file?
+//   { awaiting: 'note', descriptions, opp }                — which note?
+// null whenever no open-item flow is pending.
+let pendingOpenItem = null;
 
 // Listening recovery
 let restartCount = 0;
@@ -442,6 +464,7 @@ function stopAll() {
   lastSpeechEndTime = 0;
   conversationHistory = [];
   pendingActions = null;
+  pendingOpenItem = null;
   confirmAttempts = 0;
   accumulatedTranscript = '';
   currentConvId = null;
@@ -529,8 +552,12 @@ function initRecognition() {
       // 'unknown' but must still fire when the Timeline PDF preset is selected.
       const _activeLbl = loadedPresets.find(p => p.prompt_id === activePresetId)?.label;
       const _isPresetActive = !!_activeLbl;
+      // Pending follow-ups (MAP / Timeline / open-item flows) expect short
+      // answers like "ANICO" or "the second one" that classify as
+      // 'unknown' — auto-send those too so the flow doesn't stall.
+      const _hasPendingFollowUp = !!(pendingMapIntent || pendingTimelineIntent || pendingOpenItem);
       const autoSendDelay = classification === 'action' ? 500 : 1500;
-      if (classification === 'action' || classification === 'question' || _isPresetActive) {
+      if (classification === 'action' || classification === 'question' || _isPresetActive || _hasPendingFollowUp) {
         autoSendTimer = setTimeout(() => {
           autoSendTimer = null;
           removeInterimBubble();
@@ -784,6 +811,22 @@ async function executeNavCommand(nav) {
       break;
     }
 
+    case 'open_document':
+    case 'open_note': {
+      // LLM fallback for phrasings the regex intent detector misses.
+      // The NAV block only carries the user's own descriptor words —
+      // resolution against real files/notes stays deterministic in
+      // runOpenItemFlow, which asks the user when anything is ambiguous.
+      const target = String(nav.target || '');
+      const name = target.includes(':') ? target.split(':').slice(1).join(':').trim() : target.trim();
+      await runOpenItemFlow({
+        itemType: nav.action === 'open_note' ? 'note' : 'document',
+        oppHint: name || null,
+        itemHint: typeof nav.item === 'string' ? nav.item : '',
+      });
+      break;
+    }
+
     case 'click':
       console.log('Randy NAV: click action (not implemented)', nav.target);
       break;
@@ -845,6 +888,19 @@ async function processUserInput(text) {
     }
     return;
   }
+  if (pendingOpenItem) {
+    const _pending = pendingOpenItem;
+    pendingOpenItem = null;
+    isProcessing = true;
+    transition(STATES.PROCESSING, isTypeModeActive);
+    renderMessage('user', text);
+    try {
+      await continueOpenItemFlow(text, _pending);
+    } finally {
+      isProcessing = false;
+    }
+    return;
+  }
   const _activePresetLabel = loadedPresets.find(p => p.prompt_id === activePresetId)?.label;
   const _normalizedLabel = _activePresetLabel ? _activePresetLabel.trim().replace(/\s+/g, ' ').toLowerCase() : '';
   if (_normalizedLabel === 'timeline pdf') {
@@ -854,6 +910,26 @@ async function processUserInput(text) {
     renderMessage('user', text);
     try {
       await runTimelinePdfFlow({ hint: text });
+    } finally {
+      isProcessing = false;
+    }
+    return;
+  }
+  // Open-item detection runs BEFORE MAP detection so "open the mutual
+  // action plan PDF for ANICO" opens the existing file instead of
+  // triggering a fresh MAP generation. Creation verbs never match the
+  // open-item patterns, so "create a MAP for ANICO" still falls through.
+  const openIntent = detectOpenItemIntent(text);
+  if (openIntent.triggered) {
+    isProcessing = true;
+    transition(STATES.PROCESSING, isTypeModeActive);
+    renderMessage('user', text);
+    try {
+      await runOpenItemFlow({
+        itemType: openIntent.itemType,
+        oppHint: openIntent.opportunityHint,
+        itemHint: openIntent.itemHint,
+      });
     } finally {
       isProcessing = false;
     }
@@ -1684,6 +1760,286 @@ function buildMapFailureCardHtml({ opportunityName, opportunityId, userSummary, 
 <pre>${safeDetail}</pre>
 </details>
 ${retry}
+</div>`;
+}
+
+// ── Open Item Flow (documents & description notes) ────────────────
+// Voice path for "open the pricing PDF for ANICO" / "open the latest
+// description note on Greenshield". Intent detection is regex-based
+// (open-item-intent.js) with an LLM :::NAV fallback (open_document /
+// open_note); resolution against the real records is always
+// deterministic — the LLM never picks a file or note itself. Anything
+// ambiguous is read back to the user instead of guessed.
+
+// Speak + render the same turn-ending response the other flows use.
+function respondOpenItem(display, spoken) {
+  if (isTypeModeActive) {
+    renderMessage('assistant', display);
+    transition(STATES.PASSIVE, true);
+  } else {
+    speakText(spoken || display, () => transition(STATES.ACTIVE_LISTENING));
+    renderMessage('assistant', display);
+  }
+}
+
+function humanFileName(fileName) {
+  return String(fileName || 'that file')
+    .replace(/\.[a-z0-9]{2,5}$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || 'that file';
+}
+
+async function runOpenItemFlow({ itemType, oppHint, itemHint }) {
+  const noun = itemType === 'note' ? 'description note' : 'document';
+
+  // ── Resolve the opportunity ────────────────────────────────────
+  let result = null;
+  try {
+    if (oppHint && oppHint.trim()) {
+      result = await getOpportunityDescription(oppHint);
+    } else if (itemHint && contentTokens(itemHint).length > 0) {
+      // No explicit "for X" clause — the opp name may be embedded in the
+      // descriptor ("open the ANICO pricing doc"). Filler words are
+      // stripped first so "the latest note" never reaches the matcher,
+      // and the match is only accepted when the opportunity's real name
+      // actually appears in the descriptor — the acronym-tier fallback
+      // in the opp matcher is too loose for a guessed name.
+      const joined = contentTokens(itemHint).join(' ');
+      const embedded = await getOpportunityDescription(joined);
+      const mentioned = (o) => hintMentionsName(joined, o.customerName) || hintMentionsName(joined, o.dealName);
+      if (embedded.matchCount === 1 && mentioned(embedded)) {
+        result = embedded;
+      } else if (embedded.matchCount > 1 && embedded.matches.some(mentioned)) {
+        result = embedded;
+      }
+    }
+  } catch (err) {
+    console.error('Randy open-item: opportunity lookup failed', err);
+    respondOpenItem("I couldn't pull the opportunities from the sheet, boss. Try again in a sec.");
+    return;
+  }
+
+  if (!result || result.matchCount === 0) {
+    pendingOpenItem = { awaiting: 'opportunity', itemType, itemHint };
+    const msg = (oppHint && oppHint.trim())
+      ? "I couldn't find that opportunity in the sheet, boss. Can you give me the exact name?"
+      : `Which opportunity is that ${noun} on, boss?`;
+    respondOpenItem(msg);
+    return;
+  }
+
+  if (result.matchCount > 1) {
+    const names = result.matches.map(m => m.opportunityName);
+    const spokenList = names.length === 2
+      ? `${names[0]}, or ${names[1]}`
+      : `${names.slice(0, -1).join(', ')}, or ${names[names.length - 1]}`;
+    pendingOpenItem = { awaiting: 'opportunity', itemType, itemHint };
+    respondOpenItem(
+      `I found a few, boss — which one: ${names.join(', ')}?`,
+      `I found a few, boss. Is it ${spokenList}?`,
+    );
+    return;
+  }
+
+  // Exactly one opportunity — drop its name from the descriptor so
+  // "ANICO pricing doc" matches files on "pricing doc" alone.
+  const cleanedHint = stripOpportunityTokens(itemHint || '', [result.customerName, result.dealName]);
+
+  if (itemType === 'document') {
+    await resolveAndOpenDocument(result, cleanedHint);
+  } else {
+    await resolveAndOpenNote(result, cleanedHint);
+  }
+}
+
+async function resolveAndOpenDocument(opp, docHint) {
+  let files;
+  try {
+    const resp = await fileApiRequest({ action: 'listFiles', opportunityId: opp.opportunityId });
+    files = Array.isArray(resp.files) ? resp.files : [];
+  } catch (err) {
+    console.error('Randy open-item: listFiles failed', err);
+    respondOpenItem(`I couldn't pull the documents for ${opp.opportunityName}, boss. Try again in a sec.`);
+    return;
+  }
+
+  if (files.length === 0) {
+    respondOpenItem(`No documents on ${opp.opportunityName} yet, boss.`);
+    return;
+  }
+
+  const matches = matchDocuments(files, docHint);
+  if (matches.length === 1) {
+    openDocumentForRandy(matches[0], opp);
+    return;
+  }
+
+  // Zero or several plausible files — never guess. Read the options
+  // back and stash them so the next reply picks one.
+  const candidates = matches.length > 1 ? matches : files;
+  pendingOpenItem = { awaiting: 'document', files: candidates, opp };
+  const spokenNames = candidates.slice(0, 5).map(f => humanFileName(f.file_name));
+  const extra = candidates.length > 5 ? `, and ${candidates.length - 5} more in the chat` : '';
+  const lead = matches.length > 1
+    ? `A few documents on ${opp.opportunityName} match that, boss.`
+    : `I don't see a document matching that on ${opp.opportunityName}, boss.`;
+  const spoken = `${lead} I've got ${spokenNames.join(', ')}${extra}. Which one?`;
+  respondOpenItem(buildDocListCardHtml(opp, candidates), spoken);
+}
+
+function openDocumentForRandy(file, opp) {
+  const human = humanFileName(file.file_name);
+  const url = file.drive_url || '';
+  // Voice-triggered window.open runs outside a user gesture, so pop-up
+  // blockers may refuse it — the card below always carries the link.
+  let openedWindow = null;
+  if (url) {
+    try { openedWindow = window.open(url, '_blank', 'noopener'); } catch { openedWindow = null; }
+  }
+  let spoken;
+  if (!url) {
+    spoken = `Found ${human} on ${opp.opportunityName}, boss, but there's no Drive link recorded for it.`;
+  } else if (!openedWindow) {
+    spoken = `Got it, boss — the browser blocked the pop-up, so the link for ${human} is in the chat.`;
+  } else {
+    spoken = `Opening ${human} for ${opp.opportunityName}, boss.`;
+  }
+  respondOpenItem(buildOpenDocCardHtml(opp, file), spoken);
+}
+
+async function resolveAndOpenNote(opp, noteHint) {
+  const descs = opp.allDescriptions || [];
+  if (descs.length === 0) {
+    // Nothing in Opportunity_Descriptions — open the deal anyway; the
+    // modal surfaces a legacy opp.description entry when one exists.
+    openOppDetailsForRandy(opp.opportunityId, null);
+    respondOpenItem(`I don't see any description notes on ${opp.opportunityName}, boss — opening the deal so you can double-check.`);
+    return;
+  }
+
+  const target = resolveDescriptionTarget(descs, noteHint);
+  if (target.none || target.candidates) {
+    const idxs = target.candidates || descs.map((_, i) => i);
+    pendingOpenItem = { awaiting: 'note', descriptions: idxs.map(i => descs[i]), opp };
+    const dates = idxs.slice(0, 6).map(i => formatSpokenDate(descs[i].date));
+    const extra = idxs.length > 6 ? `, and ${idxs.length - 6} more` : '';
+    const lead = target.none
+      ? `Couldn't pin down that note on ${opp.opportunityName}, boss.`
+      : `A few notes on ${opp.opportunityName} match, boss.`;
+    respondOpenItem(`${lead} I've got notes from ${dates.join(', ')}${extra}. Which one?`);
+    return;
+  }
+
+  openNoteForRandy(opp, descs[target.index], { defaulted: !!target.defaulted, total: descs.length });
+}
+
+function openNoteForRandy(opp, note, { defaulted = false, total = 0 } = {}) {
+  openOppDetailsForRandy(opp.opportunityId, { id: note.id || '', date: note.date || '' });
+  const when = formatSpokenDate(note.date);
+  const spoken = (defaulted && total > 1)
+    ? `Opening the latest note on ${opp.opportunityName}, boss — that's from ${when}. There are ${total} notes total if you need an older one.`
+    : `Opening the note from ${when} on ${opp.opportunityName}, boss.`;
+  respondOpenItem(spoken);
+}
+
+// Handle the reply to an open-item follow-up question.
+async function continueOpenItemFlow(text, pending) {
+  if (pending.awaiting === 'opportunity') {
+    await runOpenItemFlow({ itemType: pending.itemType, oppHint: text, itemHint: pending.itemHint });
+    return;
+  }
+
+  if (pending.awaiting === 'document') {
+    const files = pending.files || [];
+    const pick = parseOrdinalPick(text, files.length);
+    if (pick >= 0) {
+      openDocumentForRandy(files[pick], pending.opp);
+      return;
+    }
+    const matches = matchDocuments(files, text);
+    if (matches.length === 1) {
+      openDocumentForRandy(matches[0], pending.opp);
+      return;
+    }
+    pendingOpenItem = pending;
+    respondOpenItem(`Still not sure which one, boss — say the file name, or a number like "the first one".`);
+    return;
+  }
+
+  if (pending.awaiting === 'note') {
+    const descs = pending.descriptions || [];
+    // Dates are the natural way to pick a note; ordinals ("the first
+    // one") refer to the spoken list order, so only use them when the
+    // reply carries no date.
+    if (!parseSpokenDate(text)) {
+      const pick = parseOrdinalPick(text, descs.length);
+      if (pick >= 0) {
+        openNoteForRandy(pending.opp, descs[pick]);
+        return;
+      }
+    }
+    const target = resolveDescriptionTarget(descs, text);
+    if (typeof target.index === 'number') {
+      openNoteForRandy(pending.opp, descs[target.index]);
+      return;
+    }
+    pendingOpenItem = pending;
+    respondOpenItem(`Still not sure which note, boss — give me the date, or say "the first one".`);
+  }
+}
+
+// Navigate to the Opportunities view and open the read-only details
+// modal, optionally focusing one description card. Mirrors openOppForRandy.
+async function openOppDetailsForRandy(opportunityId, focusDescription) {
+  try {
+    const data = await loadSheetData();
+    const opp = (data.opportunities || []).find(o => String(o.opportunity_id) === String(opportunityId));
+    window.location.hash = '#/admin/opportunities';
+    if (!opp) return;
+    const waitForView = (attempts = 0) => {
+      const container = document.getElementById('view-container');
+      if (container && container.querySelector('.card, .opp-card, table') && attempts < 10) {
+        openOppDetailsModal(opp, focusDescription ? { focusDescription } : {});
+      } else if (attempts < 10) {
+        setTimeout(() => waitForView(attempts + 1), 200);
+      }
+    };
+    setTimeout(() => waitForView(), 300);
+  } catch (e) {
+    console.error('openOppDetailsForRandy failed', e);
+  }
+}
+
+function buildOpenDocCardHtml(opp, file) {
+  const safeName = escapeMapHtml(file.file_name || 'Untitled');
+  const safeOpp = escapeMapHtml(opp.opportunityName);
+  const btn = file.drive_url
+    ? `<a class="randy-map-card__btn" href="${escapeMapHtml(file.drive_url)}" target="_blank" rel="noopener">View in Drive</a>`
+    : `<span class="randy-map-card__btn" aria-disabled="true" style="opacity:0.6;cursor:not-allowed">No Drive link recorded</span>`;
+  return `<div class="response-container randy-map-card randy-map-card--success">
+<div class="randy-map-card__title-row">
+<span class="randy-map-card__title-icon"><svg viewBox="0 0 20 20" fill="none"><path d="M11.5 2.5H5.5a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V6.5l-4-4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M11.5 2.5v4h4" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
+<div class="randy-map-card__header">Opening Document</div>
+</div>
+<div class="randy-map-card__subline">${safeOpp}</div>
+<div class="randy-map-card__filename">${safeName}</div>
+${btn}
+</div>`;
+}
+
+function buildDocListCardHtml(opp, files) {
+  const rows = files.map((f, i) => {
+    const name = escapeMapHtml(f.file_name || 'Untitled');
+    const link = f.drive_url
+      ? `<a href="${escapeMapHtml(f.drive_url)}" target="_blank" rel="noopener">${name}</a>`
+      : name;
+    return `<div class="randy-map-card__filename">${i + 1}. ${link}</div>`;
+  }).join('\n');
+  return `<div class="response-container randy-map-card">
+<div class="randy-map-card__header">Which document on ${escapeMapHtml(opp.opportunityName)}?</div>
+${rows}
+<div class="randy-map-card__subline">Say the name or the number, boss — or click a link.</div>
 </div>`;
 }
 

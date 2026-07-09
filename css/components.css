@@ -1590,6 +1590,17 @@
   transform: translateY(-2px);
 }
 
+/* Randy voice flow — pulse the description card he just opened for you */
+.transcript-card--randy-focus {
+  animation: randy-focus-pulse 3s ease-out;
+}
+
+@keyframes randy-focus-pulse {
+  0%   { box-shadow: 0 0 0 3px var(--color-accent), var(--shadow-card); }
+  70%  { box-shadow: 0 0 0 3px rgba(0, 207, 255, 0.35), var(--shadow-card); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 207, 255, 0), var(--shadow-card); }
+}
+
 .transcript-card__header {
   display: flex;
   align-items: center;

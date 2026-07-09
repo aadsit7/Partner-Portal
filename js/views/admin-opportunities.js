@@ -1692,7 +1692,12 @@ function renderOppMapPdfErrorCard(slot, { opportunity, error, onRetry }) {
   );
 }
 
-export async function openOppDetailsModal(opp) {
+export async function openOppDetailsModal(opp, opts = {}) {
+  // focusDescription — used by Randy's "open that note" voice flow to
+  // auto-expand and highlight one description card once the async
+  // descriptions load lands. Matched by description_id first (exact),
+  // then by date, then by index as a last resort.
+  const { focusDescription = null } = opts;
   // Partners/events are needed to render the in-memory fields (partner name,
   // lead source label) and are typically already cached by the list view.
   // Always refresh events so the lead source label resolves correctly even
@@ -1993,7 +1998,42 @@ export async function openOppDetailsModal(opp) {
 
     currentFiles = docsResult.status === 'fulfilled' ? [...docsResult.value] : [];
     documentsSlot.replaceChildren(buildDetailsDocumentsSection(currentFiles));
+
+    if (focusDescription && descriptions.length > 0) {
+      focusDescriptionCard(descriptionsSlot, descriptions, focusDescription);
+    }
   });
+}
+
+// Expand + scroll + highlight one description card in the details modal.
+// The cards in the slot are rendered in the same order as `descriptions`,
+// so index-into-the-DOM is safe once the target index is resolved.
+function focusDescriptionCard(slotEl, descriptions, focus) {
+  let idx = -1;
+  if (focus.id) {
+    idx = descriptions.findIndex(d => String(d.description_id || '') === String(focus.id));
+  }
+  if (idx < 0 && focus.date) {
+    idx = descriptions.findIndex(d => String(d.description_date || '') === String(focus.date));
+  }
+  if (idx < 0 && Number.isInteger(focus.index) && focus.index >= 0 && focus.index < descriptions.length) {
+    idx = focus.index;
+  }
+  if (idx < 0) return;
+
+  const card = slotEl.querySelectorAll('.transcript-card')[idx];
+  if (!card) return;
+  // Expand through the card's own click handler so toggle state stays
+  // consistent with manual clicks.
+  const header = card.querySelector('.transcript-card__header');
+  if (header) header.click();
+  card.classList.add('transcript-card--randy-focus');
+  setTimeout(() => {
+    try { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch { /* detached */ }
+  }, 80);
+  setTimeout(() => {
+    try { card.classList.remove('transcript-card--randy-focus'); } catch { /* detached */ }
+  }, 3200);
 }
 
 function buildDetailsLoadingPlaceholder() {
