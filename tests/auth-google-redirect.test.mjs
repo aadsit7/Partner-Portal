@@ -16,6 +16,8 @@ import {
   canAttemptSilentReauth,
   completeGoogleRedirect,
   getOAuthRedirectUri,
+  getRememberedAdminEmail,
+  logout,
   takeLoginError,
 } from '../js/auth.js';
 import { CONFIG } from '../js/config.js';
@@ -350,4 +352,67 @@ test('attemptSilentReauth refuses while offline', () => {
   seedAdminSession();
   globalThis.navigator.onLine = false;
   assert.equal(attemptSilentReauth(), false, 'navigating to Google offline would strand the user');
+});
+
+// ---- Device memory: restore an evicted session without re-sign-in ----
+//
+// The session key alone is not durable: Safari's ITP purges script-writable
+// storage after 7 days without a visit, and "clear on exit" settings wipe it
+// too. That used to dump a signed-in admin on the login screen for a full
+// interactive Google round-trip. The device marker (pp_device_admin) lets the
+// cold-load silent redirect rebuild the whole session instead — the admin
+// signs in through Google once per device, until they explicitly log out.
+
+test('a successful Google sign-in remembers this device for future silent restores', () => {
+  const state = 's-dev';
+  const nonce = 'n-dev';
+  const idToken = makeIdToken({ email: ADMIN_EMAIL.toUpperCase(), name: 'Portal Admin', nonce });
+  const { session } = setupBrowser({ hash: buildReturnHash({ idToken, state }) });
+  session.set('pp_oauth_state', state);
+  session.set('pp_oauth_nonce', nonce);
+
+  completeGoogleRedirect();
+  assert.equal(getRememberedAdminEmail(), ADMIN_EMAIL.toLowerCase());
+});
+
+test('an evicted session on a remembered device silently restores via prompt=none', () => {
+  const { getHref } = setupBrowser();
+  localStorage.setItem('pp_device_admin', ADMIN_EMAIL); // marker survived, session did not
+
+  assert.equal(canAttemptSilentReauth(), true);
+  assert.equal(attemptSilentReauth(), true);
+  const p = new URL(getHref()).searchParams;
+  assert.equal(p.get('prompt'), 'none', 'no Google UI — the restore is invisible');
+  assert.equal(p.get('login_hint'), ADMIN_EMAIL, 'restores the remembered account');
+});
+
+test('a partner session on a remembered device is never Google-bounced', () => {
+  setupBrowser();
+  localStorage.setItem('pp_device_admin', ADMIN_EMAIL);
+  localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify({ username: 'partner1', is_admin: false }));
+  assert.equal(attemptSilentReauth(), false);
+});
+
+test('a failed silent restore keeps the device marker so a later cold load can retry', () => {
+  const { session } = setupBrowser({ hash: '#error=login_required&state=st-keep' });
+  localStorage.setItem('pp_device_admin', ADMIN_EMAIL);
+  session.set('pp_oauth_state', 'st-keep');
+  session.set('pp_oauth_silent', '1');
+
+  const result = completeGoogleRedirect();
+  assert.equal(result.silent, true);
+  assert.equal(globalThis.window.location.hash, '#/login', 'falls back to the login screen');
+  assert.equal(getRememberedAdminEmail(), ADMIN_EMAIL.toLowerCase(), 'marker survives a transient failure');
+  assert.ok(Number(session.get('pp_silent_block_ts')) > 0, 'and retries are blocked — no bounce loop');
+});
+
+test('logout clears both the session and the device marker', () => {
+  setupBrowser();
+  seedAdminSession();
+  localStorage.setItem('pp_device_admin', ADMIN_EMAIL);
+
+  logout();
+  assert.equal(localStorage.getItem(CONFIG.SESSION_KEY), null, 'signed out');
+  assert.equal(getRememberedAdminEmail(), null, 'no auto-restore after an explicit sign-out');
+  assert.equal(canAttemptSilentReauth(), false, 'next visit shows the login screen');
 });

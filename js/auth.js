@@ -96,6 +96,34 @@ const SILENT_BLOCK_TS_KEY = 'pp_silent_block_ts';
 const SILENT_ATTEMPT_MIN_INTERVAL_MS = 60 * 1000;
 const SILENT_BLOCK_MS = 15 * 60 * 1000;
 
+// Device memory (localStorage, separate from the session): the email of the
+// last admin who signed in with Google on this device. The session itself can
+// be evicted outside our control — Safari's ITP purges script-writable
+// storage after 7 days without a visit, and "clear on exit" browser settings
+// wipe it too — which used to dump the admin on the login screen for a full
+// interactive Google round-trip. The Google session at accounts.google.com
+// survives those purges (it belongs to a different site), so as long as we
+// remember WHO signed in here we can restore the whole session silently with
+// the same prompt=none redirect used for token renewal. Cleared only by an
+// explicit logout: "keep me signed in until I sign out".
+const DEVICE_ADMIN_KEY = 'pp_device_admin';
+
+/** Email of the last admin who signed in with Google on this device, or null. */
+export function getRememberedAdminEmail() {
+  try {
+    const email = localStorage.getItem(DEVICE_ADMIN_KEY);
+    return email ? String(email).toLowerCase() : null;
+  } catch { return null; }
+}
+
+function rememberAdminDevice(email) {
+  try { localStorage.setItem(DEVICE_ADMIN_KEY, String(email).toLowerCase()); } catch { /* private mode */ }
+}
+
+function forgetAdminDevice() {
+  try { localStorage.removeItem(DEVICE_ADMIN_KEY); } catch { /* ignore */ }
+}
+
 // Carries a sign-in error from completeGoogleRedirect() (which runs on page
 // load) to the login view (which renders just after), within the same load.
 let _pendingLoginError = null;
@@ -194,8 +222,11 @@ export function beginGoogleRedirect({ target = '/admin/dashboard', chooseAccount
 /**
  * Whether a silent (prompt=none) re-auth redirect is currently sensible.
  * All of these must hold:
- * - an admin session exists (partners don't use Google; nobody signed in
- *   must see the login screen, not a surprise Google bounce)
+ * - this device is known to belong to an admin: either an admin session
+ *   exists, or the session was evicted but the device marker remembers a
+ *   past admin Google sign-in (partners don't use Google, and a device
+ *   that never signed in must see the login screen, not a surprise
+ *   Google bounce)
  * - the OAuth client and a real spreadsheet are configured (in demo mode no
  *   token is needed, so a redirect would be pure churn)
  * - the browser isn't known-offline (navigating to Google while offline
@@ -205,7 +236,7 @@ export function beginGoogleRedirect({ target = '/admin/dashboard', chooseAccount
  */
 export function canAttemptSilentReauth() {
   const user = getCurrentUser();
-  if (!user?.is_admin) return false;
+  if (user ? !user.is_admin : !getRememberedAdminEmail()) return false;
 
   const clientId = CONFIG.GOOGLE_CLIENT_ID;
   if (!clientId || clientId === 'YOUR_GOOGLE_CLIENT_ID_HERE') return false;
@@ -226,8 +257,9 @@ export function canAttemptSilentReauth() {
 }
 
 /**
- * Renew the admin's Sheets token by silently bouncing the page through
- * Google (prompt=none) and back to the current route. Returns true when the
+ * Renew the admin's Sheets token — or restore an evicted admin session on a
+ * remembered device — by silently bouncing the page through Google
+ * (prompt=none) and back to the current route. Returns true when the
  * navigation has started (the page is unloading — stop doing work), false
  * when guards said no (caller should fall back or do nothing).
  */
@@ -242,7 +274,7 @@ export function attemptSilentReauth({ target } = {}) {
     beginGoogleRedirect({
       target: route,
       silent: true,
-      loginHint: getCurrentUser()?.email || undefined,
+      loginHint: getCurrentUser()?.email || getRememberedAdminEmail() || undefined,
     });
     return true;
   } catch {
@@ -334,6 +366,10 @@ export function completeGoogleRedirect() {
 
   const session = buildAdminSession(payload, accessToken, params.get('expires_in'));
   localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(session));
+  // Mark this device as an admin's: if the browser ever evicts the session
+  // (ITP purge, "clear on exit"), the next cold load restores it silently
+  // instead of showing the login screen (see canAttemptSilentReauth).
+  rememberAdminDevice(email);
   // A successful sign-in clears any silent-renewal block: the Google session
   // demonstrably works again.
   try { sessionStorage.removeItem(SILENT_BLOCK_TS_KEY); } catch { /* ignore */ }
@@ -491,6 +527,9 @@ export function logout() {
     try { google.accounts.oauth2.revoke(user.access_token); } catch {}
   }
   localStorage.removeItem(CONFIG.SESSION_KEY);
+  // An explicit sign-out means this device should stop restoring the admin
+  // session automatically — the next visit shows the login screen.
+  forgetAdminDevice();
 }
 
 /**

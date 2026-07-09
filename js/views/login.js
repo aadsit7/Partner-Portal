@@ -2,7 +2,7 @@
 // Login View
 // ============================================
 
-import { login, beginGoogleRedirect, takeLoginError, getOAuthRedirectUri, storeAccessToken } from '../auth.js';
+import { login, beginGoogleRedirect, takeLoginError, getOAuthRedirectUri, storeAccessToken, getRememberedAdminEmail } from '../auth.js';
 import { navigate } from '../router.js';
 import { CONFIG } from '../config.js';
 import { el, $, mount } from '../utils/dom.js';
@@ -248,7 +248,15 @@ function handleGoogleSignIn() {
     if (errorEl) errorEl.textContent = '';
     if (btn) btn.disabled = true;
     if (label) label.textContent = 'Redirecting to Google…';
-    beginGoogleRedirect({ target: '/admin/dashboard', chooseAccount: forceAccountChooser });
+    // login_hint: on a device that has signed in before, Google skips the
+    // account chooser and (with a live Google session) bounces straight
+    // back with no UI at all. Omitted after a failed attempt, where the
+    // whole point is letting the user pick a different account.
+    beginGoogleRedirect({
+      target: '/admin/dashboard',
+      chooseAccount: forceAccountChooser,
+      loginHint: forceAccountChooser ? null : getRememberedAdminEmail(),
+    });
   } catch (err) {
     if (errorEl) errorEl.textContent = err.message || 'Google sign-in is unavailable';
     if (btn) btn.disabled = false;
