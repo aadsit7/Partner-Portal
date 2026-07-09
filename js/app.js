@@ -2,7 +2,7 @@
 // Partner Portal — App Entry Point
 // ============================================
 
-import { getCurrentUser, getAccessToken, storeAccessToken, completeGoogleRedirect, attemptSilentReauth } from './auth.js';
+import { getCurrentUser, getAccessToken, storeAccessToken, completeGoogleRedirect, attemptSilentReauth, getRememberedAdminEmail } from './auth.js';
 import { addRoute, initRouter, navigate } from './router.js';
 import { renderSidebar, setupMobileSidebar } from './components/sidebar.js';
 
@@ -378,6 +378,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // bounces through Google and back in well under a second, then loads the
   // intended route.
   //
+  // The same silent redirect also RESTORES a session the browser itself
+  // evicted (Safari's 7-day ITP purge, "clear on exit" settings): when there
+  // is no session but the device marker remembers a past admin Google
+  // sign-in, we bounce once and land signed in on the dashboard — instead of
+  // dumping the admin on the login screen for a full interactive SSO. The
+  // marker is cleared only by an explicit logout, so signing out still works.
+  //
   // This is the ONLY place that auto-redirects, and only on a cold load (a
   // deliberate launch or reload) — never on a passive tab-return, focus, or
   // background timer. That is the whole point: once you have signed in on a
@@ -386,7 +393,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // attempt already failed, or demo mode) we simply render the app — the
   // admin stays signed in and the token is renewed on the next save-driven
   // reload instead.
-  if (user?.is_admin && !getAccessToken() && attemptSilentReauth()) {
+  const needsSilentRestore = user
+    ? (user.is_admin && !getAccessToken()) // signed in, write token lapsed
+    : !!getRememberedAdminEmail();         // session evicted on a known admin device
+  if (needsSilentRestore && attemptSilentReauth()) {
     showReauthSplash();
     return; // the page is navigating to Google and straight back
   }
