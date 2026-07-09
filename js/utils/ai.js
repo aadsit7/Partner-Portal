@@ -1163,6 +1163,7 @@ export async function getOpportunityDescription(opportunityHint) {
   const allDescriptions = fullDescriptions
     .filter(d => String(d.opportunity_id) === String(opp.opportunity_id))
     .map(d => ({
+      id: d.description_id || '',
       date: d.description_date || d.created_at || '',
       text: stripHtml(d.description_text || '').trim(),
       category: d.category || '',
