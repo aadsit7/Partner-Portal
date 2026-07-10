@@ -840,9 +840,16 @@ function buildStageMultiSelect({ allStages, selected, onChange }) {
     setOpen(!wrapper.classList.contains('multi-select--open'));
   });
   panel.addEventListener('click', (e) => e.stopPropagation());
-  document.addEventListener('click', (e) => {
+  // Self-removing outside-click closer — this view rebuilds on revisits, so an
+  // anonymous handler would accumulate on document with every visit.
+  function closeOnOutsideClick(e) {
+    if (!wrapper.isConnected) {
+      document.removeEventListener('click', closeOnOutsideClick);
+      return;
+    }
     if (!wrapper.contains(e.target)) setOpen(false);
-  });
+  }
+  document.addEventListener('click', closeOnOutsideClick);
 
   sync(); updateLabel();
   return wrapper;

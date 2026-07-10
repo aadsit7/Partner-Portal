@@ -229,6 +229,13 @@ function setState(state) {
 }
 
 function updateWidget() {
+  // Mirror the live voice state onto the AI-assistant page's mic button (when
+  // that view is mounted). The button has no other hook into this widget's
+  // lifecycle, and the widget can stop on its own (stop button, mic error) —
+  // without this the button's pulse would go stale.
+  const micBtn = document.getElementById('ai-mic');
+  if (micBtn) micBtn.classList.toggle('ai-mic-active', voiceState !== 'idle');
+
   const widget = document.getElementById('voice-widget');
   if (!widget) return;
 

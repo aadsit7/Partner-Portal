@@ -9,7 +9,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://accounts.google.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+  <!-- Third-party stylesheets load async (media="print" until loaded) so
+       first paint isn't gated on external CDNs: Inter falls back to the
+       system font until ready (display=swap), and Leaflet/Quill styling is
+       only needed deep inside specific views (maps, rich-text editors). -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
   <link rel="stylesheet" href="css/variables.css">
   <link rel="stylesheet" href="css/reset.css">
   <link rel="stylesheet" href="css/layout.css">
@@ -27,8 +31,8 @@
   <!-- mobile.css is the final override layer — it MUST stay last so its
        phone-specific rules win by source order (see its header comment). -->
   <link rel="stylesheet" href="css/mobile.css">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" media="print" onload="this.media='all'" />
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet" media="print" onload="this.media='all'" />
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -49,6 +53,16 @@
        prototype at jsPDF.API.autoTable (see waitForJsPdf). -->
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <!-- The heaviest modules sit 2-3 levels deep in the import graph, so the
+       browser only discovers them after fetching app.js and the views that
+       import them. Preloading flattens that waterfall — they download (and
+       compile) in parallel from the very first request. Hints only: safe to
+       remove, no behavior change. -->
+  <link rel="modulepreload" href="js/components/randy.js">
+  <link rel="modulepreload" href="js/utils/ai.js">
+  <link rel="modulepreload" href="js/views/admin-opportunities.js">
+  <link rel="modulepreload" href="js/sheets.js">
+  <link rel="modulepreload" href="js/auth.js">
   <script type="module" src="js/app.js"></script>
 </head>
 <body>

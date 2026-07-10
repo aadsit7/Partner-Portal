@@ -174,11 +174,18 @@ export function createSettingsButton() {
     popover.classList.toggle('tts-popover--open');
   });
 
-  document.addEventListener('click', (e) => {
+  // Self-removing: a new settings button is created on every AI-assistant
+  // render, so an anonymous handler here would accumulate on document.
+  function closeOnOutsideClick(e) {
+    if (!wrapper.isConnected) {
+      document.removeEventListener('click', closeOnOutsideClick);
+      return;
+    }
     if (!wrapper.contains(e.target)) {
       popover.classList.remove('tts-popover--open');
     }
-  });
+  }
+  document.addEventListener('click', closeOnOutsideClick);
 
   popover.querySelector('#tts-toggle').addEventListener('change', (e) => {
     setRuntimeConfig('TTS_ENABLED', e.target.checked);
