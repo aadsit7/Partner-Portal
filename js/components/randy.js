@@ -283,6 +283,7 @@ let pendingOpenItem = null;
 // Listening recovery
 let restartCount = 0;
 let restartWindowStart = 0;
+let restartTimer = null;
 
 const STORAGE_KEY = 'pp_randy_state';
 
@@ -614,6 +615,12 @@ function initRecognition() {
 }
 
 function scheduleRestart() {
+  // One pending restart at a time. onerror and onend both call this for the
+  // same recognition session, and each stacked timer used to fire its own
+  // start() — inflating the rate counter below until it tripped the 2s
+  // throttle and the mic sat dead while the button looked live.
+  if (restartTimer) return;
+
   const now = Date.now();
 
   // Rate limiting: if >5 restarts in 3 seconds, throttle
@@ -623,13 +630,13 @@ function scheduleRestart() {
   }
   restartCount++;
 
-  if (restartCount > 5) {
-    restartCount = 0;
-    setTimeout(() => startRecognition(), 2000);
-    return;
-  }
+  const delay = restartCount > 5 ? 2000 : 100;
+  if (restartCount > 5) restartCount = 0;
 
-  setTimeout(() => startRecognition(), 100);
+  restartTimer = setTimeout(() => {
+    restartTimer = null;
+    startRecognition();
+  }, delay);
 }
 
 function startRecognition() {
@@ -2234,6 +2241,29 @@ function finishSpeaking() {
   }, 300);
 }
 
+// Silence Randy right now and resolve the in-flight speech flow. synth.cancel()
+// alone is not enough: it only fires the current utterance's 'canceled' error,
+// which skips the queued onComplete — leaving the state machine stranded in
+// SPEAKING — and it can't stop the next sentence when clicked during the 100ms
+// inter-sentence gap (synth.speaking is false there). Used by the mute button.
+function stopSpeakingNow() {
+  speechChainCancelled = true;
+  if (synth.speaking) synth.cancel();
+  if (!isRandySpeaking) return;
+  clearSpeakingHighlight();
+  lastSpokenText = currentSpokenText;
+  lastSpeechEndTime = Date.now();
+  isRandySpeaking = false;
+  currentSpokenText = '';
+  const cb = currentSpeechOnComplete;
+  currentSpeechOnComplete = null;
+  if (cb) {
+    cb();
+  } else if (currentState === STATES.SPEAKING) {
+    transition(STATES.ACTIVE_LISTENING);
+  }
+}
+
 function speakWithWebSpeech(clean) {
   // Split into sentences at . ? ! boundaries
   const sentences = clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g);
@@ -2255,8 +2285,13 @@ function speakWithWebSpeech(clean) {
     clearSpeakingHighlight();
     if (e.error === 'canceled') {
       speechChainCancelled = true;
-      lastSpokenText = currentSpokenText;
-      lastSpeechEndTime = Date.now();
+      // stopSpeakingNow / the interrupt path may have already recorded the
+      // spoken text and cleared currentSpokenText before this async error
+      // lands — don't blank out the echo-tail reference they saved.
+      if (currentSpokenText) {
+        lastSpokenText = currentSpokenText;
+        lastSpeechEndTime = Date.now();
+      }
       isRandySpeaking = false;
       currentSpokenText = '';
       currentSpeechOnComplete = null;
@@ -3121,10 +3156,11 @@ function createWidget() {
     muteBtn.innerHTML = isMuted ? MUTED_SVG : SPEAKER_SVG;
     muteBtn.classList.toggle('randy-ctrl-btn--muted', isMuted);
     muteBtn.setAttribute('aria-label', isMuted ? 'Unmute voice' : 'Mute voice');
-    // Stop any current speech when muting
-    if (isMuted) {
-      if (synth.speaking) synth.cancel();
-    }
+    // Stop any current speech when muting — cancel the whole sentence chain
+    // and resolve the queued completion so the state machine moves on instead
+    // of hanging in SPEAKING (or speaking the next sentence anyway when the
+    // click lands in the gap between sentences).
+    if (isMuted) stopSpeakingNow();
     updateStatusBar();
     try { localStorage.setItem('pp_randy_muted', isMuted ? '1' : ''); } catch { /* ok */ }
   });

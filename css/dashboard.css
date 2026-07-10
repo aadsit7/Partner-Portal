@@ -318,6 +318,13 @@
   transform: translateY(-1px);
 }
 
+/* Pressed feedback — must match the hover rule's specificity and come after
+   it, or the hover translateY keeps winning while the pointer is down and
+   clicks on the filter chips give no visual response. */
+.view-toggle.type-filter-bar .btn:active {
+  transform: scale(0.97);
+}
+
 .view-toggle.type-filter-bar .btn--primary {
   background: var(--color-text-primary);
   color: #ffffff;

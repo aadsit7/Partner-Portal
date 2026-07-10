@@ -297,11 +297,15 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: all 200ms;
+  /* Targeted (not `all`) so the :active press below snaps instantly. */
+  transition: background 200ms, color 200ms;
 }
 .ai-mic-btn:hover {
   background: #f3f4f6;
   color: #1a1a2e;
+}
+.ai-mic-btn:active {
+  transform: scale(0.92);
 }
 
 /* Active listening state */

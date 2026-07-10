@@ -305,9 +305,17 @@ function buildStageMultiSelect({ allStages, selected, onChange }) {
 
   panel.addEventListener('click', (e) => e.stopPropagation());
 
-  document.addEventListener('click', (e) => {
+  // Self-removing outside-click closer. This view rebuilds on every visit and
+  // every type-filter change, so an anonymous handler here would pile up on
+  // document forever — every page click running an ever-growing handler list.
+  function closeOnOutsideClick(e) {
+    if (!wrapper.isConnected) {
+      document.removeEventListener('click', closeOnOutsideClick);
+      return;
+    }
     if (!wrapper.contains(e.target)) setOpen(false);
-  });
+  }
+  document.addEventListener('click', closeOnOutsideClick);
 
   syncAllCheckbox();
   updateLabel();

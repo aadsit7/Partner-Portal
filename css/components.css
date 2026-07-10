@@ -12,11 +12,21 @@
   font-size: 12px;
   font-weight: 600;
   border-radius: 8px;
-  transition: all 0.18s ease;
+  /* Targeted properties, not `all`: hover styling eases in gently while the
+     press transform below stays near-instant so clicks feel immediate. */
+  transition: background-color 0.15s ease, color 0.15s ease,
+              border-color 0.15s ease, box-shadow 0.15s ease,
+              filter 0.15s ease, transform 0.06s ease;
   white-space: nowrap;
   cursor: pointer;
   line-height: var(--leading-tight);
   height: 36px;
+}
+
+/* Pressed feedback on every pointer type — previously only phones had an
+   :active state (mobile.css), so desktop clicks gave no visual response. */
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .btn--primary {

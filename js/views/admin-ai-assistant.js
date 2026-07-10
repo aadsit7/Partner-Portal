@@ -411,7 +411,13 @@ export function renderAdminAIAssistant(container) {
   sendBtn.addEventListener('click', handleSend);
 
   const micBtn = document.getElementById('ai-mic');
-  if (micBtn) micBtn.addEventListener('click', toggleVoice);
+  if (micBtn) {
+    micBtn.addEventListener('click', toggleVoice);
+    // Re-rendering this view rebuilds the button; restore the pulsing active
+    // state if a voice session is already running (the voice widget keeps it
+    // in sync from here on).
+    micBtn.classList.toggle('ai-mic-active', isVoiceModeActive());
+  }
 
   // Insert TTS settings gear next to the input buttons
   const inputWrapper = document.querySelector('.ai-input-wrapper');
