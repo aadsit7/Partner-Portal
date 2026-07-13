@@ -23,8 +23,16 @@ const DEFAULT_CHECKLISTS = {
     'Launch campaign', 'Monitor performance', 'Report results',
   ],
   Other: [
-    'Define objectives', 'Assign tasks', 'Set timeline',
-    'Execute', 'Review results',
+    'Set date, audience, and CTA',
+    'Assign follow-up seller',
+    'Set targets (contacts, sessions, opps)',
+    'Run event, capture engaged contacts',
+    'Pull engaged list within 48 hours',
+    'Day 0: Recap email plus call',
+    'Day 1 to 7: Multi-channel follow-up with assessment offer',
+    'Day 8 to 14: Final touch, then nurture',
+    'Book sessions, convert to discovery, log opps',
+    'Update scoreboard',
   ],
 };
 
