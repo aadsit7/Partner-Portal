@@ -4,6 +4,13 @@
    source order (no !important unless unavoidable).
    Scoped inside @media (max-width: 768px) so the
    desktop experience stays untouched.
+
+   ≤768px implements the "Adsit / Revolutionary AI"
+   mobile design language: bottom tab bar + raised
+   Randy mic, frosted chrome, iOS grouped lists in
+   place of data tables, Poppins display / Figtree
+   UI type. All --m-* tokens live in the media
+   query below; desktop Recast tokens are untouched.
    ============================================ */
 
 /* ---------- Always-on: safe-area tokens + tap feel ---------- */
@@ -22,10 +29,68 @@ html {
   -webkit-tap-highlight-color: rgba(0, 0, 204, 0.12);
 }
 
+/* Mobile-only chrome (tab bar, bottom sheet, topbar wordmark / back button,
+   listening banner, large in-content page title). These elements are created
+   by js/components/tab-bar.js at any viewport width, so they are hidden by
+   default and only revealed inside the ≤768px media query — the desktop
+   layout never sees them. */
+#tab-bar,
+.m-sheet,
+.topbar__back,
+.topbar__brand,
+.m-listen-banner,
+.m-page-title {
+  display: none;
+}
+
 /* ============================================
    Mobile viewport (<= 768px)
    ============================================ */
 @media (max-width: 768px) {
+
+  /* ---------- 0. Mobile design tokens (Adsit / Revolutionary AI) ---------- */
+  :root {
+    --m-ink: #171d2b;
+    --m-text-2: #545d70;
+    --m-text-3: #737d92;
+    --m-canvas: #f4f6fb;
+    --m-card: #ffffff;
+    --m-hairline: #dce1ec;
+    --m-hairline-soft: #e6eaf3;
+    --m-accent: #2f6bff;
+    --m-accent-deep: #1f57e6;
+    --m-accent-soft: #eef3ff;
+    --m-brand: #0a8f82;
+    --m-brand-soft: #e2f5f1;
+    --m-success: #12a58c;
+    --m-success-soft: #e4f6ef;
+    --m-danger: #ef4e5b;
+    --m-danger-soft: #ffeef0;
+    --m-radius-card: 16px;
+    --m-radius-pill: 999px;
+    --tabbar-height: 56px;
+    --touch-target: 44px;
+    --mobile-gutter: 16px;
+    --navbar-height: 52px;
+    /* Frosted chrome: pair with backdrop-filter saturate(160%) blur(14px) */
+    --m-bar-bg: rgba(255, 255, 255, 0.86);
+
+    /* Mobile type system: Figtree for UI/body (Poppins is applied per-element
+       for display type). Desktop keeps Inter via the untouched desktop :root. */
+    --font-sans: 'Figtree', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+    --color-bg: var(--m-canvas);
+    --color-text-primary: var(--m-ink);
+    --color-text-secondary: var(--m-text-2);
+    --color-text-muted: var(--m-text-3);
+    --color-border: var(--m-hairline);
+    --color-border-light: var(--m-hairline-soft);
+  }
+
+  body {
+    font-size: 15px;
+    line-height: 1.5;
+  }
 
   /* ---------- 1. Viewport height fix (dvh, with vh fallback) ----------
      iOS Chrome's dynamic URL bar makes 100vh *taller* than the visible
@@ -51,6 +116,16 @@ html {
   /* Make the scrollable view area respect dvh too */
   .view-container {
     -webkit-overflow-scrolling: touch;
+  }
+
+  /* Content scrolls beneath the frosted tab bar */
+  .app-shell--app .view-container {
+    padding-bottom: calc(var(--tabbar-height) + var(--safe-bottom) + 40px);
+  }
+
+  /* The tab bar has no reason to exist on the login screen */
+  #app.app-shell--login ~ #tab-bar {
+    display: none;
   }
 
   /* ---------- 2. Kill iOS focus-zoom on form inputs ----------
@@ -91,150 +166,123 @@ html {
     min-height: 48px;
   }
 
-  .sidebar__link {
-    min-height: 44px;
-    padding: var(--space-3);
-    font-size: var(--text-base);
-  }
-
-  .sidebar__logout {
-    min-width: 44px;
-    min-height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
   .modal__close {
     width: 44px;
     height: 44px;
   }
 
-  .topbar__hamburger {
-    min-width: 44px;
-    min-height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  /* ---------- 4. Sidebar drawer retired on phones ----------
+     The bottom tab bar (below) is the primary navigation on ≤768px:
+     the drawer, its overlay, and the hamburger all disappear. Log out
+     and the long-tail destinations live in the "More" bottom sheet. */
+  #sidebar,
+  #sidebar-overlay,
+  #hamburger {
+    display: none;
   }
 
-  /* ---------- 4. Safe-area insets (notch, home indicator) ----------
+  /* ---------- 5. Topbar: compact frosted bar with brand wordmark ----------
      height → min-height + wrap: pages that put filter chips / CTAs in the
      topbar (#topbar-actions) get a second, full-width topbar row on phones
      instead of overflowing the fixed-height bar onto the content. */
   .topbar {
     padding-top: var(--safe-top);
-    padding-left: calc(var(--space-4) + var(--safe-left));
-    padding-right: calc(var(--space-4) + var(--safe-right));
+    padding-left: calc(var(--mobile-gutter) + var(--safe-left));
+    padding-right: calc(var(--mobile-gutter) + var(--safe-right));
     height: auto;
-    min-height: calc(var(--header-height) + var(--safe-top));
+    min-height: calc(var(--navbar-height) + var(--safe-top));
     flex-wrap: wrap;
     row-gap: var(--space-1);
+    position: relative;
+    background: var(--m-bar-bg);
+    -webkit-backdrop-filter: saturate(160%) blur(14px);
+    backdrop-filter: saturate(160%) blur(14px);
+    border-bottom: 1px solid var(--m-hairline);
+    box-shadow: none;
   }
 
-  .sidebar {
-    padding-top: var(--safe-top);
-    padding-bottom: var(--safe-bottom);
+  .topbar__brand {
+    display: flex;
+    align-items: center;
+    min-height: var(--navbar-height);
+    font-family: 'Poppins', var(--font-sans);
+    font-weight: 700;
+    font-size: 17px;
+    letter-spacing: -0.02em;
+    color: var(--m-ink);
+    white-space: pre;
   }
 
-  .modal-backdrop {
-    padding-top: calc(var(--space-4) + var(--safe-top));
-    padding-bottom: calc(var(--space-4) + var(--safe-bottom));
-    padding-left: calc(var(--space-4) + var(--safe-left));
-    padding-right: calc(var(--space-4) + var(--safe-right));
+  .topbar__brand-accent {
+    color: var(--m-brand);
   }
 
-  .modal {
-    /* Override responsive.css:228 max-height:100vh which overflowed. */
-    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 32px);
-    margin: 0;                    /* padding on backdrop instead */
+  /* The page title lives in the scroll content on phones (iOS large-title
+     pattern, section 6); the bar itself only carries the wordmark + actions. */
+  #topbar-title {
+    display: none;
   }
 
-  .modal__footer {
-    padding-bottom: calc(var(--space-3) + var(--safe-bottom));
-    position: sticky;
-    bottom: 0;
-    background: var(--color-surface);
-    z-index: 1;
+  /* Detail views: centered 17px title + back chevron instead of the wordmark */
+  .topbar--detail .topbar__brand {
+    display: none;
   }
 
-  .login-card {
-    margin-bottom: calc(var(--space-4) + var(--safe-bottom));
+  .topbar--detail .topbar__back {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--touch-target);
+    height: var(--navbar-height);
+    margin-left: -10px;
+    color: var(--m-ink);
+    background: none;
+    border: 0;
+    cursor: pointer;
   }
 
-  /* Toast container should dodge the notch too */
-  .toast-container {
-    top: calc(var(--space-4) + var(--safe-top));
-    left: calc(var(--space-4) + var(--safe-left));
-    right: calc(var(--space-4) + var(--safe-right));
+  .topbar--detail .topbar__back:active {
+    color: var(--m-accent-deep);
   }
 
-  /* ---------- 5. Randy voice widget + overlays ---------- */
-  .randy {
-    bottom: calc(12px + var(--safe-bottom));
-    right: calc(12px + var(--safe-right));
-  }
-
-  .randy-window {
-    max-height: 100dvh;
-  }
-
-  /* Override randy.css:701 which uses 100vh !important.
-     Match the selector specificity + add !important to win. */
-  .randy--fullscreen .randy-window {
-    height: 100dvh !important;
-    max-height: 100dvh !important;
-    padding-top: var(--safe-top);
-    padding-bottom: var(--safe-bottom);
-  }
-
-  /* ---------- 6. Kanban hover actions visible on touch ----------
-     Components.css:2498 sets opacity:0, only revealing on :hover.
-     Touch devices never fire :hover, so actions are unreachable.
-     !important needed because the inline opacity:0 rule has the
-     same specificity and would tie. */
-  .kanban__card-actions {
-    opacity: 1 !important;
-    position: static;
-    margin-top: var(--space-2);
-    justify-content: flex-end;
-  }
-
-  .kanban__card {
-    padding-right: var(--space-3);
-  }
-
-  /* ---------- 7. Tap feedback (substitute for :hover) ---------- */
-  .btn:active,
-  .sidebar__link:active,
-  .kanban__card:active,
-  .card:active,
-  .stat-card:active,
-  .modal__close:active,
-  .topbar__hamburger:active {
-    transform: scale(0.97);
-    transition: transform 80ms ease;
-  }
-
-  /* ---------- 8. Topbar title must shrink, not push actions off-screen ----
-     .topbar is flex; the title block had no min-width:0, so a rich title
-     ("DASHBOARD · 8 partners · $1,215,000 pipeline …") could not shrink:
-     the meta clipped at the screen edge and any topbar CTA ("+ New Event")
-     was shoved out of the viewport entirely. Let it shrink and ellipsize. */
-  .topbar__title {
-    min-width: 0;
-    flex: 0 1 auto;
+  .topbar--detail #topbar-title {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: var(--safe-top);
+    left: 60px;
+    right: 60px;
+    height: var(--navbar-height);
     overflow: hidden;
+    font-family: 'Poppins', var(--font-sans);
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--m-ink);
+    text-align: center;
+    pointer-events: none;
   }
 
-  .topbar__title:not(.topbar__title--rich) {
+  .topbar--detail .topbar__title-zone {
+    min-width: 0;
+  }
+
+  .topbar--detail .topbar__eyebrow {
+    display: block;
+    font-family: 'Poppins', var(--font-sans);
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    text-transform: none;
+    color: var(--m-ink);
     white-space: nowrap;
+    overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .topbar__meta {
-    min-width: 0;
-    flex: 0 1 auto;
+  .topbar--detail .topbar__meta {
+    display: none;
   }
 
   /* Chips + CTAs drop to their own full-width topbar row; the chip strip
@@ -267,12 +315,390 @@ html {
     flex-shrink: 0;
   }
 
-  /* ---------- 9. Data tables → stacked cards ----------
+  /* ---------- 6. Large in-content page title (iOS large-title) ----------
+     tab-bar.js mirrors the topbar title into #m-page-title as the first
+     child of the scroll content. The per-view section-header <h2> would
+     duplicate it, so the heading takes over its role. */
+  .m-page-title {
+    display: block;
+    margin: var(--space-1) 0 var(--space-4);
+    font-family: 'Poppins', var(--font-sans);
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    color: var(--m-ink);
+  }
+
+  .topbar--detail ~ .view-container .m-page-title {
+    display: none;
+  }
+
+  /* A heading mirrored from a previous session must never sit above the
+     login card */
+  .app-shell--login .m-page-title {
+    display: none;
+  }
+
+  .section-header__title {
+    display: none;
+  }
+
+  /* ---------- 7. Randy listening banner (under the topbar) ---------- */
+  .m-listen-banner {
+    display: none;
+    padding: var(--space-2) var(--mobile-gutter) 0;
+    flex-shrink: 0;
+  }
+
+  .m-listen-banner--visible {
+    display: flex;
+  }
+
+  .m-listen-banner__pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: var(--m-radius-pill);
+    background: var(--m-accent-soft);
+    color: var(--m-accent);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* ---------- 8. Bottom tab bar ---------- */
+  #tab-bar {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: calc(var(--z-header) + 1);
+    padding: 6px 8px calc(8px + var(--safe-bottom));
+    background: var(--m-bar-bg);
+    -webkit-backdrop-filter: saturate(160%) blur(14px);
+    backdrop-filter: saturate(160%) blur(14px);
+    border-top: 1px solid var(--m-hairline);
+  }
+
+  .m-tabbar__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-height: var(--touch-target);
+    border-radius: 12px;
+    color: var(--m-text-3);
+    background: none;
+    border: 0;
+    cursor: pointer;
+    text-decoration: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .m-tabbar__item:active {
+    background: #eef1f8;
+  }
+
+  .m-tabbar__item--active {
+    color: var(--m-accent-deep);
+  }
+
+  .m-tabbar__icon {
+    display: flex;
+    width: 22px;
+    height: 22px;
+  }
+
+  .m-tabbar__icon svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .m-tabbar__label {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+  }
+
+  /* Center slot: raised Randy mic */
+  .m-tabbar__slot--mic {
+    position: relative;
+  }
+
+  .m-tabbar__mic {
+    position: absolute;
+    left: 50%;
+    top: -30px;
+    transform: translateX(-50%);
+    width: 64px;
+    height: 64px;
+    border-radius: var(--m-radius-pill);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #e9edf5;
+    color: #8d97ab;
+    border: 5px solid #ffffff;
+    box-shadow: 0 8px 20px rgba(23, 29, 43, 0.14),
+                inset 0 1px 3px rgba(23, 29, 43, 0.10);
+    cursor: pointer;
+  }
+
+  .m-tabbar__mic:active {
+    transform: translateX(-50%) scale(0.95);
+  }
+
+  .m-tabbar__mic--listening,
+  .m-tabbar__mic--engaged {
+    background: var(--m-accent);
+    color: #ffffff;
+    box-shadow: 0 8px 20px rgba(23, 29, 43, 0.14);
+  }
+
+  .m-tabbar__mic-glyph {
+    display: flex;
+  }
+
+  .m-tabbar__mic-pulse {
+    position: absolute;
+    inset: -5px;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+
+  .m-tabbar__mic--listening .m-tabbar__mic-pulse {
+    border: 2px solid var(--m-accent);
+    animation: m-mic-pulse 1.8s ease-out infinite;
+  }
+
+  /* ---------- 9. "More" bottom sheet ---------- */
+  .m-sheet {
+    display: block;
+    position: fixed;
+    inset: 0;
+    /* Above the floating Randy avatar (randy.css uses very high z-indexes),
+       so the scrim really covers everything behind the sheet. */
+    z-index: 10000;
+  }
+
+  .m-sheet__scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(13, 17, 27, 0.35);
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+
+  .m-sheet__panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 75dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: var(--m-canvas);
+    border-radius: 20px 20px 0 0;
+    padding: 6px var(--mobile-gutter) calc(16px + var(--safe-bottom));
+    transform: translateY(100%);
+    transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .m-sheet--open .m-sheet__scrim {
+    opacity: 1;
+  }
+
+  .m-sheet--open .m-sheet__panel {
+    transform: none;
+  }
+
+  .m-sheet__handle {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: #d3d9e5;
+    margin: 6px auto 14px;
+  }
+
+  .m-sheet__group {
+    background: var(--m-card);
+    border: 1px solid var(--m-hairline-soft);
+    border-radius: var(--m-radius-card);
+    overflow: hidden;
+    margin-bottom: var(--space-3);
+  }
+
+  .m-sheet__group:last-child {
+    margin-bottom: 0;
+  }
+
+  .m-sheet__row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    min-height: 52px;
+    padding: 0 var(--mobile-gutter);
+    background: none;
+    border: 0;
+    cursor: pointer;
+    text-decoration: none;
+    text-align: left;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--m-ink);
+  }
+
+  .m-sheet__row + .m-sheet__row::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 52px;
+    right: 0;
+    height: 1px;
+    background: var(--m-hairline-soft);
+  }
+
+  .m-sheet__row:active {
+    background: #eef1f8;
+  }
+
+  .m-sheet__row-icon {
+    display: flex;
+    width: 22px;
+    height: 22px;
+    color: var(--m-text-2);
+    flex-shrink: 0;
+  }
+
+  .m-sheet__row-label {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .m-sheet__row-trailing {
+    display: flex;
+    color: #9aa3b7;
+    flex-shrink: 0;
+  }
+
+  .m-sheet__row--current {
+    color: var(--m-accent-deep);
+  }
+
+  .m-sheet__row--current .m-sheet__row-icon {
+    color: var(--m-accent-deep);
+  }
+
+  .m-sheet__row--danger {
+    color: var(--m-danger);
+  }
+
+  .m-sheet__row--danger .m-sheet__row-icon {
+    color: var(--m-danger);
+  }
+
+  /* ---------- 10. Safe-area insets (notch, home indicator) ---------- */
+  .modal-backdrop {
+    padding-top: calc(var(--space-4) + var(--safe-top));
+    padding-bottom: calc(var(--space-4) + var(--safe-bottom));
+    padding-left: calc(var(--space-4) + var(--safe-left));
+    padding-right: calc(var(--space-4) + var(--safe-right));
+  }
+
+  .modal {
+    /* Override responsive.css:228 max-height:100vh which overflowed. */
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 32px);
+    margin: 0;                    /* padding on backdrop instead */
+  }
+
+  .modal__footer {
+    padding-bottom: calc(var(--space-3) + var(--safe-bottom));
+    position: sticky;
+    bottom: 0;
+    background: var(--color-surface);
+    z-index: 1;
+  }
+
+  .login-card {
+    margin-bottom: calc(var(--space-4) + var(--safe-bottom));
+  }
+
+  /* Toast container should dodge the notch too */
+  .toast-container {
+    top: calc(var(--space-4) + var(--safe-top));
+    left: calc(var(--space-4) + var(--safe-left));
+    right: calc(var(--space-4) + var(--safe-right));
+  }
+
+  /* ---------- 11. Randy voice widget + overlays ----------
+     Both floating widgets ride above the fixed tab bar. */
+  .randy {
+    bottom: calc(var(--tabbar-height) + var(--safe-bottom) + 24px);
+    right: calc(12px + var(--safe-right));
+  }
+
+  .voice-widget {
+    bottom: calc(var(--tabbar-height) + var(--safe-bottom) + 24px);
+  }
+
+  .randy-window {
+    max-height: 100dvh;
+  }
+
+  /* Override randy.css:701 which uses 100vh !important.
+     Match the selector specificity + add !important to win. */
+  .randy--fullscreen .randy-window {
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bottom);
+  }
+
+  /* ---------- 12. Kanban hover actions visible on touch ----------
+     Components.css:2498 sets opacity:0, only revealing on :hover.
+     Touch devices never fire :hover, so actions are unreachable.
+     !important needed because the inline opacity:0 rule has the
+     same specificity and would tie. */
+  .kanban__card-actions {
+    opacity: 1 !important;
+    position: static;
+    margin-top: var(--space-2);
+    justify-content: flex-end;
+  }
+
+  .kanban__card {
+    padding-right: var(--space-3);
+  }
+
+  /* ---------- 13. Tap feedback (substitute for :hover) ---------- */
+  .btn:active,
+  .kanban__card:active,
+  .card:active,
+  .stat-card:active,
+  .modal__close:active {
+    transform: scale(0.97);
+    transition: transform 80ms ease;
+  }
+
+  /* ---------- 14. Data tables → stacked cards (generic fallback) ----------
      An 8-column table cannot fit a 390px screen; worse, the table wrappers
      clip overflow (overflow: hidden), so columns were sliced mid-letter
      with no way to scroll to them. Each row becomes a card and each cell a
      label/value line. Labels come from data-label attributes stamped from
-     the column headers by js/utils/mobile-tables.js. */
+     the column headers by js/utils/mobile-tables.js.
+
+     The Opportunities / Partners / Events tables get the full iOS
+     grouped-list treatment in section 15 below; this generic transform
+     remains the fallback for every other table in the app. */
   .table-wrapper,
   .events-page__table-wrapper {
     overflow: visible;
@@ -387,7 +813,711 @@ html {
     background: transparent;
   }
 
-  /* ---------- 10. Partner-detail section headers wrap ----------
+  /* ---------- 15. iOS grouped lists (Opportunities / Partners / Events) ----
+     The three main data tables become one white card each: tbody is the
+     card, rows are ≥44px tappable lines with inset hairlines, secondary
+     columns are folded into the row or hidden (their data lives in the
+     detail push). Tables are recognized by the data-label stamps, so any
+     other .table keeps the generic fallback above. */
+
+  /* --- Shared card shell --- */
+  .table:has(> tbody > tr > td[data-label="Deal"]) > tbody,
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) > tbody,
+  .events-page__table > tbody {
+    display: block;
+    background: var(--m-card);
+    border: 1px solid var(--m-hairline-soft);
+    border-radius: var(--m-radius-card);
+    overflow: hidden;
+    box-shadow: none;
+  }
+
+  .table:has(> tbody > tr > td[data-label="Deal"]) > tbody > tr,
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) > tbody > tr,
+  .events-page__table > tbody > tr {
+    position: relative;
+    display: grid;
+    align-items: center;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    margin: 0;
+    padding: 12px var(--mobile-gutter);
+    min-height: var(--touch-target);
+  }
+
+  .table:has(> tbody > tr > td[data-label="Deal"]) > tbody > tr:active,
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) > tbody > tr:active,
+  .events-page__table > tbody > tr:active {
+    background: #eef1f8;
+  }
+
+  .table:has(> tbody > tr > td[data-label="Deal"]) > tbody > tr + tr::before,
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) > tbody > tr + tr::before,
+  .events-page__table > tbody > tr + tr::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: var(--mobile-gutter);
+    right: 0;
+    height: 1px;
+    background: var(--m-hairline-soft);
+  }
+
+  .table:has(> tbody > tr > td[data-label="Deal"]) > tbody > tr > td,
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) > tbody > tr > td,
+  .events-page__table > tbody > tr > td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    font-size: 15px;
+    text-align: left;
+  }
+
+  .table:has(> tbody > tr > td[data-label="Deal"]) > tbody > tr > td::before,
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) > tbody > tr > td::before,
+  .events-page__table > tbody > tr > td::before {
+    content: none;
+  }
+
+  /* --- Opportunities rows: name + "customer · partner" left,
+         value over status chip right --- */
+  .table:has(> tbody > tr > td[data-label="Deal"]) > tbody > tr {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    column-gap: 12px;
+    row-gap: 2px;
+  }
+
+  .table:has(> tbody > tr > td[data-label="Deal"]) td[data-label="Deal"] {
+    display: contents;
+  }
+
+  .table:has(> tbody > tr > td[data-label="Deal"]) td[data-label="Deal"] > .deal-name-link {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--m-ink);
+    text-decoration: none;
+  }
+
+  /* The name link stretches over the whole row — one big tap target that
+     opens the existing detail view */
+  .table:has(> tbody > tr > td[data-label="Deal"]) td[data-label="Deal"] > .deal-name-link::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+
+  /* Customer subtitle (inline-styled by the view, hence !important). The
+     partner name rides along as data-m-partner (mobile-tables.js) so
+     "customer · partner" renders as one line. */
+  .table:has(> tbody > tr > td[data-label="Deal"]) td[data-label="Deal"] > div {
+    grid-column: 1;
+    grid-row: 2;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px !important;
+    color: var(--m-text-2) !important;
+  }
+
+  .table:has(> tbody > tr > td[data-label="Deal"]) td[data-label="Deal"] > div[data-m-partner]::after {
+    content: ' · ' attr(data-m-partner);
+  }
+
+  .table:has(> tbody > tr > td[data-label="Deal"]) td[data-label="Value"] {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    font-size: 15px;
+    font-weight: 700 !important;   /* view sets an inline font-weight */
+    color: var(--m-ink);
+  }
+
+  .table:has(> tbody > tr > td[data-label="Deal"]) td[data-label="Status"] {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+  }
+
+  .table:has(> tbody > tr > td[data-label="Deal"]) td[data-label="Partner"],
+  .table:has(> tbody > tr > td[data-label="Deal"]) td[data-label="Stage"],
+  .table:has(> tbody > tr > td[data-label="Deal"]) td[data-label="Close Date"],
+  .table:has(> tbody > tr > td[data-label="Deal"]) td[data-label="Actions"] {
+    display: none;
+  }
+
+  /* --- Partners rows: 36px initials avatar, name + type,
+         trailing tier chip + chevron --- */
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) > tbody > tr {
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    column-gap: 12px;
+    row-gap: 1px;
+    padding-right: 38px;
+  }
+
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) td:first-child[data-label="Partner"] {
+    display: contents;
+  }
+
+  /* The avatar/name wrapper carries an inline display:flex from the view —
+     !important is the only way to dissolve it into the row grid. */
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) td:first-child[data-label="Partner"] > div {
+    display: contents !important;
+  }
+
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) td:first-child[data-label="Partner"] .partner-avatar + div {
+    display: contents;
+  }
+
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) .partner-avatar {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    align-self: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--m-brand-soft);
+    color: var(--m-brand);
+    font-size: 13px;
+    font-weight: 700;
+    box-shadow: none;
+  }
+
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) td:first-child .deal-name-link {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--m-ink);
+    text-decoration: none;
+  }
+
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) td:first-child .deal-name-link::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+
+  /* Username line is replaced by the Type cell below it */
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) td:first-child .deal-name-link + div {
+    display: none;
+  }
+
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) td[data-label="Type"] {
+    grid-column: 2;
+    grid-row: 2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    color: var(--m-text-2);
+  }
+
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) td[data-label="Tier"] {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    justify-self: end;
+    align-self: center;
+  }
+
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) td[data-label="Pipeline"],
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) td[data-label="Won"],
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) td[data-label="Opportunities"],
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) td[data-label="Status"],
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) td[data-label="Actions"] {
+    display: none;
+  }
+
+  /* Avatar rows: hairline insets past the avatar, trailing chevron */
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) > tbody > tr + tr::before {
+    left: 60px;
+  }
+
+  .table:has(> tbody > tr > td:first-child[data-label="Partner"]) > tbody > tr::after,
+  .events-page__table > tbody > tr::after {
+    content: '';
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    margin-top: -8px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239aa3b7' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E") center / 16px no-repeat;
+    pointer-events: none;
+  }
+
+  /* --- Events rows: 44px date block, title + "type · location" --- */
+  .events-page__table > tbody > tr + tr::before {
+    left: 72px;               /* inset past the 44px date block */
+  }
+
+  .events-page__table > tbody > tr {
+    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 12px;
+    row-gap: 1px;
+    padding: 10px var(--mobile-gutter);
+    padding-right: 38px;
+  }
+
+  .events-page__table > tbody > tr > td:first-child {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .events-page__table .events-page__name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--m-ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .events-page__table .events-page__row-subtitle {
+    display: none;
+  }
+
+  .events-page__table td.events-page__date {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    align-self: center;
+    font-size: 12px;
+    color: var(--m-text-2);
+  }
+
+  /* Month/day block (data-m-* stamped by js/utils/mobile-tables.js);
+     font-size:0 hides the original "Mar 16, 2026" text node. */
+  .events-page__table td.events-page__date[data-m-day] {
+    position: relative;
+    display: block;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--m-accent-soft);
+    color: var(--m-accent-deep);
+    font-size: 0;         /* hides the original "Mar 16, 2026" text node */
+    white-space: normal;
+  }
+
+  /* Absolutely positioned month/day: immune to the cell's table/flex
+     display quirks inside the grid row */
+  .events-page__table td.events-page__date[data-m-day]::before {
+    content: attr(data-m-month);
+    position: absolute;
+    top: 7px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .events-page__table td.events-page__date[data-m-day]::after {
+    content: attr(data-m-day);
+    position: absolute;
+    top: 17px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-family: 'Poppins', var(--font-sans);
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+  }
+
+  /* Type line, with the location riding along as data-m-location
+     (mobile-tables.js) → "type · location" */
+  .events-page__table td[data-label="Type"] {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 13px;
+    color: var(--m-text-2);
+  }
+
+  .events-page__table td[data-label="Type"] .events-page__tag {
+    display: inline;
+    background: none;
+    border: 0;
+    padding: 0;
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--m-text-2);
+  }
+
+  .events-page__table td[data-label="Type"][data-m-location]::after {
+    content: ' · ' attr(data-m-location);
+  }
+
+  .events-page__table td[data-label="Status"],
+  .events-page__table td[data-label="Partner"],
+  .events-page__table td[data-label="Location"],
+  .events-page__table td[data-label="Leads"],
+  .events-page__table td[data-label="Opps"],
+  .events-page__table td[data-label="Revenue"],
+  .events-page__table td[data-label="Actions"] {
+    display: none;
+  }
+
+  /* ---------- 16. Status + tier chips (11px/700 pills) ---------- */
+  .badge--won {
+    background: var(--m-success-soft);
+    color: #0b8874;
+  }
+
+  .badge--in-progress {
+    background: var(--m-accent-soft);
+    color: #1745bf;
+  }
+
+  .badge--registered {
+    background: var(--m-brand-soft);
+    color: #055c53;
+  }
+
+  .badge--lost {
+    background: var(--m-danger-soft);
+    color: #d93b48;
+  }
+
+  .badge--premier-strategic {
+    background: var(--m-brand-soft);
+    color: #055c53;
+  }
+
+  .badge--value-preferred {
+    background: #eef1f8;
+    color: #545d70;
+  }
+
+  .badge--won,
+  .badge--in-progress,
+  .badge--registered,
+  .badge--lost,
+  .badge--premier-strategic,
+  .badge--value-preferred {
+    border: 0;
+    border-radius: var(--m-radius-pill);
+    padding: 3px 9px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    text-transform: none;
+    white-space: nowrap;
+  }
+
+  /* ---------- 17. KPI / metric strip: one card, 3-col grid ---------- */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    margin-bottom: var(--space-4);
+    background: var(--m-card);
+    border: 1px solid var(--m-hairline-soft);
+    border-radius: var(--m-radius-card);
+    overflow: hidden;
+  }
+
+  .stats-grid .stat-card {
+    background: transparent;
+    /* !important: card.js stamps an inline accent border-left per card */
+    border: 0 !important;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 14px 12px;
+    min-width: 0;
+  }
+
+  /* 1px internal dividers, valid for any card count */
+  .stats-grid .stat-card:not(:nth-child(3n + 1)) {
+    border-left: 1px solid var(--m-hairline-soft) !important;
+  }
+
+  .stats-grid .stat-card:nth-child(n + 4) {
+    border-top: 1px solid var(--m-hairline-soft) !important;
+  }
+
+  /* A lone card on the last row stretches across the strip */
+  .stats-grid .stat-card:nth-child(3n + 1):last-child {
+    grid-column: 1 / -1;
+  }
+
+  .stats-grid .stat-card__icon-wrap {
+    display: none;
+  }
+
+  .stats-grid .stat-card__label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: var(--m-text-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .stats-grid .stat-card__value {
+    font-family: 'Poppins', var(--font-sans);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--m-ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Pipeline (2nd) in accent, won (3rd) in green — both stat strips
+     (admin opportunities + partner dashboard) share this order. */
+  .stats-grid .stat-card:nth-child(2) .stat-card__value {
+    color: var(--m-accent-deep);
+  }
+
+  .stats-grid .stat-card:nth-child(3) .stat-card__value {
+    color: var(--m-success);
+  }
+
+  /* Keep click-to-filter affordance without the desktop hover-lift */
+  .stats-grid .stat-card--clickable:hover {
+    transform: none;
+    box-shadow: none;
+    background: transparent;
+  }
+
+  .stats-grid .stat-card:active {
+    transform: none;
+    background: #eef1f8;
+  }
+
+  .stats-grid .stat-card--active {
+    transform: none;
+    box-shadow: none;
+    background: var(--m-accent-soft);
+  }
+
+  .stats-grid .stat-card--active .stat-card__value {
+    color: var(--m-accent-deep);
+  }
+
+  /* ---------- 18. Filter chips: full-bleed horizontal scroll row ----------
+     Selectors mirror dashboard.css's `.view-toggle.type-filter-bar …` pill
+     styling so mobile wins on equal specificity by source order. */
+  .type-filter-bar,
+  .view-toggle.type-filter-bar {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: var(--space-2);
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    margin-left: calc(-1 * var(--mobile-gutter));
+    margin-right: calc(-1 * var(--mobile-gutter));
+    padding-left: var(--mobile-gutter);
+    padding-right: var(--mobile-gutter);
+  }
+
+  .type-filter-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .type-filter-bar .btn,
+  .view-toggle.type-filter-bar .btn {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    height: 34px;
+    padding: 0 14px;
+    border-radius: var(--m-radius-pill);
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .type-filter-bar .type-filter-label,
+  .view-toggle.type-filter-bar .btn .type-filter-label {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .type-filter-bar .type-filter-pipeline,
+  .view-toggle.type-filter-bar .btn .type-filter-pipeline {
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .type-filter-bar .btn--secondary,
+  .view-toggle.type-filter-bar .btn--secondary {
+    background: var(--m-card);
+    border: 1px solid var(--m-hairline);
+    color: var(--m-text-2);
+    box-shadow: none;
+  }
+
+  .type-filter-bar .btn--primary,
+  .view-toggle.type-filter-bar .btn--primary {
+    background: var(--m-accent);
+    border: 1px solid var(--m-accent);
+    color: #ffffff;
+    box-shadow: none;
+  }
+
+  .view-toggle.type-filter-bar .btn--primary .type-filter-pipeline {
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  /* Chip strips inside the topbar keep their own gutters */
+  .topbar__chips .type-filter-bar,
+  .topbar__chips .view-toggle.type-filter-bar {
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  /* ---------- 19. Detail views: full-screen push, not centered modal ---- */
+  .modal-backdrop:has(> .modal--details),
+  .modal-backdrop:has(> .modal--wide),
+  .modal-backdrop:has(> .modal--xwide) {
+    padding: 0;
+  }
+
+  .modal--details,
+  .modal--wide,
+  .modal--xwide {
+    width: 100%;
+    max-width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+  }
+
+  .modal--details .modal__header,
+  .modal--wide .modal__header,
+  .modal--xwide .modal__header {
+    position: relative;
+    justify-content: center;
+    min-height: calc(var(--navbar-height) + var(--safe-top));
+    padding-top: calc(var(--space-2) + var(--safe-top));
+    padding-left: 52px;      /* clear the back chevron */
+    border-bottom: 1px solid var(--m-hairline);
+  }
+
+  .modal--details .modal__title,
+  .modal--wide .modal__title,
+  .modal--xwide .modal__title {
+    font-family: 'Poppins', var(--font-sans);
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--m-ink);
+    text-align: center;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+
+  /* Close button becomes the iOS back chevron, pinned left */
+  .modal--details .modal__close,
+  .modal--wide .modal__close,
+  .modal--xwide .modal__close {
+    position: absolute;
+    left: 4px;
+    top: calc(var(--safe-top) + 4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--m-ink);
+  }
+
+  .modal--details .modal__close svg,
+  .modal--wide .modal__close svg,
+  .modal--xwide .modal__close svg {
+    display: none;
+  }
+
+  .modal--details .modal__close::before,
+  .modal--wide .modal__close::before,
+  .modal--xwide .modal__close::before {
+    content: '';
+    width: 24px;
+    height: 24px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23171d2b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m15 18-6-6 6-6'/%3E%3C/svg%3E") center / 24px no-repeat;
+  }
+
+  /* Detail metadata as grouped-list rows: label left, value right/600 */
+  .details-modal__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: var(--touch-target);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--m-hairline-soft);
+  }
+
+  .details-modal__row:last-child {
+    border-bottom: 0;
+  }
+
+  .details-modal__label {
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--m-text-2);
+    flex-shrink: 0;
+  }
+
+  .details-modal__value {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--m-ink);
+    text-align: right;
+    min-width: 0;
+  }
+
+  .field-card {
+    border-radius: 12px;
+    border-color: var(--m-hairline-soft);
+  }
+
+  .field-card__label {
+    color: var(--m-text-2);
+  }
+
+  /* ---------- 20. Partner-detail section headers wrap ----------
      Title + "View All Events"/"New Event" CTAs sat on one non-wrapping
      row, so the buttons ran off the right edge of the screen. */
   .partner-detail-page__section-header {
@@ -407,7 +1537,7 @@ html {
     min-height: 40px;
   }
 
-  /* ---------- 11. Form row stacking already handled elsewhere ---------- */
+  /* ---------- 21. Form row stacking already handled elsewhere ---------- */
   .form-row {
     grid-template-columns: 1fr;
     gap: var(--space-3);
@@ -416,6 +1546,24 @@ html {
   /* Prevent horizontal page scroll from rogue wide elements */
   html, body {
     overflow-x: hidden;
+  }
+}
+
+/* Expanding pulse ring while Randy listens (1.8s), gated below */
+@keyframes m-mic-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.65;
+  }
+  100% {
+    transform: scale(1.65);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-tabbar__mic--listening .m-tabbar__mic-pulse {
+    animation: none;
   }
 }
 
