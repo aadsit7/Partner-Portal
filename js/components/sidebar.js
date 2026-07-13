@@ -6,14 +6,16 @@ import { getCurrentUser, getUserInitials, logout } from '../auth.js';
 import { navigate, getCurrentPath } from '../router.js';
 import { el, $ } from '../utils/dom.js';
 
-const PARTNER_NAV = [
+// Exported so the mobile tab bar (tab-bar.js) can derive its slots and its
+// "More" sheet from the same route list — one source of truth for nav.
+export const PARTNER_NAV = [
   { path: '/partner/opportunities', label: 'Opportunities', icon: 'dashboard' },
   { path: '/partner/leadcheck', label: 'LeadCheck', icon: 'leadcheck' },
   { path: '/partner/demandgen', label: 'Demand Gen', icon: 'calendar' },
   { path: '/partner/resources', label: 'Resources', icon: 'support' },
 ];
 
-const ADMIN_NAV = [
+export const ADMIN_NAV = [
   { path: '/admin/dashboard', label: 'Dashboard', icon: 'dashboard' },
   { path: '/admin/opportunities', label: 'Opportunities', icon: 'opportunities' },
   { path: '/admin/partners', label: 'Partners', icon: 'partners' },

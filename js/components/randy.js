@@ -2823,6 +2823,13 @@ function updateWidgetUI() {
   // Apply window state
   updateWindowUI();
   updateVoiceButton();
+
+  // Every state change funnels through here (transition() and the direct
+  // barge-in/interrupt paths alike), so this is the one reliable place to
+  // tell external chrome — the mobile tab-bar mic — what Randy is doing.
+  try {
+    window.dispatchEvent(new CustomEvent('randy:state', { detail: { state: currentState } }));
+  } catch { /* ok */ }
 }
 
 // ── Assistant Mode Selector ───────────────────────────────────────
@@ -3513,6 +3520,22 @@ function showError(msg) {
 function hideError() {
   const widget = document.getElementById('randy-widget');
   if (widget) widget.classList.remove('randy--error');
+}
+
+// ── External voice toggle (mobile tab-bar mic) ────────────────────
+// Same behavior as the widget's Voice button, without opening the chat
+// window — the tab-bar mic + listening banner are the mobile surface.
+// Mounts Randy lazily so the mic also works for users the app shell did
+// not pre-mount it for. Returns false when voice is unsupported.
+export function toggleRandyVoice() {
+  if (!mounted) initRandy();
+  if (!mounted) return false;
+  handleVoiceBtnClick();
+  return true;
+}
+
+export function isRandyListening() {
+  return currentState === STATES.ACTIVE_LISTENING;
 }
 
 // ── Initialization ────────────────────────────────────────────────

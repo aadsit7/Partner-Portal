@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Partner Portal — Deal registration, joint marketing, and partner resources">
+  <!-- iOS standalone-app chrome (mobile redesign): lets the portal run edge-to-edge
+       when saved to the home screen and tints browser UI to the mobile canvas. -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#f4f6fb">
   <title>Partner Portal</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230000CC'/><text x='50' y='62' font-size='24' text-anchor='middle' fill='white' font-family='Inter,system-ui,sans-serif' font-weight='900'>PP</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,7 +18,9 @@
        first paint isn't gated on external CDNs: Inter falls back to the
        system font until ready (display=swap), and Leaflet/Quill styling is
        only needed deep inside specific views (maps, rich-text editors). -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
+  <!-- Inter stays for desktop; Poppins (mobile display) + Figtree (mobile UI/body)
+       serve the phone design language in css/mobile.css. -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@700;800&family=Figtree:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
   <link rel="stylesheet" href="css/variables.css">
   <link rel="stylesheet" href="css/reset.css">
   <link rel="stylesheet" href="css/layout.css">
@@ -87,6 +94,10 @@
       <section id="view-container" class="view-container"></section>
     </main>
   </div>
+
+  <!-- Mobile bottom tab bar (js/components/tab-bar.js renders into this;
+       display:none on desktop — see css/mobile.css) -->
+  <nav id="tab-bar" aria-label="Primary"></nav>
 
   <!-- Modal root (portaled modals mount here) -->
   <div id="modal-root"></div>

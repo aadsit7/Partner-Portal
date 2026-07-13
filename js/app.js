@@ -5,6 +5,7 @@
 import { getCurrentUser, getAccessToken, storeAccessToken, completeGoogleRedirect, attemptSilentReauth, getRememberedAdminEmail } from './auth.js';
 import { addRoute, initRouter, navigate } from './router.js';
 import { renderSidebar, setupMobileSidebar } from './components/sidebar.js';
+import { renderTabBar } from './components/tab-bar.js';
 
 // Import all views
 import * as loginView from './views/login.js';
@@ -188,6 +189,7 @@ function setupAppShell() {
     app.className = 'app-shell--app';
   }
   renderSidebar();
+  renderTabBar();
 
   // Mount voice widget once for admin users
   const user = getCurrentUser();

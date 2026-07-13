@@ -27,8 +27,50 @@ function stampTable(table) {
       if (label && !cells[i].hasAttribute('data-label')) {
         cells[i].setAttribute('data-label', label);
       }
+      stampDateBlock(cells[i]);
     }
+    stampOppMeta(row);
+    stampEventMeta(row);
   }
+}
+
+// Events rows likewise fold the location into the type line
+// ("type · location") — copy it onto the Type cell as data-m-location.
+function stampEventMeta(row) {
+  const type = row.querySelector(':scope > td.events-page__date ~ td[data-label="Type"]');
+  if (!type || type.hasAttribute('data-m-location')) return;
+  const location = row.querySelector(':scope > td[data-label="Location"]');
+  const text = location ? location.textContent.trim() : '';
+  if (text && text !== '—') type.setAttribute('data-m-location', text);
+}
+
+// The mobile opportunities row folds the partner into the customer line
+// ("customer · partner"). Those live in different cells, which CSS grid
+// can't merge onto one line — so copy the partner name onto the customer
+// subtitle as data-m-partner and let CSS render it via ::after while the
+// partner cell itself is hidden.
+function stampOppMeta(row) {
+  const deal = row.querySelector(':scope > td[data-label="Deal"]');
+  if (!deal) return;
+  const subtitle = deal.querySelector(':scope > div');
+  if (!subtitle || subtitle.hasAttribute('data-m-partner')) return;
+  const partner = row.querySelector(':scope > td[data-label="Partner"]');
+  const name = partner ? partner.textContent.trim() : '';
+  if (name) subtitle.setAttribute('data-m-partner', name);
+}
+
+// The mobile events list renders the date cell as a 44px month/day block
+// (CSS generated content can only echo attributes, not split text), so
+// stamp the leading "Mar 16"-style date apart into data-m-month/data-m-day.
+// Cells whose text doesn't parse are simply left alone — the CSS block
+// style only applies when data-m-day is present.
+function stampDateBlock(cell) {
+  if (!cell.classList.contains('events-page__date')) return;
+  if (cell.hasAttribute('data-m-day')) return;
+  const match = cell.textContent.trim().match(/^([A-Za-z]{3,})\.?\s+(\d{1,2})/);
+  if (!match) return;
+  cell.setAttribute('data-m-month', match[1].slice(0, 3));
+  cell.setAttribute('data-m-day', match[2]);
 }
 
 /**
