@@ -9,7 +9,7 @@
 // verb-phrase triggers so we don't false-positive on stray words like
 // "map" in "show me on a map". When a user is more elliptical, the
 // triggered flag can still fire with a null opportunityHint, in which
-// case Randy will ask "which opportunity, boss?".
+// case Randy will ask "which opportunity, man?".
 //
 // Pure function, no side effects — easy to unit test.
 
@@ -40,7 +40,7 @@ const TRIGGER_PATTERNS = [
 
 // Words that commonly trail an opportunity hint and should be stripped so
 // "ANICO opportunity" → "ANICO" and "Fabrikam deal" → "Fabrikam".
-const TRAILING_QUALIFIERS = /\s+(?:opportunity|opportunities|deal|deals|account|accounts|map|mutual\s+action\s+plan|pdf|now|please|boss|thanks)\s*$/i;
+const TRAILING_QUALIFIERS = /\s+(?:opportunity|opportunities|deal|deals|account|accounts|map|mutual\s+action\s+plan|pdf|now|please|boss|man|dude|thanks)\s*$/i;
 
 function stripTrailingQualifiers(s) {
   let out = s;
