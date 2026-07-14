@@ -23,7 +23,6 @@ import * as adminSetup from './views/admin-setup.js';
 import { renderAdminAIAssistant, cleanupAdminAIAssistant } from './views/admin-ai-assistant.js';
 import * as adminRandyPage from './views/admin-randy-page.js';
 import { mountVoiceWidget } from './components/voice-widget.js';
-import { mountGlobalSearch } from './components/global-search.js';
 import { initRandy } from './components/randy.js';
 import { initHotkeys, registerHotkey } from './utils/hotkeys.js';
 import { toggleQuickForm } from './components/quick-form.js';
@@ -183,7 +182,6 @@ addRoute('/admin/setup', {
 let voiceWidgetMounted = false;
 let randyMounted = false;
 let hotkeysInitialized = false;
-let globalSearchMounted = false;
 
 function setupAppShell() {
   const app = document.getElementById('app');
@@ -198,13 +196,6 @@ function setupAppShell() {
   if (user && user.is_admin && !voiceWidgetMounted) {
     mountVoiceWidget();
     voiceWidgetMounted = true;
-  }
-
-  // Mount the global topbar search once for admin users. It appends itself
-  // to #topbar (not #topbar-actions), so it persists across route changes.
-  if (user && user.is_admin && !globalSearchMounted) {
-    mountGlobalSearch();
-    globalSearchMounted = true;
   }
 
   // Mount Randy voice assistant for admin users
