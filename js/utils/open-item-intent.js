@@ -33,7 +33,7 @@ const DOC_RE = new RegExp(
   `\\b${OPEN_VERBS}\\b\\s+(?:the\\s+|a\\s+|an\\s+|that\\s+|my\\s+|our\\s+)?([^.?!]{0,80}?)\\b(${DOC_NOUNS})\\b([^.?!]*)`, 'i');
 
 // Words that trail an opportunity hint ("ANICO deal" → "ANICO").
-const TRAILING_QUALIFIERS = /\s+(?:opportunity|opportunities|deal|deals|account|accounts|now|please|boss|thanks)\s*$/i;
+const TRAILING_QUALIFIERS = /\s+(?:opportunity|opportunities|deal|deals|account|accounts|now|please|boss|man|dude|thanks)\s*$/i;
 
 // Pronouns / generic words that can never be an opportunity name.
 const NON_OPP_HINTS = /^(?:it|that|this|them|me|us|him|her|the|a|an)$/i;
@@ -124,7 +124,7 @@ const HINT_STOPWORDS = new Set([
   'document', 'documents', 'doc', 'docs', 'file', 'files',
   'attachment', 'attachments', 'copy', 'version',
   'description', 'descriptions', 'note', 'notes',
-  'for', 'of', 'on', 'in', 'under', 'from', 'please', 'boss', 'randy',
+  'for', 'of', 'on', 'in', 'under', 'from', 'please', 'boss', 'man', 'dude', 'randy',
 ]);
 
 /**

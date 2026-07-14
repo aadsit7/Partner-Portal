@@ -26,7 +26,7 @@ import { initQuickForm, toggleQuickForm } from './quick-form.js';
 // ── Randy Personality Prompt ──────────────────────────────────────
 const RANDY_PERSONALITY = `
 
-Your name is Randy. You are a voice assistant for the Partner Portal. You speak like a trusted colleague — business casual, warm, confident. Think of how a sharp VP talks to a peer over coffee, not a presentation.
+Your name is Randy. You are a voice assistant for the Partner Portal. You speak like a peer who's got your back — casual, warm, easygoing. You graduated high school in 2004, so your slang lives in the early 2000s, not the current decade. Think of how you'd talk to a friend you work alongside, not a boss you report to.
 
 Your tone:
 - Friendly and direct, never stiff or corporate
@@ -35,15 +35,18 @@ Your tone:
 - Occasional dry humor is fine, never forced
 
 Words and phrases you USE:
-- 'Boss' as a casual address — not every sentence, roughly every 3rd or 4th response: 'Yeah boss, here's the deal...'
+- 'Man' or 'dude' as a casual address — not every sentence, roughly every 3rd or 4th response: 'Yeah man, here's the deal...' / 'You got it, dude.'
+- Early-2000s flavor sprinkled in naturally, never forced: 'sweet', 'right on', 'legit', 'my bad'
+- An occasional early-2000s reference when it genuinely lands — a flip phone, a burned CD, TiVo, an AIM away message — keep it rare
 - 'Yeah so...' / 'So here's the deal...' / 'Good news...'
 - 'Looks like...' / 'We're sitting at...' / 'That puts us at...'
 - 'Nice.' / 'Solid.' / 'Not bad at all.'
 - 'Want me to dig into that more?'
-- 'Anything else boss?'
+- 'Anything else, man?'
 
 Words and phrases you NEVER use:
-- 'Dude' / 'Bro' / 'Buddy' / 'Man'
+- 'Boss' — you talk to this person as a peer, not a superior. Never call them 'Boss'.
+- Current-decade slang — no 'bet', 'no cap', 'rizz', 'lowkey', 'highkey', 'vibe' / 'vibe check', 'slay', 'it's giving', 'based', 'sus', 'cap', 'W' / 'L', 'ate that', 'mid'. You graduated in 2004; that vocabulary isn't yours.
 - 'LOCKED IN' / 'LET'S GO' / 'huge' (overused hype words)
 - 'Based on the data...' / 'According to the database...'
 - 'Certainly' / 'Absolutely' / 'I'd be happy to'
@@ -54,11 +57,18 @@ Examples of Randy's style:
 
 'So the total pipeline right now is 830 grand across three active deals. Insight is the big one at 600K. Not bad.'
 
-'Nerdio — Premier tier, North America. One deal at 120K and four events on the calendar. They're our most active partner right now.'
+'Nerdio — Premier tier, North America. One deal at 120K and four events on the calendar. They're our most active partner right now, man.'
 
-'Yeah boss I can update that. Moving the close date to July 15 for Greenshield. Want me to go ahead?'
+'Yeah man, I can update that. Moving the close date to July 15 for Greenshield. Want me to go ahead?'
 
-'Anything else boss?'
+'Anything else, dude?'
+
+ACCURACY ABOVE ALL — THE ONE RULE THAT OUTRANKS EVERYTHING ELSE:
+When the user asks you to find, look up, report, or confirm information, 100% accuracy is the top priority — it outranks speed, brevity, and personality. If being casual or concise would ever cost you a correct number, date, name, or status, drop the casualness and get it right. Personality serves the information, never the other way around. Specifically:
+- Re-check EVERY number, date, name, amount, and status against the actual data context before you say it. Never state a figure from memory or momentum — verify it against the records each time you report it.
+- If two records conflict (different amounts, dates, spellings, or statuses for the same thing), CITE the conflict out loud rather than silently picking one. Say what each record shows and that they disagree, and let the user decide.
+- If the data you need isn't there, say so plainly — 'I don't have that recorded' — instead of guessing, estimating, or inferring a plausible-sounding answer.
+- A right answer delivered plainly always beats a smooth answer that's wrong.
 
 Keep responses to 2-3 sentences since they're read aloud. If there's a lot of information, give the highlights and ask if they want more detail.
 
@@ -115,7 +125,7 @@ User: 'Go to opportunities'
 Randy: 'On it.'
 
 User: 'Show me the dashboard'
-Randy: 'Got it boss.'
+Randy: 'Got it man.'
 
 User: 'Open the Greenshield deal'
 Randy: 'Opening that up.'
@@ -1107,8 +1117,8 @@ async function processUserInput(text) {
     const msg = err.message || '';
 
     if (msg.includes('API key not set') || msg.includes('API key')) {
-      errorDisplay = "Heads up boss — no API key configured. Go to Setup and add your Anthropic API key.";
-      errorSpeak = "Heads up boss, no API key configured. Go to Setup and add your Anthropic key.";
+      errorDisplay = "Heads up man — no API key configured. Go to Setup and add your Anthropic API key.";
+      errorSpeak = "Heads up man, no API key configured. Go to Setup and add your Anthropic key.";
     } else if (msg.includes('Could not read Google Sheets') || msg.includes('Sheet')) {
       errorDisplay = "Can't reach the Google Sheet right now. Check your connection on the Setup page.";
       errorSpeak = "Can't reach the Google Sheet right now. Check your connection on the Setup page.";
@@ -1123,7 +1133,7 @@ async function processUserInput(text) {
       errorSpeak = "Claude is overloaded right now. Try again in a bit.";
     } else {
       errorDisplay = `Something went wrong: ${msg}`;
-      errorSpeak = "Sorry boss, something went wrong. Try again in a sec.";
+      errorSpeak = "My bad, man — something went wrong. Try again in a sec.";
     }
 
     renderMessage('assistant', errorDisplay);
@@ -1146,7 +1156,7 @@ async function processUserInput(text) {
 async function runMapPdfFlow({ hint }) {
   // No opportunity named — ask and stash a pending flag
   if (!hint || !hint.trim()) {
-    const msg = "Which opportunity should I pull the MAP from, boss?";
+    const msg = "Which opportunity should I pull the MAP from, man?";
     pendingMapIntent = { awaiting: 'opportunity' };
     if (isTypeModeActive) {
       renderMessage('assistant', msg);
@@ -1163,7 +1173,7 @@ async function runMapPdfFlow({ hint }) {
     result = await getOpportunityDescription(hint);
   } catch (err) {
     console.error('Randy MAP: opportunity lookup failed', err);
-    const msg = "I couldn't pull the opportunities from the sheet, boss. Try again in a sec.";
+    const msg = "I couldn't pull the opportunities from the sheet, man. Try again in a sec.";
     if (isTypeModeActive) {
       renderMessage('assistant', msg);
       transition(STATES.PASSIVE, true);
@@ -1175,7 +1185,7 @@ async function runMapPdfFlow({ hint }) {
   }
 
   if (result.matchCount === 0) {
-    const msg = "I couldn't find that opportunity in the sheet, boss. Can you give me the exact name?";
+    const msg = "I couldn't find that opportunity in the sheet, man. Can you give me the exact name?";
     pendingMapIntent = { awaiting: 'opportunity' };
     if (isTypeModeActive) {
       renderMessage('assistant', msg);
@@ -1192,8 +1202,8 @@ async function runMapPdfFlow({ hint }) {
     const spokenList = names.length === 2
       ? `${names[0]}, or ${names[1]}`
       : `${names.slice(0, -1).join(', ')}, or ${names[names.length - 1]}`;
-    const display = `I found a few, boss — which one: ${names.join(', ')}?`;
-    const spoken = `I found a few, boss. Is it ${spokenList}?`;
+    const display = `I found a few, man — which one: ${names.join(', ')}?`;
+    const spoken = `I found a few, man. Is it ${spokenList}?`;
     pendingMapIntent = { awaiting: 'opportunity', matches: names };
     if (isTypeModeActive) {
       renderMessage('assistant', display);
@@ -1210,8 +1220,8 @@ async function runMapPdfFlow({ hint }) {
   // or notes JSON, those aren't structured as meeting content and would
   // produce a bad MAP).
   if (!result.allDescriptions || result.allDescriptions.length === 0) {
-    const msg = `No meeting descriptions found for ${result.opportunityName} yet, boss. I need at least one description entry in the Opportunity_Descriptions sheet before I can generate a MAP.`;
-    const spoken = `No meeting descriptions yet for ${result.opportunityName}, boss. I need at least one description entry in the Opportunity Descriptions sheet before I can generate a MAP.`;
+    const msg = `No meeting descriptions found for ${result.opportunityName} yet, man. I need at least one description entry in the Opportunity_Descriptions sheet before I can generate a MAP.`;
+    const spoken = `No meeting descriptions yet for ${result.opportunityName}, man. I need at least one description entry in the Opportunity Descriptions sheet before I can generate a MAP.`;
     if (isTypeModeActive) {
       renderMessage('assistant', msg);
       transition(STATES.PASSIVE, true);
@@ -1225,7 +1235,7 @@ async function runMapPdfFlow({ hint }) {
   // Happy path: kick off background generation and let Randy go back
   // to listening immediately. The background task announces itself when
   // ready — or appends silently if Randy is busy with something else.
-  const kickoff = `On it, boss. Generating the MAP PDF for ${result.opportunityName} now — this will take a few seconds.`;
+  const kickoff = `On it, man. Generating the MAP PDF for ${result.opportunityName} now — this will take a few seconds.`;
   if (isTypeModeActive) {
     renderMessage('assistant', kickoff);
     transition(STATES.PASSIVE, true);
@@ -1335,7 +1345,7 @@ function randyIsIdle() {
 
 async function runTimelinePdfFlow({ hint }) {
   if (!hint || !hint.trim()) {
-    const msg = "Which opportunity should I build the Timeline PDF for, boss?";
+    const msg = "Which opportunity should I build the Timeline PDF for, man?";
     pendingTimelineIntent = { awaiting: 'opportunity' };
     if (isTypeModeActive) {
       renderMessage('assistant', msg);
@@ -1352,7 +1362,7 @@ async function runTimelinePdfFlow({ hint }) {
     result = await getOpportunityDescription(hint);
   } catch (err) {
     console.error('Randy Timeline: opportunity lookup failed', err);
-    const msg = "I couldn't pull the opportunities from the sheet, boss. Try again in a sec.";
+    const msg = "I couldn't pull the opportunities from the sheet, man. Try again in a sec.";
     if (isTypeModeActive) {
       renderMessage('assistant', msg);
       transition(STATES.PASSIVE, true);
@@ -1364,7 +1374,7 @@ async function runTimelinePdfFlow({ hint }) {
   }
 
   if (result.matchCount === 0) {
-    const msg = "I couldn't find that opportunity in the sheet, boss. Can you give me the exact name?";
+    const msg = "I couldn't find that opportunity in the sheet, man. Can you give me the exact name?";
     pendingTimelineIntent = { awaiting: 'opportunity' };
     if (isTypeModeActive) {
       renderMessage('assistant', msg);
@@ -1381,8 +1391,8 @@ async function runTimelinePdfFlow({ hint }) {
     const spokenList = names.length === 2
       ? `${names[0]}, or ${names[1]}`
       : `${names.slice(0, -1).join(', ')}, or ${names[names.length - 1]}`;
-    const display = `I found a few, boss — which one: ${names.join(', ')}?`;
-    const spoken  = `I found a few, boss. Is it ${spokenList}?`;
+    const display = `I found a few, man — which one: ${names.join(', ')}?`;
+    const spoken  = `I found a few, man. Is it ${spokenList}?`;
     pendingTimelineIntent = { awaiting: 'opportunity', matches: names };
     if (isTypeModeActive) {
       renderMessage('assistant', display);
@@ -1395,7 +1405,7 @@ async function runTimelinePdfFlow({ hint }) {
   }
 
   if (!result.allDescriptions || result.allDescriptions.length === 0) {
-    const msg = `No description history found for ${result.opportunityName} yet, boss. I need at least one description entry before I can generate a Timeline PDF.`;
+    const msg = `No description history found for ${result.opportunityName} yet, man. I need at least one description entry before I can generate a Timeline PDF.`;
     if (isTypeModeActive) {
       renderMessage('assistant', msg);
       transition(STATES.PASSIVE, true);
@@ -1406,7 +1416,7 @@ async function runTimelinePdfFlow({ hint }) {
     return;
   }
 
-  const kickoff = `On it, boss. Building the Timeline PDF for ${result.opportunityName} — give me a few seconds.`;
+  const kickoff = `On it, man. Building the Timeline PDF for ${result.opportunityName} — give me a few seconds.`;
   if (isTypeModeActive) {
     renderMessage('assistant', kickoff);
     transition(STATES.PASSIVE, true);
@@ -1488,7 +1498,7 @@ function startBackgroundTimelinePdfGeneration(result) {
 function announceTimelinePdfReady({ opportunityName, opportunityId, driveUrl, filename }) {
   const cardHtml = buildTimelineSuccessCardHtml({ opportunityName, opportunityId, driveUrl, filename });
   if (!isTypeModeActive && randyIsIdle()) {
-    speakText(`Timeline PDF saved for ${opportunityName}, boss. Link's in the chat.`);
+    speakText(`Right on — Timeline PDF saved for ${opportunityName}, man. Link's in the chat.`);
   }
   const msgEl = renderMessage('assistant', cardHtml);
   if (msgEl && opportunityId) {
@@ -1506,19 +1516,19 @@ function announceTimelinePdfError(err, opportunity) {
   let spoken, userSummary;
   if (err?.code === 'TIMELINE_JSON_API_ERROR' && err?.status === 401) {
     userSummary = 'The Anthropic API key is invalid or expired. Check it on the Setup page.';
-    spoken = 'API key looks invalid, boss. Check the Setup page.';
+    spoken = 'API key looks invalid, man. Check the Setup page.';
   } else if (/TIMELINE_JSON_INVALID|TIMELINE_JSON_SCHEMA|TIMELINE_JSON_EMPTY/.test(err?.code || '')) {
     userSummary = "Claude's response didn't parse as expected. Try again, or simplify the source description.";
-    spoken = "Claude sent me bad data, boss. Try again.";
+    spoken = "Claude sent me bad data, man. Try again.";
   } else if (err?.name === 'TimeoutError' || /timeout|timed out/i.test(msg)) {
     userSummary = 'The request took longer than 2 minutes. Usually transient — try again.';
-    spoken = "That took too long, boss. Want me to try again?";
+    spoken = "That took too long, man. Want me to try again?";
   } else if (/Failed to fetch|network|NetworkError/i.test(msg)) {
     userSummary = 'Network request failed. Check your connection.';
-    spoken = 'I lost the connection, boss. Check the network.';
+    spoken = 'I lost the connection, man. Check the network.';
   } else {
     userSummary = 'Something went wrong while generating the Timeline PDF. See the details below.';
-    spoken = `I couldn't generate the Timeline PDF for ${opportunity?.name || 'that opportunity'}, boss. Details are in the chat.`;
+    spoken = `I couldn't generate the Timeline PDF for ${opportunity?.name || 'that opportunity'}, man. Details are in the chat.`;
   }
   const cardHtml = buildTimelineFailureCardHtml({
     opportunityName:  opportunity?.name || '',
@@ -1541,7 +1551,7 @@ function announceTimelinePdfError(err, opportunity) {
         } else {
           retry.disabled = false;
           retry.textContent = 'Try again';
-          renderMessage('assistant', "Couldn't re-resolve that opportunity, boss. Try the voice command again.");
+          renderMessage('assistant', "Couldn't re-resolve that opportunity, man. Try the voice command again.");
         }
       } catch (rerunErr) {
         retry.disabled = false;
@@ -1607,7 +1617,7 @@ function announceMapPdfReady({ opportunityName, opportunityId, driveUrl, filenam
   // user already moved on to another task, the card still lands in
   // the chat but we don't interrupt.
   if (!isTypeModeActive && randyIsIdle()) {
-    speakText(`Saved to ${opportunityName}, boss. The MAP PDF is in the opportunity's documents — link's in the chat.`);
+    speakText(`Sweet — saved to ${opportunityName}, man. The MAP PDF is in the opportunity's documents — link's in the chat.`);
   }
   const msgEl = renderMessage('assistant', cardHtml);
 
@@ -1633,22 +1643,22 @@ function announceMapPdfError(err, opportunity) {
   let spoken, userSummary;
   if (err?.code === 'MAP_JSON_API_ERROR' && err?.status === 401) {
     userSummary = 'The Anthropic API key is invalid or expired. Check it on the Setup page.';
-    spoken = 'API key looks invalid, boss. Check the Setup page.';
+    spoken = 'API key looks invalid, man. Check the Setup page.';
   } else if (err?.code === 'MAP_JSON_INVALID' || err?.code === 'MAP_JSON_SCHEMA' || err?.code === 'MAP_JSON_EMPTY') {
     userSummary = "Claude's response didn't parse as the expected JSON. Try again, or simplify the source description.";
-    spoken = "Claude sent me bad data, boss. Try again.";
+    spoken = "Claude sent me bad data, man. Try again.";
   } else if (err?.name === 'TimeoutError' || /timeout|timed out/i.test(msg)) {
     userSummary = 'The request took longer than 2 minutes. Usually transient — try again.';
-    spoken = "That took too long, boss. Want me to try again?";
+    spoken = "That took too long, man. Want me to try again?";
   } else if (/Failed to fetch|network|NetworkError/i.test(msg)) {
     userSummary = 'Network request to Anthropic or Google Drive failed. Check your connection.';
-    spoken = 'I lost the connection, boss. Check the network.';
+    spoken = 'I lost the connection, man. Check the network.';
   } else if (err?.message && /upload|drive/i.test(msg)) {
     userSummary = 'The PDF was built but Google Drive rejected the upload. See the details below.';
-    spoken = "Drive wouldn't take the upload, boss. Details are in the chat.";
+    spoken = "Drive wouldn't take the upload, man. Details are in the chat.";
   } else {
     userSummary = 'Something went wrong while generating the MAP PDF. See the details below.';
-    spoken = `I couldn't generate the MAP PDF for ${opportunity?.name || 'that opportunity'}, boss. Details are in the chat.`;
+    spoken = `I couldn't generate the MAP PDF for ${opportunity?.name || 'that opportunity'}, man. Details are in the chat.`;
   }
 
   const cardHtml = buildMapFailureCardHtml({
@@ -1675,7 +1685,7 @@ function announceMapPdfError(err, opportunity) {
         } else {
           retry.disabled = false;
           retry.textContent = 'Try again';
-          renderMessage('assistant', "Couldn't re-resolve that opportunity, boss. Try the voice command again.");
+          renderMessage('assistant', "Couldn't re-resolve that opportunity, man. Try the voice command again.");
         }
       } catch (rerunErr) {
         retry.disabled = false;
@@ -1823,15 +1833,15 @@ async function runOpenItemFlow({ itemType, oppHint, itemHint }) {
     }
   } catch (err) {
     console.error('Randy open-item: opportunity lookup failed', err);
-    respondOpenItem("I couldn't pull the opportunities from the sheet, boss. Try again in a sec.");
+    respondOpenItem("I couldn't pull the opportunities from the sheet, man. Try again in a sec.");
     return;
   }
 
   if (!result || result.matchCount === 0) {
     pendingOpenItem = { awaiting: 'opportunity', itemType, itemHint };
     const msg = (oppHint && oppHint.trim())
-      ? "I couldn't find that opportunity in the sheet, boss. Can you give me the exact name?"
-      : `Which opportunity is that ${noun} on, boss?`;
+      ? "I couldn't find that opportunity in the sheet, man. Can you give me the exact name?"
+      : `Which opportunity is that ${noun} on, man?`;
     respondOpenItem(msg);
     return;
   }
@@ -1843,8 +1853,8 @@ async function runOpenItemFlow({ itemType, oppHint, itemHint }) {
       : `${names.slice(0, -1).join(', ')}, or ${names[names.length - 1]}`;
     pendingOpenItem = { awaiting: 'opportunity', itemType, itemHint };
     respondOpenItem(
-      `I found a few, boss — which one: ${names.join(', ')}?`,
-      `I found a few, boss. Is it ${spokenList}?`,
+      `I found a few, man — which one: ${names.join(', ')}?`,
+      `I found a few, man. Is it ${spokenList}?`,
     );
     return;
   }
@@ -1867,12 +1877,12 @@ async function resolveAndOpenDocument(opp, docHint) {
     files = Array.isArray(resp.files) ? resp.files : [];
   } catch (err) {
     console.error('Randy open-item: listFiles failed', err);
-    respondOpenItem(`I couldn't pull the documents for ${opp.opportunityName}, boss. Try again in a sec.`);
+    respondOpenItem(`I couldn't pull the documents for ${opp.opportunityName}, man. Try again in a sec.`);
     return;
   }
 
   if (files.length === 0) {
-    respondOpenItem(`No documents on ${opp.opportunityName} yet, boss.`);
+    respondOpenItem(`No documents on ${opp.opportunityName} yet, man.`);
     return;
   }
 
@@ -1889,8 +1899,8 @@ async function resolveAndOpenDocument(opp, docHint) {
   const spokenNames = candidates.slice(0, 5).map(f => humanFileName(f.file_name));
   const extra = candidates.length > 5 ? `, and ${candidates.length - 5} more in the chat` : '';
   const lead = matches.length > 1
-    ? `A few documents on ${opp.opportunityName} match that, boss.`
-    : `I don't see a document matching that on ${opp.opportunityName}, boss.`;
+    ? `A few documents on ${opp.opportunityName} match that, man.`
+    : `I don't see a document matching that on ${opp.opportunityName}, man.`;
   const spoken = `${lead} I've got ${spokenNames.join(', ')}${extra}. Which one?`;
   respondOpenItem(buildDocListCardHtml(opp, candidates), spoken);
 }
@@ -1906,11 +1916,11 @@ function openDocumentForRandy(file, opp) {
   }
   let spoken;
   if (!url) {
-    spoken = `Found ${human} on ${opp.opportunityName}, boss, but there's no Drive link recorded for it.`;
+    spoken = `Found ${human} on ${opp.opportunityName}, man, but there's no Drive link recorded for it.`;
   } else if (!openedWindow) {
-    spoken = `Got it, boss — the browser blocked the pop-up, so the link for ${human} is in the chat.`;
+    spoken = `Got it, dude — the browser blocked the pop-up, so the link for ${human} is in the chat.`;
   } else {
-    spoken = `Opening ${human} for ${opp.opportunityName}, boss.`;
+    spoken = `Opening ${human} for ${opp.opportunityName}, man.`;
   }
   respondOpenItem(buildOpenDocCardHtml(opp, file), spoken);
 }
@@ -1921,7 +1931,7 @@ async function resolveAndOpenNote(opp, noteHint) {
     // Nothing in Opportunity_Descriptions — open the deal anyway; the
     // modal surfaces a legacy opp.description entry when one exists.
     openOppDetailsForRandy(opp.opportunityId, null);
-    respondOpenItem(`I don't see any description notes on ${opp.opportunityName}, boss — opening the deal so you can double-check.`);
+    respondOpenItem(`I don't see any description notes on ${opp.opportunityName}, man — opening the deal so you can double-check.`);
     return;
   }
 
@@ -1932,8 +1942,8 @@ async function resolveAndOpenNote(opp, noteHint) {
     const dates = idxs.slice(0, 6).map(i => formatSpokenDate(descs[i].date));
     const extra = idxs.length > 6 ? `, and ${idxs.length - 6} more` : '';
     const lead = target.none
-      ? `Couldn't pin down that note on ${opp.opportunityName}, boss.`
-      : `A few notes on ${opp.opportunityName} match, boss.`;
+      ? `Couldn't pin down that note on ${opp.opportunityName}, man.`
+      : `A few notes on ${opp.opportunityName} match, man.`;
     respondOpenItem(`${lead} I've got notes from ${dates.join(', ')}${extra}. Which one?`);
     return;
   }
@@ -1945,8 +1955,8 @@ function openNoteForRandy(opp, note, { defaulted = false, total = 0 } = {}) {
   openOppDetailsForRandy(opp.opportunityId, { id: note.id || '', date: note.date || '' });
   const when = formatSpokenDate(note.date);
   const spoken = (defaulted && total > 1)
-    ? `Opening the latest note on ${opp.opportunityName}, boss — that's from ${when}. There are ${total} notes total if you need an older one.`
-    : `Opening the note from ${when} on ${opp.opportunityName}, boss.`;
+    ? `Opening the latest note on ${opp.opportunityName}, man — that's from ${when}. There are ${total} notes total if you need an older one.`
+    : `Opening the note from ${when} on ${opp.opportunityName}, man.`;
   respondOpenItem(spoken);
 }
 
@@ -1970,7 +1980,7 @@ async function continueOpenItemFlow(text, pending) {
       return;
     }
     pendingOpenItem = pending;
-    respondOpenItem(`Still not sure which one, boss — say the file name, or a number like "the first one".`);
+    respondOpenItem(`Still not sure which one, man — say the file name, or a number like "the first one".`);
     return;
   }
 
@@ -1992,7 +2002,7 @@ async function continueOpenItemFlow(text, pending) {
       return;
     }
     pendingOpenItem = pending;
-    respondOpenItem(`Still not sure which note, boss — give me the date, or say "the first one".`);
+    respondOpenItem(`Still not sure which note, man — give me the date, or say "the first one".`);
   }
 }
 
@@ -2046,7 +2056,7 @@ function buildDocListCardHtml(opp, files) {
   return `<div class="response-container randy-map-card">
 <div class="randy-map-card__header">Which document on ${escapeMapHtml(opp.opportunityName)}?</div>
 ${rows}
-<div class="randy-map-card__subline">Say the name or the number, boss — or click a link.</div>
+<div class="randy-map-card__subline">Say the name or the number, man — or click a link.</div>
 </div>`;
 }
 

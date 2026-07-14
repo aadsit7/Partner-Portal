@@ -143,9 +143,9 @@ so the user can interact with them (hover to keep on-screen, etc.).
 
 | Moment  | Phrasing                                                                                         |
 |---------|--------------------------------------------------------------------------------------------------|
-| Intro   | "On it, boss. Generating the MAP PDF for {customer} now — this will take a few seconds."         |
-| Success | "Saved to {customer}, boss. The MAP PDF is in the opportunity's documents — link's in the chat." |
-| Failure | "{error-specific}. I couldn't generate the MAP PDF for {customer}, boss. Details are in the chat." |
+| Intro   | "On it, man. Generating the MAP PDF for {customer} now — this will take a few seconds."         |
+| Success | "Sweet — saved to {customer}, man. The MAP PDF is in the opportunity's documents — link's in the chat." |
+| Failure | "{error-specific}. I couldn't generate the MAP PDF for {customer}, man. Details are in the chat." |
 
 TTS-before-DOM ordering is preserved: `speakText(...)` fires before
 `renderMessage(...)`. Speech only plays when Randy is idle
@@ -198,7 +198,7 @@ returned an error. Most common cause: the opportunity doesn't yet have
 an `opportunity_id` (it was never saved). Save the opportunity first,
 then retry.
 
-**"That took too long, boss"** — 2-minute timeout. Usually Anthropic
+**"That took too long, man"** — 2-minute timeout. Usually Anthropic
 load. Retry.
 
 **Card appears but no voice** — Randy was mid-task when the flow
