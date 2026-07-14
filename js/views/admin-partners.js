@@ -15,6 +15,8 @@ import { showToast } from '../components/toast.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { filterPartners } from '../utils/filters.js';
 import { loadTypeFilter, saveTypeFilter, computeTypeData, buildTypeFilterBar, applyTypeFilter } from '../components/type-filter.js';
+import { skeletonListView } from '../components/skeleton.js';
+import { errorState } from '../components/states.js';
 
 export const title = 'Partners';
 
@@ -25,7 +27,7 @@ let partnerRevenue = {};
 export async function render(container) {
   setTopbarTitle('Partner Management');
 
-  mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
+  mount(container, skeletonListView());
 
   try {
     const [partners, opportunities] = await Promise.all([
@@ -50,10 +52,11 @@ export async function render(container) {
 
     renderWithTypeFilter(container);
   } catch (err) {
-    mount(container, el('div', { class: 'empty-state' },
-      el('div', { class: 'empty-state__title' }, 'Error loading partners'),
-      el('div', { class: 'empty-state__description' }, err.message)
-    ));
+    mount(container, errorState({
+      title: 'Couldn’t load partners',
+      message: err.message,
+      onRetry: () => render(container),
+    }));
   }
 }
 

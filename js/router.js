@@ -43,6 +43,38 @@ export function getQueryParams() {
 }
 
 /**
+ * Merge query params into the current hash WITHOUT triggering a re-render.
+ *
+ * Uses history.replaceState so the address bar reflects the active filter/
+ * sort — making the view shareable and refresh-proof — while the router's
+ * `hashchange` listener stays silent (replaceState does not fire it). Pass a
+ * param value of null/undefined/'' to remove that key.
+ *
+ * @param {Object} updates - key → value map to merge into the current query
+ */
+export function updateQueryParams(updates = {}) {
+  const path = getCurrentPath();
+  const params = getQueryParams();
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (value === null || value === undefined || value === '') {
+      delete params[key];
+    } else {
+      params[key] = value;
+    }
+  }
+
+  const query = new URLSearchParams(params).toString();
+  const newHash = `#${path}${query ? '?' + query : ''}`;
+
+  // Only touch history when something actually changed, so we don't spam the
+  // back-stack or fight other replaceState callers.
+  if (newHash !== window.location.hash) {
+    history.replaceState(null, '', newHash);
+  }
+}
+
+/**
  * Initialize the router.
  */
 export function initRouter() {
