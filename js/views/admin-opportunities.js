@@ -6,7 +6,11 @@ import { getCurrentUser } from '../auth.js';
 import { readSheetAsObjects, appendRow, updateRow, deleteRow, isConfigured, addDemoRow, updateDemoRow, deleteDemoRow } from '../sheets.js';
 import { CONFIG } from '../config.js';
 import { el, mount, uuid, $, debounce, formatCurrency } from '../utils/dom.js';
+import { formatCompactCurrency } from '../utils/format.js';
 import { nowISO, formatDate, todayISO } from '../utils/date.js';
+import { updateQueryParams, getQueryParams } from '../router.js';
+import { skeletonListView } from '../components/skeleton.js';
+import { errorState, emptyState } from '../components/states.js';
 import { openModal, closeModal, confirmDialog } from '../components/modal.js';
 import { buildForm } from '../components/form.js';
 import { showToast } from '../components/toast.js';
@@ -87,7 +91,7 @@ let allBaseOpps = null;
 
 export async function render(container) {
   setTopbarTitle('Opportunities');
-  mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
+  mount(container, skeletonListView());
 
   try {
     const [opportunities, partners, events] = await Promise.all([
@@ -112,10 +116,11 @@ export async function render(container) {
       requestAnimationFrame(() => openOppModal(null, container));
     }
   } catch (err) {
-    mount(container, el('div', { class: 'empty-state' },
-      el('div', { class: 'empty-state__title' }, 'Error loading opportunities'),
-      el('div', { class: 'empty-state__description' }, err.message)
-    ));
+    mount(container, errorState({
+      title: 'Couldn’t load opportunities',
+      message: err.message,
+      onRetry: () => render(container),
+    }));
   }
 }
 
@@ -337,10 +342,17 @@ function renderView(container, opportunities, filterBar) {
   ];
   const selectedStages = new Set(allStages);
 
+  // Seed the shareable filters (status + search) from the URL hash so a
+  // filtered view survives refresh and can be linked to. Only values valid
+  // for this data set are honored.
+  const urlParams = getQueryParams();
+  const seededStatus = OPP_STATUSES.includes(urlParams.status) ? urlParams.status : '';
+  const seededSearch = typeof urlParams.q === 'string' ? urlParams.q : '';
+
   let filters = {
-    search: '',
+    search: seededSearch,
     partner: '',
-    status: '',
+    status: seededStatus,
     statusExclude: null,
     dateFrom: null,
     dateTo: null,
@@ -408,7 +420,12 @@ function renderView(container, opportunities, filterBar) {
     class: 'search-bar__input',
     type: 'text',
     placeholder: 'Search opportunities...',
-    onInput: debounce((e) => { filters.search = e.target.value; refreshContent(); }, 200),
+    value: seededSearch,
+    onInput: debounce((e) => {
+      filters.search = e.target.value;
+      updateQueryParams({ q: e.target.value || null });
+      refreshContent();
+    }, 200),
   });
 
   const partnerSelect = el('select', {
@@ -421,7 +438,8 @@ function renderView(container, opportunities, filterBar) {
 
   const statusSelect = el('select', {
     class: 'form-select filter-bar__select',
-    onChange: (e) => { filters.status = e.target.value; filters.statusExclude = null; activeStatKey = ''; updateStatCardStates(); refreshContent(); },
+    value: seededStatus,
+    onChange: (e) => { filters.status = e.target.value; filters.statusExclude = null; activeStatKey = ''; updateStatCardStates(); updateQueryParams({ status: e.target.value || null }); refreshContent(); },
   },
     el('option', { value: '' }, 'All Statuses'),
     ...OPP_STATUSES.map(s => el('option', { value: s }, s))
@@ -453,7 +471,7 @@ function renderView(container, opportunities, filterBar) {
     el('div', { class: 'section-header' },
       el('div', {},
         el('h2', { class: 'section-header__title' }, 'Opportunities'),
-        el('p', { class: 'section-header__subtitle' }, `${opportunities.length} total · ${formatCurrency(totalValue)} pipeline`)
+        el('p', { class: 'section-header__subtitle' }, `${opportunities.length} total · ${formatCompactCurrency(totalValue)} pipeline`)
       ),
       el('button', {
         class: 'btn btn--primary',
@@ -470,11 +488,11 @@ function renderView(container, opportunities, filterBar) {
         accentColor: 'var(--color-primary-lighter)',
         onClick: () => toggleStatFilter(''),
       }),
-      statCard('Active Pipeline', formatCurrency(totalValue - wonValue), {
+      statCard('Active Pipeline', formatCompactCurrency(totalValue - wonValue), {
         accentColor: 'var(--color-status-in-progress)',
         onClick: () => toggleStatFilter('active'),
       }),
-      statCard('Won Revenue', formatCurrency(wonValue), {
+      statCard('Won Revenue', formatCompactCurrency(wonValue), {
         accentColor: 'var(--color-status-won)',
         onClick: () => toggleStatFilter('won'),
       }),
@@ -510,13 +528,21 @@ function renderView(container, opportunities, filterBar) {
     refreshContent();
   }
 
+  // Reset every filter to its default by clearing the shareable URL params
+  // and rebuilding the view from scratch (which re-seeds from the now-empty
+  // hash). The persisted type filter is untouched.
+  function clearAllFilters() {
+    updateQueryParams({ status: null, q: null });
+    reRender();
+  }
+
   function refreshContent() {
     const filtered = getFiltered();
     viewContainer.innerHTML = '';
     if (activeView === 'board') {
       viewContainer.appendChild(renderBoard(filtered));
     } else {
-      viewContainer.appendChild(renderList(filtered));
+      viewContainer.appendChild(renderList(filtered, clearAllFilters));
     }
   }
 
@@ -658,14 +684,16 @@ function createOppCard(opp) {
 // List View (Table)
 // ============================================
 
-function renderList(opportunities) {
+function renderList(opportunities, onClearFilters) {
   const sorted = [...opportunities].sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
 
   if (sorted.length === 0) {
-    return el('div', { class: 'empty-state', style: { marginTop: 'var(--space-8)' } },
-      el('div', { class: 'empty-state__title' }, 'No matching opportunities'),
-      el('div', { class: 'empty-state__description' }, 'Try adjusting your filters or create a new opportunity.')
-    );
+    return emptyState({
+      title: 'No opportunities match this filter.',
+      message: 'Try a different status or search, or clear the filter to see everything.',
+      actionLabel: onClearFilters ? 'Clear filters' : null,
+      onAction: onClearFilters || null,
+    });
   }
 
   return el('div', { class: 'table-wrapper' },

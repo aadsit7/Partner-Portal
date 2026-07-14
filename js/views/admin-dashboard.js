@@ -5,6 +5,7 @@
 import { readSheetAsObjects } from '../sheets.js';
 import { CONFIG } from '../config.js';
 import { el, mount, formatCurrency, debounce } from '../utils/dom.js';
+import { formatCompactCurrency } from '../utils/format.js';
 import { navigate } from '../router.js';
 import { setTopbar, setTopbarTitle } from '../components/sidebar.js';
 import { tierSlug, TIER_COLORS, TIER_ICONS } from '../utils/tiers.js';
@@ -13,6 +14,8 @@ import { openEventModal } from './admin-events.js';
 import { parseChecklist } from '../components/checklist.js';
 import { filterPartners, filterOpportunities, filterEvents } from '../utils/filters.js';
 import { loadTypeFilter, saveTypeFilter, computeTypeData, buildTypeFilterBar, applyTypeFilter } from '../components/type-filter.js';
+import { skeletonListView } from '../components/skeleton.js';
+import { errorState } from '../components/states.js';
 
 export const title = 'Admin Dashboard';
 
@@ -128,7 +131,7 @@ function buildDashboardStatCell(label, value, onClick) {
 
 export async function render(container) {
   setTopbarTitle('Dashboard');
-  mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
+  mount(container, skeletonListView());
 
   try {
     const [partners, opportunities, events] = await Promise.all([
@@ -138,10 +141,11 @@ export async function render(container) {
     ]);
     renderDashboard(container, partners, opportunities, events);
   } catch (err) {
-    mount(container, el('div', { class: 'empty-state' },
-      el('div', { class: 'empty-state__title' }, 'Error loading data'),
-      el('div', { class: 'empty-state__description' }, err.message)
-    ));
+    mount(container, errorState({
+      title: 'Couldn’t load the dashboard',
+      message: err.message,
+      onRetry: () => render(container),
+    }));
   }
 }
 
@@ -279,7 +283,7 @@ function renderDashboard(container, partners, opportunities, events) {
 
   // Topbar header: eyebrow title + meta + type-filter chips
   const partnersLabel = tfPartners.length === 1 ? '1 partner' : `${tfPartners.length} partners`;
-  const meta = `· ${partnersLabel} · ${formatCurrency(tfTotalPipeline)} pipeline · ${formatCurrency(tfWonValue)} won`;
+  const meta = `· ${partnersLabel} · ${formatCompactCurrency(tfTotalPipeline)} pipeline · ${formatCompactCurrency(tfWonValue)} won`;
   setTopbar({
     title: 'Dashboard',
     meta,
@@ -291,8 +295,8 @@ function renderDashboard(container, partners, opportunities, events) {
     el('div', { class: 'dashboard-page__top' },
       el('div', { class: 'dashboard-page__stat-strip stagger' },
         buildDashboardStatCell('Total Partners', tfPartners.length, () => toggleStat('partners')),
-        buildDashboardStatCell('Total Pipeline', formatCurrency(tfTotalPipeline), () => toggleStat('pipeline')),
-        buildDashboardStatCell('Revenue Won', formatCurrency(tfWonValue), () => toggleStat('won')),
+        buildDashboardStatCell('Total Pipeline', formatCompactCurrency(tfTotalPipeline), () => toggleStat('pipeline')),
+        buildDashboardStatCell('Revenue Won', formatCompactCurrency(tfWonValue), () => toggleStat('won')),
         buildDashboardStatCell('Upcoming Events', tfUpcoming.length, () => toggleStat('events')),
       ),
       buildPartnerSourceChart(tfOpps, tfPartners, onBarClick),

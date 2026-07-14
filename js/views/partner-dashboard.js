@@ -5,7 +5,8 @@
 import { getCurrentUser } from '../auth.js';
 import { readSheetAsObjects, appendRow, isConfigured, addDemoRow } from '../sheets.js';
 import { CONFIG } from '../config.js';
-import { el, mount, formatCurrency, uuid } from '../utils/dom.js';
+import { el, mount, uuid } from '../utils/dom.js';
+import { formatCompactCurrency } from '../utils/format.js';
 import { nowISO, todayISO } from '../utils/date.js';
 import { dealCard, statCard } from '../components/card.js';
 import { openModal, closeModal } from '../components/modal.js';
@@ -14,6 +15,8 @@ import { showToast } from '../components/toast.js';
 import { setTopbarTitle } from '../components/sidebar.js';
 import { filterOpportunities } from '../utils/filters.js';
 import { initQuillEditor } from '../components/quill-editor.js';
+import { skeletonListView } from '../components/skeleton.js';
+import { errorState } from '../components/states.js';
 
 export const title = 'Opportunities';
 
@@ -21,16 +24,17 @@ export async function render(container) {
   setTopbarTitle('Opportunities');
 
   const user = getCurrentUser();
-  mount(container, el('div', { class: 'loading-overlay' }, el('div', { class: 'spinner' })));
+  mount(container, skeletonListView());
 
   try {
     const opportunities = await loadOpportunities(user.partner_id);
     renderDashboard(container, opportunities, user);
   } catch (err) {
-    mount(container, el('div', { class: 'empty-state' },
-      el('div', { class: 'empty-state__title' }, 'Error loading data'),
-      el('div', { class: 'empty-state__description' }, err.message)
-    ));
+    mount(container, errorState({
+      title: 'Couldn’t load your opportunities',
+      message: err.message,
+      onRetry: () => render(container),
+    }));
   }
 }
 
@@ -67,7 +71,7 @@ function renderDashboard(container, opportunities, user) {
         icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="4" y="3" width="12" height="15" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 7h6M7 10h6M7 13h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
         accentColor: 'var(--color-primary)',
       }),
-      statCard('Active Pipeline', formatCurrency(totalValue), {
+      statCard('Active Pipeline', formatCompactCurrency(totalValue), {
         icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 14l4-5 3 3 3.5-5L17 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 5h3v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
         accentColor: 'var(--color-primary-lighter)',
       }),
@@ -75,7 +79,7 @@ function renderDashboard(container, opportunities, user) {
         icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M7 10.5l2.5 2.5 4-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.5"/></svg>',
         accentColor: 'var(--color-status-won)',
       }),
-      statCard('Revenue Won', formatCurrency(wonValue), {
+      statCard('Revenue Won', formatCompactCurrency(wonValue), {
         icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2l2.2 4.4 4.9.72-3.55 3.46.84 4.88L10 13.27l-4.4 2.23.84-4.88L2.9 7.12l4.9-.72L10 2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>',
         accentColor: 'var(--color-status-won)',
       }),
